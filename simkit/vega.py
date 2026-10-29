@@ -10,7 +10,11 @@ to that host through the external-renderer contract in simkit/external.py:
 
 The host must accept --config <json> --manifest <json> --out <dir> and write
 <out>/images/optical/NNNNNN.png plus <out>/labels/optical/NNNNNN.json.
-See docs/vega_prime_接入.md for the full checklist.
+
+This module is the discovery half only: it reports whether a licensed copy and a
+host executable are present. It never bypasses, patches or emulates licensing,
+and the renderer contract in simkit/external.py is vendor-neutral -- any program
+(there or your own) can fill the visible-band slot.
 """
 import glob
 import os
@@ -75,5 +79,5 @@ def describe(cfg=None):
     for n in r["notes"]:
         print("  note    : %s" % n)
     if not r["ready"]:
-        print("\n  接入步骤见 docs/vega_prime_接入.md")
+        print("\n  接入步骤见 simkit/external.py（外部渲染器契约）")
     return r

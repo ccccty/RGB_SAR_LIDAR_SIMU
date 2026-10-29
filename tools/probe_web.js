@@ -25,8 +25,11 @@ function send(ws, id, method, params) {
 }
 
 (async () => {
-  const site = await serve();
-  URL = 'http://127.0.0.1:' + site.port + '/';
+  // Default: spin up a throwaway server over the working copy, so the probe
+  // verifies what is on disk. Pass a URL to check a deployed copy instead.
+  let site = null;
+  if (process.argv[2]) { URL = process.argv[2]; }
+  else { site = await serve(); URL = 'http://127.0.0.1:' + site.port + '/'; }
   const userDir = path.join(OUT, '_profile');
   fs.rmSync(userDir, { recursive: true, force: true });
   const proc = spawn(CHROME, ['--headless=new', '--disable-gpu', '--no-sandbox',

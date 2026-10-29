@@ -52,8 +52,19 @@ env\Scripts\python.exe tools\export_web.py . out
 node tools\serve_web.js          # http://127.0.0.1:18080
 ```
 
-网站也可以直接双击 `index.html` 用 `file://` 打开（`fetch` 会被浏览器挡掉，
-所以这时改用本地静态服务；GitHub Pages 上是正常的）。
+网站也可以**直接双击 `index.html`**（`file://`）打开：
+`tools/export_web.py` 除了写 `data/manifest.json`，还会写一份 `data/boot.js`
+（同样的数据，包成一句 `window.SIMKIT_DATA = {...}`）。浏览器不允许
+`file://` 下 `fetch`，但允许普通 `<script>`，所以断网机器上不用起服务也能看全部内容。
+
+两个探针脚本可以直接复核：
+
+```powershell
+node tools\probe_web.js                      # 起临时服务，跑真实页面，查 6 个页签
+node tools\probe_web.js https://...           # 换成查线上部署
+node tools\probe_file.js                     # 查 file:// 双击打开
+node tools\probe_canvas.js                   # 查画布真的画了东西、滑块真的会算
+```
 
 没有 Blender 时把 `optical` 从 `-s` 里去掉即可，其余模态纯 numpy，秒级出图。
 

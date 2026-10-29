@@ -30,8 +30,11 @@ const CANVAS_INK = `(sel) => {
   return { w: c.width, h: c.height, inkPct: +(100 * ink / (d.length / 4)).toFixed(2), mean: +(sum / (d.length / 4) / 3).toFixed(1) };
 }`;
 (async () => {
-  const site = await serve();
-  URL = 'http://127.0.0.1:' + site.port + '/';
+  // Default: spin up a throwaway server over the working copy, so the probe
+  // verifies what is on disk. Pass a URL to check a deployed copy instead.
+  let site = null;
+  if (process.argv[2]) { URL = process.argv[2]; }
+  else { site = await serve(); URL = 'http://127.0.0.1:' + site.port + '/'; }
   const userDir = path.join(OUT, '_profile2');
   fs.rmSync(userDir, { recursive: true, force: true });
   const proc = spawn(CHROME, ['--headless=new', '--disable-gpu', '--no-sandbox', '--remote-debugging-port=' + PORT,
@@ -86,5 +89,5 @@ const CANVAS_INK = `(sel) => {
   res.rdPtBRNext = await ev('document.getElementById("rdPtBR").innerText');
   res.rdTLNext = await ev('document.getElementById("rdTL").innerText');
   console.log(JSON.stringify(res, null, 1));
-  ws.close(); proc.kill(); site.server.close(); await sleep(300); process.exit(0);
+  ws.close(); proc.kill(); if (site) site.server.close(); await sleep(300); process.exit(0);
 })();

@@ -738,17 +738,28 @@
     });
     window.addEventListener('resize', function () { resizePC(); drawRadar(); exploreUpdate(); });
 
-    Promise.all([
+    // data/boot.js is a pre-baked copy of the same two JSON files. It is what
+    // makes the page work from file:// (no server, no fetch), which is the
+    // air-gapped case this project actually targets. When it is present we use
+    // it; otherwise we fall back to fetching the JSON, which is what a normal
+    // static host serves.
+    function fromBoot() {
+      var d = window.SIMKIT_DATA;
+      if (!d || !d.manifest || !d.bands) return null;
+      return Promise.resolve([d.manifest, d.bands]);
+    }
+    var loadData = fromBoot() || Promise.all([
       fetch('data/manifest.json', { cache: 'no-cache' })
         .then(function (r) { if (!r.ok) throw new Error('manifest ' + r.status); return r.json(); }),
       fetch('data/radar_bands.json', { cache: 'no-cache' })
         .then(function (r) { if (!r.ok) throw new Error('bands ' + r.status); return r.json(); })
-    ]).then(function (res) { MAN = res[0]; BANDS = res[1]; boot(); exploreUpdate(); })
+    ]);
+    loadData.then(function (res) { MAN = res[0]; BANDS = res[1]; boot(); exploreUpdate(); })
       .catch(function (e) {
         document.body.insertAdjacentHTML('beforeend',
           '<div style="position:fixed;bottom:16px;left:16px;background:#ff5d6c;color:#000;' +
           'padding:10px 16px;border-radius:8px;font:13px monospace;z-index:99">' +
-          '数据未加载：请先运行 tools/export_web.py，或用本地 http 服务器打开<br>' +
+          '数据未加载：请先运行 tools/export_web.py 生成 data/boot.js<br>' +
           String(e) + '</div>');
       });
   });
