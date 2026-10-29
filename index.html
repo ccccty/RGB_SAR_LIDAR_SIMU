@@ -278,11 +278,11 @@ env\Scripts\python.exe -m simkit gen ^
 # 3. 合并成一份 COCO
 env\Scripts\python.exe tools\merge_dataset.py out\dataset out\final_air
 
-# 4. 导出这个网站的数据
+# 4. 导出这个网站的数据（同时写 data\boot.js）
 env\Scripts\python.exe tools\export_web.py . out
 
-# 5. 本地起个静态服务器（或直接双击 index.html）
-python -m http.server 8080 --directory web</pre>
+# 5. 直接双击 index.html 就能看；要起服务也可以：
+node tools\serve_web.js          :: http://127.0.0.1:18080</pre>
 
   <h2 style="margin:26px 0 12px;font-size:16px">已知局限</h2>
   <div class="card">
@@ -296,6 +296,12 @@ python -m http.server 8080 --directory web</pre>
   <p class="note" style="margin-top:22px">
     本项目为<b>仿真工具</b>，输出用于算法训练与验证；数值为工程近似，
     不替代实测标定。模型资源来自 NASA 3D Resources（公有领域）与 Poly Haven（CC0）。
+  </p>
+
+  <p class="note" style="margin-top:10px">
+    源码与完整文档：<a href="https://github.com/ccccty/RGB_SAR_LIDAR_SIMU"
+    style="color:var(--accent)">github.com/ccccty/RGB_SAR_LIDAR_SIMU</a>
+    · MIT License
   </p>
 </section>
 
