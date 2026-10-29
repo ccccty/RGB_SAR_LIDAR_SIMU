@@ -1,0 +1,91 @@
+{
+ "seed": 21,
+ "ground": {
+  "enabled": true,
+  "size": 5000,
+  "z": 0,
+  "mat": "asphalt"
+ },
+ "weather": {
+  "states": [
+   {
+    "preset": "clear"
+   },
+   {
+    "preset": "rain",
+    "rain_mmh": 8
+   }
+  ]
+ },
+ "sun": {
+  "elev_deg": 40,
+  "az_deg": 135,
+  "irradiance": 600,
+  "on": true
+ },
+ "air": {
+  "temp_c": 22,
+  "rh": 0.55,
+  "wind_mps": 4
+ },
+ "objects": [
+  {
+   "name": "car_2km",
+   "cls": "vehicle",
+   "shape": "box",
+   "size": [
+    4.4,
+    1.9,
+    1.6
+   ],
+   "pos": [
+    0,
+    0,
+    0
+   ],
+   "vel": [
+    0,
+    0,
+    0
+   ],
+   "mat": "painted_metal",
+   "rcs_db": -10
+  }
+ ],
+ "sensors": {
+  "radar": {
+   "pos": [
+    0,
+    -2000,
+    12
+   ],
+   "look_at": [
+    0,
+    0,
+    1
+   ],
+   "band": "Ka",
+   "az_span_deg": 0.8,
+   "el_span_deg": 0.12,
+   "n_az": 80,
+   "n_el": 12,
+   "n_samples": 1024,
+   "chirp_us": 50,
+   "tx_power_dbm": 40,
+   "noise_figure_db": 8,
+   "n_chirps": 64,
+   "det_snr_db": 11,
+   "clutter_density": 0,
+   "bandwidth_mhz": 50,
+   "beamwidth_az_deg": 0.3,
+   "beamwidth_el_deg": 0.3
+  }
+ },
+ "frames": {
+  "n": 4,
+  "dt": 1
+ },
+ "randomize": {
+  "enabled": false
+ }
+}

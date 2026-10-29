@@ -1,0 +1,7 @@
+# normalise line endings so the OBJ/PNG payload is byte-stable across platforms
+* text=auto eol=lf
+*.png binary
+*.ply binary
+*.obj text eol=lf
+*.mtl text eol=lf
+*.zip binary

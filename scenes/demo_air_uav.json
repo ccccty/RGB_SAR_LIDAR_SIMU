@@ -1,0 +1,143 @@
+{
+ "seed": 11,
+ "ground": {
+  "enabled": false
+ },
+ "weather": {
+  "states": [
+   {
+    "preset": "clear",
+    "wind_ms": 3,
+    "air_temp_c": 24,
+    "rh": 0.45
+   },
+   {
+    "preset": "cloudy",
+    "wind_ms": 6,
+    "air_temp_c": 21,
+    "rh": 0.65
+   },
+   {
+    "preset": "rain",
+    "wind_ms": 9,
+    "air_temp_c": 18,
+    "rh": 0.9,
+    "rain_mmh": 8
+   }
+  ]
+ },
+ "sun": {
+  "elev_deg": 50,
+  "az_deg": 120,
+  "irradiance": 700,
+  "on": true
+ },
+ "objects": [
+  {
+   "name": "uav_01",
+   "cls": "uav",
+   "model": "../assets/models/uav_demo.obj",
+   "height": 0.19,
+   "mat": "painted_metal",
+   "pos": [
+    0,
+    0,
+    60
+   ],
+   "vel": [
+    4,
+    0,
+    0
+   ],
+   "rot": 15,
+   "internal_heat": 25,
+   "rcs_db": -12,
+   "shape": "obj"
+  }
+ ],
+ "sensors": {
+  "ir_camera": {
+   "pos": [
+    30,
+    -30,
+    1.7
+   ],
+   "look_at": [
+    0,
+    0,
+    60
+   ],
+   "fov_deg": 9,
+   "width": 480,
+   "height": 360
+  },
+  "radar": {
+   "pos": [
+    30,
+    -30,
+    1.7
+   ],
+   "look_at": [
+    0,
+    0,
+    60
+   ],
+   "band": "W",
+   "az_span_deg": 24,
+   "el_span_deg": 22,
+   "n_az": 120,
+   "n_el": 24,
+   "det_snr_db": 11,
+   "clutter_density": 0,
+   "tx_power_dbm": 23,
+   "noise_figure_db": 8,
+   "n_samples": 512,
+   "chirp_us": 50
+  },
+  "optical": {
+   "pos": [
+    30,
+    -30,
+    1.7
+   ],
+   "look_at": [
+    0,
+    0,
+    60
+   ],
+   "fov_deg": 11,
+   "width": 640,
+   "height": 480
+  }
+ },
+ "ir": {
+  "bands": [
+   "mwir",
+   "lwir"
+  ],
+  "netd_mk": 30,
+  "psf_px": 1.2,
+  "preview_mode": "temp",
+  "nuc": {
+   "enabled": true,
+   "prnu": 0.008,
+   "dsnu_counts": 25,
+   "column_fpn_counts": 6,
+   "dead_px": 0.0002,
+   "seed": 12345
+  }
+ },
+ "optical": {
+  "samples": 16,
+  "exposure": 0.35
+ },
+ "frames": {
+  "n": 6,
+  "dt": 0.4
+ },
+ "randomize": {
+  "enabled": true,
+  "pose_jitter_xy_m": 0.3,
+  "pose_jitter_yaw_deg": 3
+ }
+}

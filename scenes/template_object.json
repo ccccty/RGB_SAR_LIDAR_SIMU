@@ -1,0 +1,51 @@
+{
+  "_comment": "单目标数据集模板：把 model 换成你的 OBJ，turntable 会绕目标转一圈，三种传感器同一套位姿。",
+  "name": "my_object_turntable",
+  "seed": 11,
+  "frames": { "n": 72, "dt": 0.0 },
+  "motion": { "mode": "turntable", "center": [0.0, 0.0, 0.0], "_comment": "每帧绕 Z 轴转 360/n 度" },
+
+  "air": { "temp_c": 25.0, "rh": 0.5, "wind_mps": 2.0 },
+  "sun": { "on": true, "elev_deg": 38.0, "az_deg": 130.0, "irradiance": 800.0 },
+  "ground": { "size": 60.0, "mat": "concrete", "temp_c": 35.0 },
+
+  "objects": [
+    { "name": "target", "cls": "target",
+      "shape": "obj",
+      "model": "assets/models/vehicle_demo.obj",
+      "_comment_model": "相对 scenes 目录或绝对路径；也支持 shape=box / cylinder",
+      "pos": [0.0, 0.0, 0.0],
+      "rot": 0.0,
+      "mat": "painted_metal",
+      "_comment_mat": "材质见 simkit/materials.py；材质决定红外温度与雷达 RCS",
+      "height": 1.6,
+      "_comment_height": "可选：按目标真实高度缩放模型并落到地面",
+      "rcs_db": 10.0,
+      "_comment_rcs": "可选：实测 RCS(dBsm)，给了就不用几何估算"
+    }
+  ],
+
+  "sensors": {
+    "optical": { "pos": [-10.0, -10.0, 2.6], "look_at": [0.0, 0.0, 0.8],
+                 "fov_deg": 40.0, "width": 960, "height": 720 },
+    "ir_camera": { "pos": [-10.0, -10.0, 2.6], "look_at": [0.0, 0.0, 0.8],
+                   "fov_deg": 40.0, "width": 640, "height": 512 },
+    "radar": { "pos": [-14.0, -3.0, 1.2], "look_at": [0.0, 0.0, 0.8],
+               "fc_ghz": 77.0, "bandwidth_mhz": 600.0,
+               "n_samples": 256, "n_chirps": 32,
+               "az_span_deg": 60.0, "el_span_deg": 16.0, "n_az": 64, "n_el": 8,
+               "beamwidth_az_deg": 2.0, "beamwidth_el_deg": 10.0,
+               "det_snr_db": 14.0 }
+  },
+
+  "optical": { "samples": 48, "engine": "CYCLES" },
+  "ir": { "band_um": [8.0, 12.0], "atm_tau_per_km": 0.06, "netd_mk": 25.0, "psf_px": 1.2 },
+
+  "randomize": {
+    "enabled": true,
+    "pose_jitter_xy_m": 0.15,
+    "pose_jitter_yaw_deg": 3.0,
+    "temp_jitter_c": 3.0,
+    "sun_az_jitter_deg": 15.0
+  }
+}

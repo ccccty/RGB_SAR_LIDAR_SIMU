@@ -1,0 +1,20 @@
+{
+  "name": "demo_optical_fast",
+  "seed": 3,
+  "frames": { "n": 1, "dt": 0.2 },
+  "air": { "temp_c": 22.0, "rh": 0.5, "wind_mps": 1.0 },
+  "sun": { "on": true, "elev_deg": 40.0, "az_deg": 140.0, "irradiance": 800.0 },
+  "ground": { "size": 60.0, "mat": "concrete", "temp_c": 30.0 },
+  "objects": [
+    { "name": "car_01", "cls": "car", "shape": "box", "size": [4.4, 1.85, 1.5],
+      "pos": [0.0, 0.0, 0.0], "rot": 20.0, "mat": "painted_metal" },
+    { "name": "ped_01", "cls": "person", "shape": "cylinder", "size": [0.32, 0.32, 1.78],
+      "pos": [3.0, -2.0, 0.0], "mat": "clothing" }
+  ],
+  "sensors": {
+    "optical": { "pos": [-12.0, -10.0, 2.5], "look_at": [0.0, 0.0, 1.0],
+                 "fov_deg": 40.0, "width": 480, "height": 360 }
+  },
+  "optical": { "samples": 16, "engine": "CYCLES" },
+  "randomize": { "enabled": false }
+}

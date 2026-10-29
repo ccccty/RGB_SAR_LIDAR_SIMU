@@ -1,0 +1,24 @@
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+env/
+venv/
+
+# generated runs (regenerate with: python -m simkit gen -c scenes\... -o out\...)
+out/
+*.log
+
+# blender / third-party runtimes (never commit; download the portable build)
+third_party/
+*.blend1
+
+# local notes that must not be published
+docs/_local/
+
+# scratch
+_tmp/
+_lidar/
+.DS_Store
+Thumbs.db
