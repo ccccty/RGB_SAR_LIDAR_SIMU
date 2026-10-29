@@ -1,4 +1,4 @@
-"""Minimal PNG reader + image statistics (no external deps).
+r"""Minimal PNG reader + image statistics (no external deps).
 
     python tools\png_stats.py out\opt1\images\optical\000000.png [--ascii]
 """
