@@ -192,10 +192,18 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                             np.ascontiguousarray(scope(rd_db.T)).astype(np.uint8))
             # range/angle map: one row per beam, one column per range bin.
             # This is the picture that answers "did it see the target".
-            ra_db = radar.to_db(out["range_angle"].T)      # (n_s, n_beams)
+            ra_db = radar.to_db(out["range_angle"].T)      # (n_beams, n_s)
+            ra_img = np.ascontiguousarray(scope(ra_db.T))
             png.write_gray8(os.path.join(out_dir, dirs["radar_ra"], name),
-                            np.ascontiguousarray(scope(ra_db.T)).astype(np.uint8))
+                            ra_img.astype(np.uint8))
             rlab = labels.radar_labels(w, out["detections"], f)
+            # Where the brightest echo sits in that picture. A range/angle map is
+            # mostly noise floor; without this the viewer cannot tell a target
+            # from speckle without hunting for one white pixel.
+            iy, ix = np.unravel_index(int(np.argmax(ra_img)), ra_img.shape)
+            rlab["ra_peak"] = dict(px=int(ix), py=int(iy),
+                                   db=round(float(ra_db.max()), 1),
+                                   w=int(ra_img.shape[1]), h=int(ra_img.shape[0]))
             labels.write_json(os.path.join(out_dir, dirs["label_radar"], "%06d.json" % f), rlab)
             radar_frames.append(dict(
                 n=int(rlab.get("num_points", 0)),
@@ -293,22 +301,27 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
             return 0, 0
         return len(d.get("images", [])), len(d.get("annotations", []))
 
-    if "optical" in sensors:
-        n_i, n_a = count_coco(os.path.join(out_dir, "annotations_optical_coco.json"))
-        stats["optical_images"], stats["optical_boxes"] = n_i, n_a
-    if "lidar" in sensors:
-        n_i, n_a = count_coco(os.path.join(out_dir, "annotations_lidar_coco.json"))
-        stats["lidar_images"], stats["lidar_boxes"] = n_i, n_a
-    if "ir" in sensors:
-        ir = {}
-        for bnm in ir_bands:
-            tag = "" if bnm is None else "_" + bnm
-            fn = "annotations_ir%s_coco.json" % tag
+    n_i, n_a = count_coco(os.path.join(out_dir, "annotations_optical_coco.json"))
+    stats["optical_images"], stats["optical_boxes"] = n_i, n_a
+    n_i, n_a = count_coco(os.path.join(out_dir, "annotations_lidar_coco.json"))
+    stats["lidar_images"], stats["lidar_boxes"] = n_i, n_a
+    # IR band keys come from the config; counts come from disk, so a radar-only
+    # rerun still reports the IR frames an earlier run left in place.
+    ir = stats.get("ir") or {}
+    for bnm in ir_bands:
+        tag = "" if bnm is None else "_" + bnm
+        fn = "annotations_ir%s_coco.json" % tag
+        n_i, n_a = count_coco(os.path.join(out_dir, fn))
+        ir[bnm or "lwir"] = dict(images=n_i, boxes=n_a, coco=fn)
+    for bnm in ("mwir", "lwir"):
+        if bnm not in ir:
+            fn = "annotations_ir_%s_coco.json" % bnm
             n_i, n_a = count_coco(os.path.join(out_dir, fn))
-            ir[bnm or "lwir"] = dict(images=n_i, boxes=n_a, coco=fn)
-        stats["ir"] = ir
-        stats["ir_images"] = sum(v["images"] for v in ir.values())
-        stats["ir_boxes"] = sum(v["boxes"] for v in ir.values())
+            if n_i or n_a:
+                ir[bnm] = dict(images=n_i, boxes=n_a, coco=fn)
+    stats["ir"] = ir
+    stats["ir_images"] = sum(v["images"] for v in ir.values())
+    stats["ir_boxes"] = sum(v["boxes"] for v in ir.values())
     if "radar" in sensors and radar_frames:
         stats["radar_frames"] = len(radar_frames)
         stats["radar_points"] = int(sum(r["n"] for r in radar_frames))

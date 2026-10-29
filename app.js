@@ -35,7 +35,7 @@
       b.classList.toggle('on', b.getAttribute('data-tab') === name);
     });
     if (name === 'lidar') setTimeout(resizePC, 30);
-    if (name === 'radar') setTimeout(drawRadar, 30);
+    if (name === 'radar') setTimeout(function () { drawRadar(); drawRdMark(curFrame()); }, 30);
     if (name === 'explore') setTimeout(function () { if (BANDS) exploreUpdate(); }, 40);
     if (name === 'compare') setTimeout(renderCompare, 30);
   }
@@ -362,6 +362,45 @@
   })();
 
   // ---------- radar ----------
+  // A range/angle map is 95% noise floor: the noise plateau spans under 1 dB, so
+  // any linear window either crushes the target or blows out the picture. The
+  // kernel therefore ships the pixel of the strongest echo with each frame, and
+  // this overlay circles it so the viewer does not have to hunt for one dot.
+  function drawRdMark(fr) {
+    var cv = $('rdOverlay');
+    if (!cv) return;
+    var img = $('rdImg');
+    var pk = fr && fr.radar && fr.radar.peak;
+    var box = cv.parentNode.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    cv.width = Math.max(1, Math.round(box.width * dpr));
+    cv.height = Math.max(1, Math.round(box.height * dpr));
+    var ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, box.width, box.height);
+    if (!pk || !$('rdMark').checked || !img.naturalWidth) return;
+
+    // the <img> is letterboxed inside the viewer; map image px -> css px
+    var s = Math.min(box.width / img.naturalWidth, box.height / img.naturalHeight);
+    var dw = img.naturalWidth * s, dh = img.naturalHeight * s;
+    var ox = (box.width - dw) / 2, oy = (box.height - dh) / 2;
+    var x = ox + pk.px * s, y = oy + pk.py * s;
+    ctx.strokeStyle = '#ff5d6c';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x, y, 14, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - 22, y); ctx.lineTo(x - 6, y);
+    ctx.moveTo(x + 6, y); ctx.lineTo(x + 22, y);
+    ctx.moveTo(x, y - 22); ctx.lineTo(x, y - 6);
+    ctx.moveTo(x, y + 6); ctx.lineTo(x, y + 22);
+    ctx.stroke();
+    ctx.fillStyle = '#ff5d6c';
+    ctx.font = '11px ui-monospace, monospace';
+    ctx.fillText('最强回波 ' + f1(pk.db) + ' dB', x + 18, y - 16);
+  }
+
   function rdSync() {
     var sc = curScene(), fr = curFrame();
     seg($('rdScene'), sceneList(), String(S.scene), function (id) {
@@ -374,6 +413,7 @@
     $('rdRange').value = String(fr.i);
     $('rdCount').textContent = (fr.i + 1) + ' / ' + sc.frames.length;
     $('rdTL').textContent = sc.title + '\n' + sc.band + ' 频段 · ' + weatherText(fr);
+    drawRdMark(fr);
 
     var r = fr.radar;
     var info = $('rdInfo');
@@ -736,7 +776,11 @@
     ['exRcs', 'exRain', 'exPtx', 'exNch', 'exVis', 'exRain2'].forEach(function (id) {
       $(id).addEventListener('input', exploreUpdate);
     });
-    window.addEventListener('resize', function () { resizePC(); drawRadar(); exploreUpdate(); });
+    $('rdMark').addEventListener('change', function () { drawRdMark(curFrame()); });
+    window.addEventListener('resize', function () {
+      resizePC(); drawRadar(); drawRdMark(curFrame()); exploreUpdate();
+    });
+    $('rdImg').addEventListener('load', function () { drawRdMark(curFrame()); });
 
     // data/boot.js is a pre-baked copy of the same two JSON files. It is what
     // makes the page work from file:// (no server, no fetch), which is the

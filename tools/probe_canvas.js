@@ -83,6 +83,12 @@ const CANVAS_INK = `(sel) => {
   res.rdPtTL = await ev('document.getElementById("rdPtTL").innerText');
   res.rdPtBR = await ev('document.getElementById("rdPtBR").innerText');
   res.rdBudget = await ev('document.getElementById("rdBudget").innerText.replace(/\s+/g," ").slice(0,240)');
+  // the marker overlay only draws when the box is ticked; check both states
+  res.rdOverlayOff = await ev('(' + CANVAS_INK.toString() + ')("#rdOverlay")');
+  await ev('var c=document.getElementById("rdMark"); c.checked=true; c.dispatchEvent(new Event("change"))');
+  await sleep(350);
+  res.rdOverlayOn = await ev('(' + CANVAS_INK.toString() + ')("#rdOverlay")');
+  res.rdPeak = await ev('document.getElementById("rdMark").checked');
   // walk to the next frame: the budget + point count must follow
   await ev('document.getElementById("rdNext").click()');
   await sleep(500);
