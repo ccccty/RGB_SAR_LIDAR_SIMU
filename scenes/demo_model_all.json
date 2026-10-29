@@ -1,0 +1,125 @@
+{
+ "_comment": "单模型环绕数据集：一个 OBJ -> 光学/红外/雷达 三模态 12 视角",
+ "name": "vehicle_turntable",
+ "seed": 5,
+ "frames": {
+  "n": 12,
+  "dt": 0.0
+ },
+ "motion": {
+  "mode": "turntable",
+  "center": [
+   0.0,
+   0.0,
+   0.0
+  ]
+ },
+ "air": {
+  "temp_c": 24.0,
+  "rh": 0.5,
+  "wind_mps": 1.5
+ },
+ "sun": {
+  "on": true,
+  "elev_deg": 42.0,
+  "az_deg": 125.0,
+  "irradiance": 820.0
+ },
+ "ground": {
+  "size": 70.0,
+  "mat": "asphalt",
+  "temp_c": 38.0
+ },
+ "objects": [
+  {
+   "name": "veh",
+   "cls": "car",
+   "shape": "obj",
+   "model": "../assets/models/vehicle_demo.obj",
+   "pos": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rot": 0.0,
+   "mat": "painted_metal"
+  }
+ ],
+ "sensors": {
+  "optical": {
+   "pos": [
+    -9.0,
+    -9.0,
+    2.6
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    0.8
+   ],
+   "fov_deg": 38.0,
+   "width": 640,
+   "height": 480
+  },
+  "ir_camera": {
+   "pos": [
+    -9.0,
+    -9.0,
+    2.6
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    0.8
+   ],
+   "fov_deg": 38.0,
+   "width": 480,
+   "height": 360
+  },
+  "radar": {
+   "pos": [
+    -13.0,
+    -2.0,
+    1.2
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    0.8
+   ],
+   "fc_ghz": 77.0,
+   "bandwidth_mhz": 600.0,
+   "n_samples": 256,
+   "n_chirps": 32,
+   "az_span_deg": 50.0,
+   "el_span_deg": 14.0,
+   "n_az": 48,
+   "n_el": 6,
+   "beamwidth_az_deg": 2.5,
+   "beamwidth_el_deg": 10.0,
+   "det_snr_db": 13.0
+  }
+ },
+ "optical": {
+  "samples": 24,
+  "engine": "CYCLES",
+  "exposure": -2.5,
+  "view_transform": "Standard"
+ },
+ "ir": {
+  "band_um": [
+   8.0,
+   12.0
+  ],
+  "atm_tau_per_km": 0.06,
+  "netd_mk": 25.0,
+  "psf_px": 1.2
+ },
+ "randomize": {
+  "enabled": true,
+  "pose_jitter_xy_m": 0.1,
+  "pose_jitter_yaw_deg": 2.0,
+  "temp_jitter_c": 3.0,
+  "sun_az_jitter_deg": 12.0
+ }
+}

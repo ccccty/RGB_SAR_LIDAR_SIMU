@@ -1,0 +1,20 @@
+{
+  "name": "demo_street_ir",
+  "seed": 1,
+  "air": { "temp_c": 28.0, "rh": 0.6, "wind_mps": 2.0 },
+  "sun": { "on": true, "elev_deg": 35.0, "az_deg": 120.0, "irradiance": 850.0 },
+  "ground": { "size": 90.0, "mat": "asphalt", "temp_c": 44.0 },
+  "objects": [
+    { "name": "car_01", "cls": "car", "shape": "box", "size": [4.4, 1.85, 1.5],
+      "pos": [8.0, 0.0, 0.0], "rot": 10.0, "mat": "painted_metal", "temp_c": 52.0 },
+    { "name": "truck_01", "cls": "truck", "shape": "box", "size": [7.0, 2.4, 3.0],
+      "pos": [18.0, 6.0, 0.0], "rot": -5.0, "mat": "painted_metal" },
+    { "name": "ped_01", "cls": "person", "shape": "cylinder", "size": [0.35, 0.35, 1.75],
+      "pos": [5.0, -3.0, 0.0], "mat": "clothing", "temp_c": 34.0 }
+  ],
+  "sensors": {
+    "ir_camera": { "pos": [-8.0, -25.0, 3.0], "look_at": [12.0, 0.0, 1.5],
+                   "fov_deg": 45.0, "width": 640, "height": 512 }
+  },
+  "ir": { "band_um": [8.0, 12.0], "atm_tau_per_km": 0.06, "netd_mk": 30.0, "psf_px": 1.2 }
+}

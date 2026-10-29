@@ -1,0 +1,143 @@
+{
+ "seed": 33,
+ "ground": {
+  "enabled": true,
+  "type": "sea",
+  "size": 900,
+  "z": 0,
+  "mat": "seawater",
+  "wind_ms": 9,
+  "nx": 56,
+  "ny": 56,
+  "seed": 11
+ },
+ "weather": {
+  "states": [
+   {
+    "preset": "clear",
+    "wind_ms": 4
+   },
+   {
+    "preset": "cloudy",
+    "wind_ms": 7
+   },
+   {
+    "preset": "rain",
+    "rain_mmh": 6,
+    "wind_ms": 12
+   }
+  ]
+ },
+ "sun": {
+  "elev_deg": 35,
+  "az_deg": 120,
+  "irradiance": 620,
+  "on": true
+ },
+ "air": {
+  "temp_c": 24,
+  "rh": 0.7,
+  "wind_mps": 9
+ },
+ "objects": [
+  {
+   "name": "boat_01",
+   "cls": "boat",
+   "shape": "box",
+   "size": [
+    6,
+    2.2,
+    1.8
+   ],
+   "pos": [
+    0,
+    0,
+    0.6
+   ],
+   "vel": [
+    0,
+    3,
+    0
+   ],
+   "mat": "painted_metal",
+   "rcs_db": 5
+  }
+ ],
+ "sensors": {
+  "ir_camera": {
+   "pos": [
+    0,
+    -60,
+    5
+   ],
+   "look_at": [
+    0,
+    0,
+    2.2
+   ],
+   "fov_deg": 12,
+   "width": 480,
+   "height": 360
+  },
+  "radar": {
+   "pos": [
+    0,
+    -60,
+    5
+   ],
+   "look_at": [
+    0,
+    0,
+    2
+   ],
+   "band": "Ka",
+   "az_span_deg": 6,
+   "el_span_deg": 4,
+   "n_az": 90,
+   "n_el": 20,
+   "bandwidth_mhz": 200,
+   "n_samples": 512,
+   "chirp_us": 50,
+   "tx_power_dbm": 23,
+   "noise_figure_db": 8,
+   "n_chirps": 64,
+   "det_snr_db": 11,
+   "mti_min_vr_mps": 2,
+   "ground_clutter_db": -35
+  },
+  "optical": {
+   "pos": [
+    0,
+    -60,
+    5
+   ],
+   "look_at": [
+    0,
+    0,
+    2.2
+   ],
+   "fov_deg": 12,
+   "width": 640,
+   "height": 480
+  }
+ },
+ "ir": {
+  "bands": [
+   "mwir",
+   "lwir"
+  ],
+  "netd_mk": 30,
+  "psf_px": 1.2
+ },
+ "optical": {
+  "samples": 16,
+  "exposure": 0.35
+ },
+ "frames": {
+  "n": 3,
+  "dt": 0.4
+ },
+ "randomize": {
+  "enabled": false
+ }
+}

@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>simkit · RGB / SAR / LiDAR 多模态仿真数据集</title>
+<meta name="description" content="离线多模态传感器仿真：可见光、中波/长波红外、毫米波雷达、激光雷达，带 COCO 标注，纯 Python + numpy。">
+<link rel="stylesheet" href="app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='11' fill='none' stroke='%2337c2ff' stroke-width='3'/><circle cx='16' cy='16' r='4' fill='%2337c2ff'/></svg>">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="dot"></span>simkit</div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="gallery" class="on">数据集</button>
+    <button data-tab="compare">多模态对照</button>
+    <button data-tab="lidar">点云</button>
+    <button data-tab="radar">雷达</button>
+    <button data-tab="explore">参数实验</button>
+    <button data-tab="about">原理与离线部署</button>
+  </nav>
+</div>
+
+<main>
+
+<!-- ================= 数据集 ================= -->
+<section id="gallery" class="on">
+  <h1>三场景 × 三天气 × 五模态</h1>
+  <p class="lead">全部图像由 <b>纯 numpy / Blender 无头渲染</b>离线生成，同一帧里
+    可见光、两个红外波段、毫米波雷达、激光雷达共享<b>同一份三维世界与同一套天气参数</b>，
+    因此可以直接做跨模态配准与融合训练。下面是成品数据集。</p>
+
+  <div class="row" style="margin-bottom:18px">
+    <div class="seg" id="galScene"></div>
+    <div class="seg" id="galMod"></div>
+  </div>
+
+  <div class="grid g2" style="grid-template-columns:minmax(0,1fr) 320px">
+    <div class="card" style="padding:12px">
+      <div class="viewer" id="galViewer" style="aspect-ratio:4/3">
+        <img id="galImg" alt="">
+        <svg class="overlay" id="galSvg"></svg>
+        <div class="ovl-tl" id="galTL"></div>
+        <div class="ovl-br" id="galBR"></div>
+      </div>
+      <div class="ctl">
+        <button class="btn" id="galPrev">◀</button>
+        <input type="range" id="galRange" min="0" max="5" value="0">
+        <button class="btn" id="galNext">▶</button>
+        <button class="btn" id="galPlay">播放</button>
+        <span class="tag" id="galCount"></span>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <h3>当前帧</h3>
+        <div id="galInfo"></div>
+      </div>
+      <div class="card">
+        <h3>场景概况</h3>
+        <div id="galSceneInfo"></div>
+      </div>
+    </div>
+  </div>
+
+  <h2 style="margin:34px 0 14px;font-size:16px">全部帧</h2>
+  <div class="grid" id="galThumbs" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))"></div>
+</section>
+
+<!-- ================= 多模态对照 ================= -->
+<section id="compare">
+  <h1>同一帧的多模态对照</h1>
+  <p class="lead">拖滑块把 <b>可见光</b> 和任一其他模态做<b>淡入淡出叠加</b>，
+    可以看出标注框、目标轮廓在各模态之间是否对齐——这是检验仿真一致性的最快办法。</p>
+
+  <div class="row" style="margin-bottom:16px">
+    <div class="seg" id="cmpScene"></div>
+    <div class="seg" id="cmpMod"></div>
+    <label class="row" style="gap:6px;font-size:13px;color:var(--dim)">
+      <input type="checkbox" id="cmpBoxes" checked> 显示标注框
+    </label>
+  </div>
+
+  <div class="card" style="padding:12px">
+    <div class="viewer" id="cmpViewer" style="aspect-ratio:4/3">
+      <img id="cmpA" alt="">
+      <img id="cmpB" class="overlay" style="object-fit:contain" alt="">
+      <svg class="overlay" id="cmpSvg"></svg>
+      <div class="ovl-tl" id="cmpTL"></div>
+    </div>
+    <div class="ctl">
+      <span class="mono muted" style="font-size:12px">可见光</span>
+      <input type="range" id="cmpMix" min="0" max="100" value="50">
+      <span class="mono muted" style="font-size:12px" id="cmpBLabel"></span>
+      <button class="btn" id="cmpPrev">◀</button>
+      <span class="tag" id="cmpCount"></span>
+      <button class="btn" id="cmpNext">▶</button>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 点云 ================= -->
+<section id="lidar">
+  <h1>激光雷达点云</h1>
+  <p class="lead">905 nm 脉冲飞行时间，光束在方位/俯仰栅格上逐条求交，返回强度按
+    <b>激光雷达链路方程</b>算光子数，噪声底由「反射率 10% 目标的作用距离」单点标定。
+    下面是浏览器端实时投影的 <b>3D 点云</b>，可按反射强度或距离着色，鼠标拖动旋转。</p>
+
+  <div class="row" style="margin-bottom:16px">
+    <div class="seg" id="pcScene"></div>
+    <div class="seg" id="pcColor"></div>
+    <label class="row" style="gap:6px;font-size:13px;color:var(--dim)">
+      <input type="checkbox" id="pcSpin" checked> 自动旋转
+    </label>
+  </div>
+
+  <div class="grid g2" style="grid-template-columns:minmax(0,1fr) 300px">
+    <div class="card" style="padding:12px">
+      <div class="viewer" id="pcViewer" style="aspect-ratio:4/3">
+        <canvas id="pcCanvas"></canvas>
+        <div class="ovl-tl" id="pcTL"></div>
+        <div class="ovl-br" id="pcBR"></div>
+      </div>
+      <div class="ctl">
+        <button class="btn" id="pcPrev">◀</button>
+        <input type="range" id="pcRange" min="0" max="5" value="0">
+        <button class="btn" id="pcNext">▶</button>
+        <button class="btn" id="pcReset">复位视角</button>
+        <span class="tag" id="pcCount"></span>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <h3>点云统计</h3>
+        <div id="pcInfo"></div>
+      </div>
+      <div class="card">
+        <h3>距离图</h3>
+        <div class="viewer" style="aspect-ratio:16/9">
+          <img id="pcRangeImg" alt="">
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 雷达 ================= -->
+<section id="radar">
+  <h1>毫米波雷达检测</h1>
+  <p class="lead">弓形布束 → 面元 PO 散射 → 雷达方程 + 处理增益 → 检出点。
+    下面把<b>距离-方位原始图</b>和<b>检出的点云（俯视）</b>并排显示，
+    点按信噪比着色，虚线为 MTI 多普勒门限剔除掉的地物。</p>
+
+  <div class="row" style="margin-bottom:16px">
+    <div class="seg" id="rdScene"></div>
+    <div class="seg" id="rdView"></div>
+  </div>
+
+  <div class="grid g2" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr) 300px">
+    <div class="card" style="padding:12px">
+      <div class="viewer" id="rdViewer" style="aspect-ratio:4/3">
+        <img id="rdImg" alt="">
+        <div class="ovl-tl" id="rdTL"></div>
+        <div class="ovl-br" id="rdBR"></div>
+      </div>
+      <div class="ctl">
+        <button class="btn" id="rdPrev">◀</button>
+        <input type="range" id="rdRange" min="0" max="5" value="0">
+        <button class="btn" id="rdNext">▶</button>
+        <span class="tag" id="rdCount"></span>
+      </div>
+    </div>
+
+    <div class="card" style="padding:12px">
+      <div class="viewer" id="rdPtViewer" style="aspect-ratio:4/3">
+        <canvas id="rdCanvas"></canvas>
+        <div class="ovl-tl" id="rdPtTL"></div>
+        <div class="ovl-br" id="rdPtBR"></div>
+      </div>
+      <div class="ctl">
+        <span class="mono muted" style="font-size:12px">检出点俯视图（距离 / 方位）</span>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <h3>检测统计</h3>
+        <div id="rdInfo"></div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <h3>链路预算余量</h3>
+        <div id="rdBudget"></div>
+      </div>
+      <div class="card">
+        <h3>3D 包围盒</h3>
+        <div id="rdBoxes" class="mono" style="font-size:12px"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 参数实验 ================= -->
+<section id="explore">
+  <h1>改参数，立刻看到物理结果</h1>
+  <p class="lead">下面这些曲线是<b>在浏览器里用与仿真内核完全相同的公式</b>实时算出来的：
+    雷达方程、ITU-R P.838 雨衰、Koschmieder 能见度、激光雷达链路。
+    拖动滑块就能看出「换波段 / 下雨 / 拉远」到底损失多少——这正是仿真器在后台做的事。</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>雷达最大探测距离</h3>
+      <div class="slider"><label>目标 RCS</label><span class="v" id="exRcsV">0 dBsm</span>
+        <input type="range" id="exRcs" min="-30" max="20" step="0.5" value="0"></div>
+      <div class="slider"><label>降雨强度</label><span class="v" id="exRainV">0 mm/h</span>
+        <input type="range" id="exRain" min="0" max="64" step="1" value="0"></div>
+      <div class="slider"><label>发射功率</label><span class="v" id="exPtxV">20 dBm</span>
+        <input type="range" id="exPtx" min="0" max="60" step="1" value="20"></div>
+      <div class="slider"><label>累积脉冲数（处理增益）</label><span class="v" id="exNchV">64</span>
+        <input type="range" id="exNch" min="1" max="512" step="1" value="64"></div>
+      <canvas id="exRadarCanvas" style="width:100%;height:230px;margin-top:14px"></canvas>
+      <div class="note" id="exRadarNote"></div>
+    </div>
+
+    <div class="card">
+      <h3>光学 / 红外 / 激光 大气衰减</h3>
+      <div class="slider"><label>能见度</label><span class="v" id="exVisV">20 km</span>
+        <input type="range" id="exVis" min="0.2" max="40" step="0.2" value="20"></div>
+      <div class="slider"><label>降雨强度</label><span class="v" id="exRain2V">0 mm/h</span>
+        <input type="range" id="exRain2" min="0" max="64" step="1" value="0"></div>
+      <canvas id="exOptCanvas" style="width:100%;height:230px;margin-top:14px"></canvas>
+      <div class="note" id="exOptNote"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>各波段最大作用距离表（当前滑块设定）</h3>
+    <table class="t" id="exTable"></table>
+  </div>
+</section>
+
+<!-- ================= 关于 ================= -->
+<section id="about">
+  <h1>原理、局限与离线部署</h1>
+  <p class="lead">这个仓库做一件事：<b>输入一个 3D 模型，离线生成一套带标注的多模态传感器数据集</b>。</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>四个模态怎么算的</h3>
+      <div class="kv"><span>可见光</span><span>Blender 4.5 无头 Cycles</span></div>
+      <div class="kv"><span>红外</span><span>逐面能量平衡 + Planck 波段积分</span></div>
+      <div class="kv"><span>毫米波雷达</span><span>面元 PO + 雷达方程 + 雨衰</span></div>
+      <div class="kv"><span>激光雷达</span><span>脉冲 TOF + 链路方程</span></div>
+      <div class="kv"><span>标注</span><span>COCO（掩膜/投影）+ PLY 点云</span></div>
+      <div class="kv"><span>依赖</span><span>numpy · Blender · 无网络</span></div>
+    </div>
+    <div class="card">
+      <h3>数值可信度</h3>
+      <div class="kv"><span>光学亮度</span><span>对齐 11 张实拍照片</span></div>
+      <div class="kv"><span>红外 NUC</span><span>固定图案相关 0.962</span></div>
+      <div class="kv"><span>雷达雨衰</span><span>2 km Ka：35.1 → 28.8 dB</span></div>
+      <div class="kv"><span>自检</span><span>20 项全 PASS</span></div>
+      <div class="kv"><span>单帧耗时</span><span>IR+雷达 ≈2.2 s</span></div>
+    </div>
+  </div>
+
+  <h2 style="margin:30px 0 12px;font-size:16px">离线部署</h2>
+  <pre class="code">
+# 1. 环境（无需联网，全部随仓库或本机已装）
+set PYTHONPATH=%CD%
+env\Scripts\python.exe -m simkit selftest        :: 20 项自检
+
+# 2. 生成一套数据集
+env\Scripts\python.exe -m simkit gen ^
+  -c scenes\final_air_uav.json ^
+  -o out\final_air -n 6 -s ir,radar,lidar,optical
+
+# 3. 合并成一份 COCO
+env\Scripts\python.exe tools\merge_dataset.py out\dataset out\final_air
+
+# 4. 导出这个网站的数据
+env\Scripts\python.exe tools\export_web.py . out
+
+# 5. 本地起个静态服务器（或直接双击 index.html）
+python -m http.server 8080 --directory web</pre>
+
+  <h2 style="margin:26px 0 12px;font-size:16px">已知局限</h2>
+  <div class="card">
+    <div class="kv"><span>雷达 RCS</span><span>几何 PO + rcs_db 覆盖，非实测</span></div>
+    <div class="kv"><span>海面</span><span>六正弦叠加，无白冠、无破碎波</span></div>
+    <div class="kv"><span>红外预览</span><span>MWIR/LWIR 经 AGC 后高度相关</span></div>
+    <div class="kv"><span>天气</span><span>晴/阴/雨三档，缺雾、雪、沙尘</span></div>
+    <div class="kv"><span>光学标定</span><span>仅标定天空，地面与阴影未单独标</span></div>
+  </div>
+
+  <p class="note" style="margin-top:22px">
+    本项目为<b>仿真工具</b>，输出用于算法训练与验证；数值为工程近似，
+    不替代实测标定。模型资源来自 NASA 3D Resources（公有领域）与 Poly Haven（CC0）。
+  </p>
+</section>
+
+</main>
+
+<footer>simkit · 纯离线多模态传感器仿真 · <span id="genInfo"></span></footer>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+{
+ "seed": 31,
+ "ground": {
+  "enabled": true,
+  "type": "sea",
+  "size": 900,
+  "nx": 56,
+  "ny": 56,
+  "wind_ms": 9,
+  "mat": "seawater",
+  "z": 0
+ },
+ "weather": {
+  "states": [
+   {
+    "preset": "clear",
+    "wind_ms": 5,
+    "sun_elev_deg": 40
+   },
+   {
+    "preset": "cloudy",
+    "wind_ms": 9,
+    "sun_elev_deg": 33
+   },
+   {
+    "preset": "rain",
+    "rain_mmh": 7,
+    "wind_ms": 13,
+    "sun_elev_deg": 24
+   }
+  ]
+ },
+ "sun": {
+  "elev_deg": 40,
+  "az_deg": 150,
+  "irradiance": 700,
+  "on": true
+ },
+ "air": {
+  "temp_c": 20,
+  "rh": 0.75,
+  "wind_mps": 9
+ },
+ "objects": [
+  {
+   "name": "boat_target",
+   "cls": "boat",
+   "shape": "obj",
+   "model": "../assets/models/ship_medium.obj",
+   "decimate": 6000,
+   "scale": 0.45,
+   "pos": [
+    0,
+    0,
+    0.4
+   ],
+   "vel": [
+    -2.4,
+    2.4,
+    0
+   ],
+   "rot": 28,
+   "mat": "painted_metal",
+   "temp_c": 27,
+   "rcs_db": 12
+  }
+ ],
+ "sensors": {
+  "ir_camera": {
+   "pos": [
+    0,
+    -150,
+    5
+   ],
+   "look_at": [
+    0,
+    0,
+    3
+   ],
+   "fov_deg": 12,
+   "width": 480,
+   "height": 360
+  },
+  "optical": {
+   "pos": [
+    0,
+    -150,
+    5
+   ],
+   "look_at": [
+    0,
+    0,
+    3
+   ],
+   "fov_deg": 12,
+   "width": 640,
+   "height": 480
+  },
+  "radar": {
+   "pos": [
+    0,
+    -150,
+    5
+   ],
+   "look_at": [
+    0,
+    0,
+    4
+   ],
+   "band": "Ka",
+   "az_span_deg": 6,
+   "el_span_deg": 4,
+   "n_az": 80,
+   "n_el": 18,
+   "bandwidth_mhz": 200,
+   "n_samples": 512,
+   "chirp_us": 50,
+   "n_chirps": 64,
+   "tx_power_dbm": 23,
+   "det_snr_db": 11,
+   "ground_clutter_db": -35,
+   "clutter_density": 0,
+   "mti_min_vr_mps": 2
+  },
+  "lidar": {
+   "pos": [
+    0,
+    -150,
+    5
+   ],
+   "look_at": [
+    0,
+    0,
+    4
+   ],
+   "fov_deg": 14,
+   "n_az": 440,
+   "n_el": 80,
+   "max_range_m": 700,
+   "range_spec_m": 350,
+   "pulse_energy_nj": 1200,
+   "aperture_mm": 30,
+   "wavelength_nm": 905
+  }
+ },
+ "ir": {
+  "bands": [
+   "mwir",
+   "lwir"
+  ],
+  "netd_mk": 30,
+  "psf_px": 1.2,
+  "nuc": {
+   "enabled": true,
+   "prnu": 0.008,
+   "dsnu_counts": 25,
+   "column_fpn_counts": 6,
+   "dead_px": 0.0002,
+   "seed": 12345
+  }
+ },
+ "optical": {
+  "samples": 16,
+  "exposure": -1
+ },
+ "frames": {
+  "n": 6,
+  "dt": 0.5
+ }
+}
