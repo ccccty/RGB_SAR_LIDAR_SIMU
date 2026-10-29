@@ -87,7 +87,25 @@ function send(ws, id, method, params) {
     const shot = await send(ws, idc++, 'Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
     fs.writeFileSync(path.join(OUT, t + '.png'), Buffer.from(shot.result.data, 'base64'));
   }
-  console.log(JSON.stringify({ errors: errors, report: report }, null, 1));
+  // Every modality button the gallery offers must actually resolve to an image.
+  // A button whose frame entry is missing renders a blank pane, which is the
+  // failure mode this catches.
+  await evalJs('document.querySelectorAll("#tabs button")[0].click()');
+  await sleep(600);
+  const mods = [];
+  const nmods = await evalJs('document.querySelectorAll("#galMod button").length');
+  for (let i = 0; i < (nmods || 0); i++) {
+    await evalJs('document.querySelectorAll("#galMod button")[' + i + '].click()');
+    await sleep(700);
+    mods.push(await evalJs('(() => { var im=document.getElementById("galImg");' +
+      'var b=[].slice.call(document.querySelectorAll("#galMod button"))[' + i + '];' +
+      'return {label: b ? b.textContent : "?", src: (im.getAttribute("src") || ""),' +
+      'w: im.naturalWidth, h: im.naturalHeight, shown: im.style.display !== "none"}; })()'));
+  }
+  const badMods = mods.filter(m => !m || m.w === 0 || !m.shown);
+
+  console.log(JSON.stringify({ errors: errors, report: report,
+    mods: mods, badMods: badMods }, null, 1));
   ws.close();
   proc.kill();
   await sleep(400);
