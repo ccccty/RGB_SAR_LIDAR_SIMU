@@ -29,35 +29,42 @@ Windows 上解压即用。面向目标检测 / 多模态融合算法的训练与
 
 ## 2. 快速开始
 
+一条命令跑完整条流水线（三个场景 → 三份数据集 → 合并 COCO → 网站数据 → 缩略图）：
+
 ```powershell
-# 自检（20 项，含 NUC 固定性、波段发射率、海面粗糙度、MTI 门控）
 set PYTHONPATH=%CD%
-env\Scripts\python.exe -m simkit selftest
+env\Scripts\python.exe -m simkit selftest     # 20 项自检，先确认内核没坏
+env\Scripts\python.exe tools\build_all.py     # 全部跑一遍
+node tools\serve_web.js                        # http://127.0.0.1:18080
+```
 
-# 生成一套三模态数据集：6 帧、三天气、光学 + 双波段红外 + 雷达
-env\Scripts\python.exe -m simkit gen ^
-  -c scenes\final_air_uav.json ^
-  -o out\final_air -n 6 -s ir,radar,optical
+`build_all.py` 只是按顺序调用下面四条命令并逐步计时、出错即停，等价于手打：
 
-# 加激光雷达
-env\Scripts\python.exe -m simkit gen ^
-  -c scenes\final_air_uav.json ^
-  -o out\final_air -n 6 -s ir,radar,lidar,optical
+```powershell
+# 1. 生成：6 帧、三天气、双波段红外 + 雷达 + 激光 + 光学
+env\Scripts\python.exe -m simkit gen -c scenes\final_air_uav.json      -o out\final_air    -n 6 -s ir,radar,lidar,optical
+env\Scripts\python.exe -m simkit gen -c scenes\final_ground_vehicle.json -o out\final_ground -n 6 -s ir,radar,lidar,optical
+env\Scripts\python.exe -m simkit gen -c scenes\final_sea_boat.json     -o out\final_sea    -n 6 -s ir,radar,lidar,optical
 
-# 三个场景合并成一份 COCO
+# 2. 三个场景合并成一份 COCO
 env\Scripts\python.exe tools\merge_dataset.py out\dataset out\final_air out\final_ground out\final_sea
 
-# 导出网站数据，然后本地起个静态服务打开 index.html
+# 3. 导出网站数据
 env\Scripts\python.exe tools\export_web.py . out
-node tools\serve_web.js          # http://127.0.0.1:18080
+
+# 4. 拼缩略图，肉眼过一遍
+env\Scripts\python.exe tools\contact_sheet.py out\final_air out\sheet_air.png 6
 ```
+
+只想刷网站不重跑仿真：`build_all.py --skip-gen`。
+没有 Blender（或只是想快点）：加 `--skip-optical`，其余模态纯 numpy，秒级出图。
 
 网站也可以**直接双击 `index.html`**（`file://`）打开：
 `tools/export_web.py` 除了写 `data/manifest.json`，还会写一份 `data/boot.js`
 （同样的数据，包成一句 `window.SIMKIT_DATA = {...}`）。浏览器不允许
 `file://` 下 `fetch`，但允许普通 `<script>`，所以断网机器上不用起服务也能看全部内容。
 
-两个探针脚本可以直接复核：
+四个探针脚本可以直接复核（都不需要预先起服务，各自内嵌了一个临时静态服务器）：
 
 ```powershell
 node tools\probe_web.js                      # 起临时服务，跑真实页面，查 6 个页签
@@ -65,8 +72,6 @@ node tools\probe_web.js https://...           # 换成查线上部署
 node tools\probe_file.js                     # 查 file:// 双击打开
 node tools\probe_canvas.js                   # 查画布真的画了东西、滑块真的会算
 ```
-
-没有 Blender 时把 `optical` 从 `-s` 里去掉即可，其余模态纯 numpy，秒级出图。
 
 ---
 
@@ -88,7 +93,8 @@ simkit/                仿真内核（纯 numpy）
 blender/render_optical.py   Blender 端渲染脚本
 scenes/                 场景配置（空中 / 地面 / 海面）
 assets/                 3D 模型与材质
-tools/                  数据集合并、预览拼接、Web 导出、雷达预算表、站点探针
+tools/                  build_all.py（一条命令跑全流程）、数据集合并、缩略图、Web 导出、
+                        雷达预算表、站点探针（probe_*，自带临时服务器）
 index.html app.js app.css  静态网站（无构建步骤、零依赖，GitHub Pages 直接托管）
 docs/                   标定与验证记录
 ```
@@ -152,13 +158,7 @@ docs/                   标定与验证记录
 和上面的 25–29 dB 是同一个数。余量为负就说明目标已出作用距离，出 0 点是物理结果而不是 bug。
 
 合并后的 COCO：optical / ir_mwir / ir_lwir / lidar 各 18 图 18 框，类别 `uav / vehicle / boat`。
-
-想肉眼过一遍整套输出，用 `tools/contact_sheet.py` 拼一张缩略图（每种模态一行，
-21 秒生成三张，2000 行代码以内不依赖任何库）：
-
-```powershell
-.\env\Scripts\python.exe tools\contact_sheet.py out\final_air out\sheet_air.png 6
-```
+逐帧点云与雷达点另存 PLY / JSON，可直接喂给需要点云输入的模型。
 
 ---
 
