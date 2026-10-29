@@ -311,9 +311,19 @@ def main(dest, runs):
             rp = os.path.join(src, "labels/radar", "%06d.json" % f)
             if os.path.exists(rp):
                 d = json.load(open(rp, encoding="utf-8"))
+                # The shipped image may have been box-averaged down, so the peak
+                # pixel from the kernel is rescaled into the shipped image's
+                # coordinate space here rather than in the browser.
+                pk = d.get("ra_peak")
+                if pk and pk.get("w"):
+                    ra = fr["mods"].get("radar_ra") or {}
+                    sx = (ra.get("w") or pk["w"]) / float(pk["w"])
+                    sy = (ra.get("h") or pk["h"]) / float(pk["h"])
+                    pk = dict(px=pk["px"] * sx, py=pk["py"] * sy, db=pk["db"],
+                              w=ra.get("w"), h=ra.get("h"))
                 fr["radar"] = dict(
                     n=d.get("num_points", 0), clutter=d.get("clutter_count", 0),
-                    boxes=d.get("boxes_3d", []),
+                    boxes=d.get("boxes_3d", []), peak=pk,
                     pts=[[round(p["range"], 2), round(p["az"], 3), round(p["el"], 3),
                           round(p["snr_db"], 1), p["obj"]] for p in d.get("points", [])],
                 )

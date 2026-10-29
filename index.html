@@ -162,6 +162,7 @@
     <div class="card" style="padding:12px">
       <div class="viewer" id="rdViewer" style="aspect-ratio:4/3">
         <img id="rdImg" alt="">
+        <canvas id="rdOverlay"></canvas>
         <div class="ovl-tl" id="rdTL"></div>
         <div class="ovl-br" id="rdBR"></div>
       </div>
@@ -171,6 +172,9 @@
         <button class="btn" id="rdNext">▶</button>
         <span class="tag" id="rdCount"></span>
       </div>
+      <label class="mono muted" style="font-size:12px;display:block;margin-top:8px">
+        <input type="checkbox" id="rdMark"> 在图上标出最强回波（否则只是原始距离-角度图）
+      </label>
     </div>
 
     <div class="card" style="padding:12px">
