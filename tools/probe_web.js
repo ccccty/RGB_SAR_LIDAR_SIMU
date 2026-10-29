@@ -94,9 +94,15 @@ function send(ws, id, method, params) {
   await sleep(600);
   const mods = [];
   const nmods = await evalJs('document.querySelectorAll("#galMod button").length');
+  // Wait for the decode, not for a guessed delay: over a real network a 700 ms
+  // nap reports a slow image as a missing one.
+  const settle = 'new Promise(function(res){ var im=document.getElementById("galImg");' +
+    'var t0=Date.now(); (function tick(){ if (im.complete && im.naturalWidth>0) return res(1);' +
+    'if (Date.now()-t0>8000) return res(0); setTimeout(tick,100); })(); })';
   for (let i = 0; i < (nmods || 0); i++) {
     await evalJs('document.querySelectorAll("#galMod button")[' + i + '].click()');
-    await sleep(700);
+    await evalJs(settle);
+    await sleep(120);
     mods.push(await evalJs('(() => { var im=document.getElementById("galImg");' +
       'var b=[].slice.call(document.querySelectorAll("#galMod button"))[' + i + '];' +
       'return {label: b ? b.textContent : "?", src: (im.getAttribute("src") || ""),' +
