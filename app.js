@@ -18,7 +18,12 @@
     radar_ra: '雷达距离-角度', radar: '雷达距离-多普勒',
     lidar_range: '激光距离', lidar_intensity: '激光强度'
   };
-  var MODS = ['optical', 'mwir', 'lwir', 'radar_ra', 'radar', 'lidar_range', 'lidar_intensity'];
+  var MODS_ALL = ['optical', 'mwir', 'lwir', 'radar_ra', 'radar', 'lidar_range', 'lidar_intensity'];
+  // Only offer modalities that are actually in the manifest: the range-Doppler
+  // image is written by the kernel but is a 1600x64 strip with a 2 px target, so
+  // export_web.py leaves it out of the site on purpose. An empty tab is worse
+  // than no tab.
+  var MODS = MODS_ALL.slice();
   var WNAME = { clear: '晴', cloudy: '阴', rain: '雨', fog: '雾', storm: '暴风雨' };
 
   var MAN = null;
@@ -728,8 +733,18 @@
 
   // ---------- boot ----------
   function boot() {
+    var have = {};
+    MAN.scenes.forEach(function (s) {
+      s.frames.forEach(function (f) {
+        Object.keys(f.mods || {}).forEach(function (k) { have[k] = 1; });
+      });
+    });
+    MODS = MODS_ALL.filter(function (m) { return have[m]; });
+    if (MODS.indexOf(S.mod) < 0) S.mod = MODS[0];
+
     $('genInfo').textContent = MAN.scenes.length + ' 场景 · ' +
-      MAN.scenes.reduce(function (a, s) { return a + s.frames.length; }, 0) + ' 帧';
+      MAN.scenes.reduce(function (a, s) { return a + s.frames.length; }, 0) + ' 帧 · ' +
+      MODS.length + ' 种模态';
     galSync(); pcSync(); rdSync(); renderCompare();
     if (BANDS) exploreUpdate();
   }
