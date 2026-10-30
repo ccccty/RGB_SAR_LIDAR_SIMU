@@ -88,8 +88,22 @@ def write_manifest(cfg, states, out_dir, part=None):
         path = os.path.join(out_dir, "optical_frames.part%03d.json" % int(part))
     # "frame" is the global frame id. Without it a chunked run renders every
     # chunk as 000000.png.. and the chunks silently overwrite each other.
+    def _cams(s):
+        out = {}
+        for k, v in ((s.get("cfg") or {}).get("sensors") or {}).items():
+            if isinstance(v, dict) and "pos" in v:
+                out[k] = dict(pos=[float(x) for x in v["pos"]],
+                              look_at=[float(x) for x in v.get("look_at", [0, 0, 0])],
+                              fov_deg=v.get("fov_deg"))
+        return out
+
+    # "camera" is per frame because a seeker/gimbal mount moves: without it the
+    # optical renderer would shoot every frame from the static config pose while
+    # IR/radar/lidar tracked the target, and the boxes would disagree.
     lab.write_json(path, dict(frames=[dict(frame=int(s["frame"]), t=s["t"],
                                             objects=s["poses"],
+                                            camera=_cams(s),
+                                            range_m=s.get("range_m"),
                                             weather=dict(s.get("weather") or {}))
                                        for s in states]))
     return path

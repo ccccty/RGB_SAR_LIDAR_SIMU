@@ -212,5 +212,48 @@ def run():
               len(still) == 0 and len(moving) > 0,
               "%d moving kept, %d stationary kept" % (len(moving), len(still)))
 
+# --- radiometric calibration anchors ---------------------------------
+    # These pin the numbers the IR forward model must reproduce. They are the
+    # self-checks published in docs/IR_经验模型与改进方案.md, so a change that
+    # silently rescales the whole modality fails here instead of shipping.
+    from . import weather as wmod
+    L8_12 = float(ir.planck_band(np.array([300.0]), 8.0, 12.0)[0])
+    L3_5 = float(ir.planck_band(np.array([300.0]), 3.0, 5.0)[0])
+    ok &= _ok("band radiance 8-12um @300K ~ 38.5 W/m2sr", abs(L8_12 - 38.5) < 1.5,
+              "%.2f" % L8_12)
+    dL = (float(ir.planck_band(np.array([301.0]), 8.0, 12.0)[0]) - L8_12)
+    ok &= _ok("dL/dT 8-12um @300K ~ 0.63 W/m2sr/K", abs(dL - 0.63) < 0.05, "%.3f" % dL)
+    ok &= _ok("MWIR/LWIR band radiance ratio 0.02..0.10", 0.02 < L3_5 / L8_12 < 0.10,
+              "%.3f" % (L3_5 / L8_12))
+
+    clear = wmod.derive(wmod.resolve({"preset": "clear", "air_temp_c": 28.0, "rh": 0.6}))
+    tm = clear["tau_ir_per_km"]["mwir"]
+    tl = clear["tau_ir_per_km"]["lwir"]
+    ok &= _ok("clear-sky MWIR extinction 0.2..0.8 /km", 0.2 < tm < 0.8, "%.3f" % tm)
+    ok &= _ok("clear-sky LWIR extinction 0.05..0.4 /km", 0.05 < tl < 0.4, "%.3f" % tl)
+    ok &= _ok("MWIR extincts more than LWIR (aerosol + CO2)", tm > tl,
+              "%.3f vs %.3f" % (tm, tl))
+
+    km = clear["sky_kappa"]["mwir"]
+    kl = clear["sky_kappa"]["lwir"]
+    ok &= _ok("sky coupling MWIR 0.02..0.25 (near transparent)", 0.02 < km < 0.25,
+              "%.3f" % km)
+    ok &= _ok("sky coupling LWIR 0.35..0.70 (near opaque)", 0.35 < kl < 0.70,
+              "%.3f" % kl)
+    ok &= _ok("MWIR sky is far darker than LWIR sky", km < 0.4 * kl,
+              "%.3f vs %.3f" % (km, kl))
+
+    # path radiance must exist: a 10 km path adds more than a 1 km one
+    b_air = float(ir.planck_band(np.array([clear["t_air_k"]]), 8.0, 12.0)[0])
+    p1 = (1.0 - np.exp(-tl * 1.0)) * b_air
+    p10 = (1.0 - np.exp(-tl * 10.0)) * b_air
+    ok &= _ok("path radiance grows with range", p10 > 3.0 * p1,
+              "%.3f -> %.3f W/m2sr" % (p1, p10))
+
+    # --- radar detection statistics --------------------------------------
+    pfa = 1e-6
+    det_db = 10.0 * np.log10(-np.log(pfa))
+    ok &= _ok("Pfa=1e-6 threshold ~ 11.4 dB", abs(det_db - 11.40) < 0.05, "%.2f dB" % det_db)
+
     print("\nRESULT:", "ALL PASS" if ok else "FAILURES PRESENT")
     return ok

@@ -50,170 +50,16 @@ def object_poses(cfg, t, jitter):
 
 
 def plan_frames(cfg, n_frames, base_seed, dt, frame_offset=0, total_frames=None):
-    """Same randomisation for every sensor: decide the world state once.
+    """Delegate to simkit.plan: a run is a sequence of continuous clips.
 
-    frame_offset shifts the whole plan, which is what lets a large run be
-    generated in several independent chunks and stitched back together: chunk k
-    starts its random stream where chunk k-1 stopped, so the result is identical
-    to one long run.
+    Kept as a module-level name because merge_parts and the self-test import it,
+    but the per-frame randomisation that used to live here is gone on purpose:
+    independent draws are what made the previous dataset incoherent.
     """
-    r = cfg.get("randomize", {})
-    mot = cfg.get("motion", {})
-    turntable = mot.get("mode") == "turntable"
-    center = np.array(mot.get("center", [0.0, 0.0, 0.0]), float)
-    wstates = weather.states_of(cfg)
-    tot = int(total_frames or n_frames)
-    # Static scenery footprints, computed once: placement must not drop the
-    # labelled target behind (or inside) one of them.
-    blockers = []
-    for o in cfg.get("objects", []):
-        if o.get("label", True):
-            continue
-        try:
-            _m, lo, hi = scene.prepare_mesh(o, cfg.get("_base_dir", "."))
-        except Exception:
-            continue
-        c = (np.asarray(lo, float) + np.asarray(hi, float)) / 2.0 \
-            + np.asarray(o.get("pos", [0, 0, 0]), float)
-        rad = 0.5 * float(np.linalg.norm(np.asarray(hi, float) - np.asarray(lo, float)))
-        if rad > 0:
-            blockers.append((c, rad))
-    states = []
-    for f0 in range(n_frames):
-        f = f0 + int(frame_offset)
-        t = f * dt
-        rng = _rng(base_seed * 7919 + f)
-        jit = {}
-        if r.get("enabled", True):
-            for o in cfg.get("objects", []):
-                jxy = float(r.get("pose_jitter_xy_m", 0.0))
-                jyaw = float(r.get("pose_jitter_yaw_deg", 0.0))
-                jz = float(r.get("pose_jitter_z_m", 0.0))
-                if jxy > 0 or jyaw > 0 or jz > 0:
-                    jit[o["name"]] = dict(
-                        dpos=[rng.normal(0, jxy), rng.normal(0, jxy), rng.normal(0, jz)],
-                        dyaw=rng.normal(0, jyaw),
-                    )
-        # Place the labelled target somewhere inside the sensor's field of view
-        # at a sampled range. Without this a 1000-frame set is 1000 pictures of
-        # the same silhouette at the same distance, which trains nothing.
-        pl = r.get("placement") if r.get("enabled", True) else None
-        if pl:
-            cam = (cfg.get("sensors", {}) or {}).get(pl.get("camera", "ir_camera"))
-            if cam is None:
-                cam = (cfg.get("sensors", {}) or {}).get("optical")
-            if cam is not None:
-                half_x = 0.5 * float(cam.get("fov_deg", 30.0)) * float(pl.get("fov_frac", 0.8))
-                asp = float(cam.get("height", 3)) / max(float(cam.get("width", 4)), 1e-9)
-                half_y = half_x * asp
-                p0, right, up, fwd = scene.sensor_basis(
-                    cam["pos"], cam["look_at"], cam.get("up", (0, 0, 1)))
-                rng_lo, rng_hi = pl.get("range_m", [10.0, 50.0])
-                targets = pl.get("targets") or [o["name"] for o in cfg.get("objects", [])
-                                                if o.get("label", True)]
-                for nm in targets:
-                    spec = next((o for o in cfg.get("objects", []) if o["name"] == nm), None)
-                    if spec is None:
-                        continue
-                    # build_world puts the target at base + vel*t before the
-                    # jitter offset is added, so the offset has to cancel the
-                    # motion too or the sampled range only holds on frame 0.
-                    vel = np.array(spec.get("vel", [0, 0, 0]), float)
-                    base = np.array(spec.get("pos", [0, 0, 0]), float) + vel * t
-                    for _try in range(24):
-                        rang = float(rng.uniform(float(rng_lo), float(rng_hi)))
-                        # Angles are half-spans already scaled by fov_frac;
-                        # scaling again here made the fan narrower than
-                        # configured while the distance still came out right,
-                        # so ranges drifted past the requested maximum.
-                        az = np.radians(rng.uniform(-half_x, half_x))
-                        el = np.radians(rng.uniform(-half_y, half_y))
-                        d = fwd + np.tan(az) * right + np.tan(el) * up
-                        d = d / (np.linalg.norm(d) + 1e-12)
-                        if pl.get("keep_z"):
-                        # Ground/sea objects live at a fixed height, so the flat
-                        # ray has to be dropped onto that plane: keep the
-                        # horizontal aim, then re-derive the range. Forcing z
-                        # after the fact left the sampled elevation pointing
-                        # above or below the object, and the target fell out of
-                        # the frustum on most frames.
-                            dz = base[2] - float(p0[2])
-                            hz = np.hypot(d[0], d[1])
-                            if hz < 1e-6 or abs(fwd[2]) > 0.99:
-                                pos = np.asarray(p0, float) + d * rang
-                            else:
-                                horiz = float(np.clip(rang * hz, 1e-3, 1e5))
-                                # keep the sign/heading of the horizontal ray
-                                pos = np.array([p0[0] + d[0] / hz * horiz,
-                                                p0[1] + d[1] / hz * horiz,
-                                                base[2]])
-                            rang = float(np.linalg.norm(pos - np.asarray(p0, float)))
-                        else:
-                            pos = np.asarray(p0, float) + d * rang
-                        # Only rejects a candidate that sits behind scenery;
-                        # on the last attempt the loop keeps whatever it has so
-                        # a crowded scene still yields a frame.
-                        if not blockers or not _segment_blocked(p0, pos, blockers):
-                            break
-                    e = jit.setdefault(nm, dict(dpos=[0.0, 0.0, 0.0], dyaw=0.0))
-                    e["dpos"] = [float(pos[0] - base[0]), float(pos[1] - base[1]),
-                                 float(pos[2] - base[2])]
-        if turntable:
-            ang = 360.0 * f / max(tot, 1)
-            ca, sa = np.cos(np.radians(ang)), np.sin(np.radians(ang))
-            for o in cfg.get("objects", []):
-                p0 = np.array(o.get("pos", [0, 0, 0]), float) - center
-                pr = np.array([ca * p0[0] - sa * p0[1], sa * p0[0] + ca * p0[1], p0[2]]) + center
-                e = jit.setdefault(o["name"], dict(dpos=[0.0, 0.0, 0.0], dyaw=0.0))
-                e["dpos"] = [float(pr[0] - o.get("pos", [0, 0, 0])[0]),
-                             float(pr[1] - o.get("pos", [0, 0, 0])[1]), 0.0]
-                e["dyaw"] = float(e["dyaw"] + ang)
-        fr_cfg = json.loads(json.dumps(cfg))
-        if r.get("enabled", True):
-            if "temp_jitter_c" in r:
-                fr_cfg["air"]["temp_c"] = float(cfg["air"]["temp_c"]) + float(
-                    rng.uniform(-r["temp_jitter_c"], r["temp_jitter_c"]))
-            if "sun_az_jitter_deg" in r:
-                fr_cfg["sun"]["az_deg"] = float(cfg["sun"]["az_deg"]) + float(
-                    rng.uniform(-r["sun_az_jitter_deg"], r["sun_az_jitter_deg"]))
-        fr_cfg["_frame_seed"] = int(base_seed + f)
-        if r.get("enabled", True):
-            # sensor jitter: a dataset where every image is shot from the exact
-            # same point teaches the network that pose, not the object
-            js = float(r.get("sensor_jitter_m", 0.0))
-            jyaw_s = float(r.get("sensor_jitter_yaw_deg", 0.0))
-            if js > 0 or jyaw_s > 0:
-                for skey in ("ir_camera", "optical", "radar", "lidar", "sar"):
-                    sc = (fr_cfg.get("sensors", {}) or {}).get(skey)
-                    if not isinstance(sc, dict) or "pos" not in sc:
-                        continue
-                    dpos = rng.normal(0, js, 3) if js > 0 else np.zeros(3)
-                    sc["pos"] = [float(sc["pos"][0] + dpos[0]),
-                                 float(sc["pos"][1] + dpos[1]),
-                                 float(sc["pos"][2] + dpos[2] * 0.25)]
-                    la = np.array(sc.get("look_at", [0, 0, 0]), float)
-                    if jyaw_s > 0:
-                        v = la - np.asarray(sc["pos"], float)
-                        ang = np.radians(rng.normal(0, jyaw_s))
-                        ca, sa = np.cos(ang), np.sin(ang)
-                        la = np.asarray(sc["pos"], float) + np.array(
-                            [ca * v[0] - sa * v[1], sa * v[0] + ca * v[1], v[2]])
-                    sc["look_at"] = [float(la[0]), float(la[1]), float(la[2])]
-            # sensor-level parameter jitter, e.g. which radar band this frame uses
-            for skey, table in (r.get("sensor_choices") or {}).items():
-                sc = (fr_cfg.get("sensors", {}) or {}).get(skey)
-                if not isinstance(sc, dict):
-                    continue
-                for pkey, opts in table.items():
-                    if opts:
-                        sc[pkey] = opts[int(rng.integers(0, len(opts)))]
-        wst = wstates[f % len(wstates)]
-        fr_cfg["weather"] = dict(wst)
-        fr_cfg["_weather"] = weather.derive(wst)
-        if "temp_c" in wst:
-            fr_cfg.setdefault("air", {})["temp_c"] = float(wst["temp_c"])
-        yield dict(frame=f, t=t, jitter=jit, cfg=fr_cfg, weather=wst,
-                   poses=object_poses(cfg, t, jit))
+    from . import plan
+    for s in plan.plan_frames(cfg, n_frames, base_seed, dt,
+                              frame_offset=frame_offset, total_frames=total_frames):
+        yield s
 
 
 def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, quiet=False,
@@ -290,7 +136,7 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
         t, jit = s["t"], s["jitter"]
         fr_cfg = s["cfg"]
         if set(sensors) & {"ir", "radar", "lidar", "sar"}:
-            w = scene.build_world(cfg, t=t, jitter=jit)
+            w = scene.build_world(fr_cfg, t=0.0, jitter=jit)
             for o in w.objs:
                 # scenery objects carry no dataset class (they are geometry only)
                 o["cls_id"] = cls_id.get(o["cls"], 0) if o.get("label", True) else 0
@@ -314,6 +160,9 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                 coco_irs[bnm]["annotations"].extend(anns)
                 labels.write_json(os.path.join(out_dir, dirs["label_ir" + tag], "%06d.json" % f),
                                   dict(frame=f, sensor="ir", band=bnm or "lwir",
+                                       clip=s.get("clip"),
+                                       range_m=s.get("range_m"),
+                                       target_px=s.get("target_px"),
                                        weather=dict(fr_cfg.get("weather", {})),
                                        image=name, width=W, height=H,
                                        boxes=list(boxes.values()),
@@ -381,6 +230,7 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
             coco_lidar["annotations"].extend(anns)
             labels.write_json(os.path.join(out_dir, dirs["label_lidar"], "%06d.json" % f),
                               dict(frame=f, sensor="lidar", image=name, width=W, height=H,
+                                   clip=s.get("clip"), range_m=s.get("range_m"),
                                    weather=dict(fr_cfg.get("weather", {})),
                                    hit_ratio=round(out["hit_ratio"], 4),
                                    n_points=out["n_points"],

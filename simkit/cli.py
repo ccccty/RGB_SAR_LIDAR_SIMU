@@ -53,6 +53,30 @@ def cmd_merge(args):
     return 0
 
 
+def cmd_studio(args):
+    from . import studio
+    studio.serve(port=args.port, host=args.host)
+    return 0
+
+
+def cmd_plan(args):
+    from . import plan, scene
+    cfg = scene.load_config(args.scene)
+    n = int(args.frames or cfg.get("frames", {}).get("n", 1))
+    rows = plan.summary(cfg, n, cfg.get("seed", 0), cfg.get("frames", {}).get("dt", 0.2))
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=1))
+        return 0
+    print("%-5s %-9s %-8s %14s %16s %8s %8s" % ("clip", "mode", "weather",
+                                                 "range m", "target px", "v m/s", "a m/s2"))
+    for r in rows:
+        print("%-5d %-9s %-8s %6.0f..%-7.0f %7.1f..%-8.1f %8.1f %8.1f" % (
+            r["clip"], r["mode"], str(r["weather"]),
+            r["range_m"][0], r["range_m"][1], r["target_px"][0], r["target_px"][1],
+            r["speed_mps"], r["accel_mps2"]))
+    return 0
+
+
 def cmd_selftest(args):
     from .selftest import run
     run()
@@ -91,6 +115,17 @@ def main(argv=None):
     i = sub.add_parser("info", help="print a scene config")
     i.add_argument("-c", "--scene", required=True)
     i.set_defaults(func=cmd_info)
+
+    st = sub.add_parser("studio", help="local web UI: click parameters, build a dataset")
+    st.add_argument("-p", "--port", type=int, default=8808)
+    st.add_argument("--host", default="127.0.0.1")
+    st.set_defaults(func=cmd_studio)
+
+    pl = sub.add_parser("plan", help="show the per-clip trajectory of a scene")
+    pl.add_argument("-c", "--scene", required=True)
+    pl.add_argument("-n", "--frames", type=int, default=None)
+    pl.add_argument("--json", action="store_true")
+    pl.set_defaults(func=cmd_plan)
 
     s = sub.add_parser("selftest", help="run internal correctness checks")
     s.set_defaults(func=cmd_selftest)

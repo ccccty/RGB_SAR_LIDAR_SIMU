@@ -24,7 +24,8 @@ from simkit.mesh import Mesh  # noqa: E402
 
 cfg = sk_scene.load_config(CFG_PATH)
 opt = cfg.get("optical", {})
-cam_cfg = cfg["sensors"]["optical"]
+CAM_KEY = "optical"          # the sensor this renderer draws
+cam_cfg = cfg["sensors"][CAM_KEY]
 W = int(cam_cfg.get("width", 960))
 H = int(cam_cfg.get("height", 720))
 SAMPLES = int(opt.get("samples", 64))
@@ -199,6 +200,19 @@ def main():
                 pass
             sc.view_settings.exposure = float(opt.get("exposure", -2.5)) + (
                 -0.6 * cloud - 0.25 * min(1.0, float(w.get("rain_mmh", 0.0)) / 16.0))
+        # per-frame camera pose (seeker / gimbal): the physics passes track, so
+        # the optical pass must track with exactly the same pose
+        camf = (fr.get("camera") or {})
+        cpose = camf.get(CAM_KEY) or (list(camf.values())[0] if camf else None)
+        if cpose:
+            cpos = Vector(tuple(float(x) for x in cpose["pos"]))
+            cam.location = cpos
+            look = Vector(tuple(float(x) for x in cpose.get("look_at", [0, 0, 0])))
+            if (look - cpos).length > 1e-6:
+                cam.rotation_euler = (look - cpos).to_track_quat("-Z", "Y").to_euler()
+            fv = cpose.get("fov_deg")
+            if fv:
+                cam.data.angle = math.radians(float(fv))
         for name, pose in fr["objects"].items():
             if name in meshes:
                 ob = meshes[name]["ob"]

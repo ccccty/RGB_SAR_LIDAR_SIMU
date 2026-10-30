@@ -3,6 +3,7 @@ import numpy as np
 
 from . import materials as matlib
 from . import spectra as speclib
+from . import thermal
 from .scene import sensor_basis
 from .weather import IR_BANDS, band_name_of
 
@@ -163,24 +164,52 @@ def render(world, cfg, temps_k, cam=None):
     if tex > 0:
         rng_tex = np.random.default_rng(int(cfg.get("_frame_seed", 0)) * 131 + 7)
         temps_k = temps_k + rng_tex.normal(0.0, tex, temps_k.shape)
-    L_self = eps_face * planck_band(temps_k, band[0], band[1])
-    t_env = cfg.get("air", {}).get("temp_c", 20.0) + 273.15
-    L_env = planck_band(np.array([t_env]), band[0], band[1])[0]
-    L = transmittance(rng, tau) * (L_self + (1.0 - eps_face) * L_env)
-
-    # sky background: cold Swinbank sky (weather-aware), not a fixed fraction
     w = cfg.get("_weather")
-    t_sky = float(w["t_sky_k"]) if w else 0.0552 * t_env ** 1.5
-    L_sky = planck_band(np.array([t_sky]), band[0], band[1])[0]
+    t_env = cfg.get("air", {}).get("temp_c", 20.0) + 273.15
+    b_air = planck_band(np.array([t_env]), band[0], band[1])[0]
+    b_self = planck_band(temps_k, band[0], band[1])
+    L_self = eps_face * b_self
+
+    # Sky radiance is NOT a blackbody at the broadband sky temperature. In 3-5 um
+    # the sky is almost transparent (kappa 0.04-0.12) while in 8-12 um it is
+    # nearly opaque (0.40-0.55); using one broadband temperature in the band
+    # integral made MWIR sky about five times too bright and erased the contrast
+    # a seeker actually detects.
+    if w:
+        t_sky = float(w["t_sky_k"])
+        kap = float((w.get("sky_kappa") or {}).get(bname or "lwir", 0.5))
+    else:
+        t_sky = 0.0552 * t_env ** 1.5
+        kap = 0.5
+    L_sky = kap * b_air                       # what the camera sees looking up
+    L_sky_grey = planck_band(np.array([t_sky]), band[0], band[1])[0]
+
+    # What a surface reflects: sky above, air/ground below, weighted by the
+    # face's own view factor. A bare-metal target is 90 % reflection, so a
+    # hemispherical average would make every metal read as the air temperature.
+    nrm = thermal.face_normals(world)
+    vf_sky = 0.5 * (1.0 + np.clip(nrm[:, 2], -1.0, 1.0))
+    L_env = vf_sky * L_sky_grey + (1.0 - vf_sky) * b_air
+
+    # Isothermal path: the atmosphere both attenuates the target and adds its
+    # own emission. Omitting the second term biases every scene cold by an
+    # amount that grows with range, which teaches a detector "far = cold".
+    tau_f = transmittance(rng, tau)
+    L = tau_f * (L_self + (1.0 - eps_face) * L_env) + (1.0 - tau_f) * b_air
+
     img, depth, pid = rasterize(world, cam, L, background=L_sky)
     img = gaussian_blur(img, blur)
 
-    # NETD: noise expressed in radiance via dL/dT
-    dT = 3.0
-    dLdT = (planck_band(temps_k + dT, band[0], band[1]) -
-            planck_band(temps_k, band[0], band[1])).mean() / dT
+    # NETD is a temperature noise, so the radiance noise is netd * dL/dT and
+    # dL/dT must be taken per pixel: between 250 K and 350 K it changes by 22x in
+    # MWIR, so a single mean value over-amplifies hot regions and flattens cold
+    # ones.
+    t_map = np.asarray(radiance_to_temp(img, band), float).reshape(img.shape)
+    flat = t_map.ravel()
+    dLdT = (planck_band(flat + 1.0, band[0], band[1]) -
+            planck_band(flat, band[0], band[1])).reshape(img.shape)
     rng_noise = np.random.default_rng(int(cfg.get("_frame_seed", 0)))
-    img = img + rng_noise.normal(0.0, dLdT * netd, img.shape)
+    img = img + rng_noise.normal(0.0, 1.0, img.shape) * (dLdT * netd)
 
     # 16-bit counts: one fixed physical window (200..450 K) so every frame and
     # every scene shares the same radiometric scale.

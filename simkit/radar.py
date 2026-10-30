@@ -29,6 +29,7 @@ DEFAULTS = dict(
     az_span_deg=60.0, el_span_deg=16.0, n_az=64, n_el=8,
     noise_figure_db=11.0, loss_db=4.0, det_snr_db=12.0, mti_min_vr_mps=0.0,
     clutter_density=0.02, clutter_db=-10.0, antenna_eff=0.6,
+    pfa=None, swerling="I",
     specular_scale_db=-20.0, diffuse_gamma=0.06, ground_clutter_db=-30.0,
     beamwidth_az_deg=2.0, beamwidth_el_deg=12.0,
 )
@@ -154,6 +155,25 @@ def simulate(world, cfg):
             m = obj_of_beam == o["id"]
             sig[m] = 10.0 ** (float(o["rcs_db"]) / 10.0)
 
+    # Swerling target fluctuation. A deterministic RCS turns detection into a
+    # lookup table -- "target present => box" -- which no real radar provides and
+    # which teaches a detector nothing about missed detections. Swerling I draws
+    # one exponential per CPI (this frame); III uses two draws, i.e. a more
+    # specular and less variable target.
+    sw = str(rc.get("swerling", "I")).upper()
+    if sw in ("I", "II", "III", "IV"):
+        srng = np.random.default_rng(int(cfg.get("_frame_seed", 0)) * 31 + 7)
+        for o in world.objs:
+            m = obj_of_beam == o["id"]
+            if not m.any():
+                continue
+            u1 = max(float(srng.uniform()), 1e-9)
+            if sw in ("I", "II"):
+                f = -np.log(u1)
+            else:
+                f = -0.5 * (np.log(u1) + np.log(max(float(srng.uniform()), 1e-9)))
+            sig[m] *= f
+
     # radar equation
     tx_w = 10.0 ** ((float(rc["tx_power_dbm"]) - 30.0) / 10.0)
     bw_az = bw_az0
@@ -174,6 +194,15 @@ def simulate(world, cfg):
         if att:
             pr = pr * 10.0 ** (-(float(att) * 2.0 * (dist / 1000.0)) / 10.0)
     pr = np.nan_to_num(pr, nan=0.0, posinf=0.0)
+    # Threshold. A hand-picked det_snr_db hides what actually matters: the
+    # false-alarm rate it implies. For single-pulse square-law detection
+    # V_T = -ln(Pfa) (noise power 1), so Pfa = 1e-6 means 11.4 dB and every extra
+    # dB of sensitivity traded for detections is visible in the config.
+    pfa = rc.get("pfa")
+    if pfa is not None:
+        pf = min(max(float(pfa), 1e-12), 0.5)
+        det_db = 10.0 * np.log10(max(-np.log(pf), 1e-12))
+        rc["det_snr_db"] = det_db
     pg_db = float(rc.get("processing_gain_db", 10.0 * np.log10(max(int(rc["n_chirps"]), 1))))
     snr_db = 10.0 * np.log10(np.maximum(pr, 1e-30) / pn) + pg_db
 

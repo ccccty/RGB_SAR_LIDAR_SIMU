@@ -63,6 +63,122 @@ def states_of(cfg):
     return [resolve(w)]
 
 
+
+# ---------------------------------------------------------------------------
+# Clip timeline
+# ---------------------------------------------------------------------------
+def _lerp_state(a, b, u):
+    out = dict(a)
+    for k in FIELDS:
+        out[k] = float(a[k]) + (float(b[k]) - float(a[k])) * u
+    if a.get("name"):
+        out["name"] = a["name"]
+    return out
+
+
+def clip_states(cfg, n_frames, dt, rng):
+    """Weather for one clip, as a continuous timeline of length n_frames.
+
+    Modes
+    -----
+    fixed     one resolved state for the whole run (a per-weather dataset)
+    per_clip  every clip draws its own preset from "pool" -- one dataset,
+              many skies, and each clip internally consistent
+    evolve    start at one preset and drift smoothly to another inside the clip
+    cycle     legacy: cycle an explicit "states" list frame by frame
+    """
+    spec = cfg.get("weather")
+    if not isinstance(spec, dict):
+        spec = {"preset": spec} if spec else {}
+    mode = str(spec.get("mode", "fixed")).lower()
+    # Backwards compatibility: older scenes carry a bare "states" list and no
+    # mode. Dropping them to the default clear sky would silently change what
+    # those configs render, so they keep the legacy per-frame cycle.
+    if not spec.get("mode") and isinstance(spec.get("states"), list):
+        mode = "cycle"
+    pool = spec.get("pool") or ([spec.get("preset")] if spec.get("preset") else ["clear"])
+    pool = [p for p in pool if p]
+
+    if mode == "cycle" and isinstance(spec.get("states"), list):
+        st = [resolve(s) for s in spec["states"]]
+        return [dict(st[i % len(st)]) for i in range(n_frames)]
+
+    if mode == "evolve" and pool:
+        a = resolve({"preset": pool[int(rng.integers(0, len(pool)))]})
+        b = resolve({"preset": pool[int(rng.integers(0, len(pool)))]})
+        if int(rng.integers(0, 3)) == 0:
+            b = a                      # sometimes hold one sky for the clip
+        out = []
+        for i in range(n_frames):
+            u = 0.0 if n_frames <= 1 else i / float(n_frames - 1)
+            u = u * u * (3.0 - 2.0 * u)          # smoothstep, C1 continuous
+            out.append(_lerp_state(a, b, u))
+        return out
+
+    if mode == "per_clip":
+        base = resolve({"preset": pool[int(rng.integers(0, len(pool)))]})
+        drift = dict(base)
+        for k, amp in (("sun_elev_deg", 2.0), ("wind_ms", 0.8), ("air_temp_c", 0.6)):
+            drift[k] = float(base[k]) + float(rng.uniform(-amp, amp))
+        out = []
+        for i in range(n_frames):
+            u = 0.0 if n_frames <= 1 else i / float(n_frames - 1)
+            out.append(_lerp_state(base, drift, u))
+        return out
+
+    base = resolve(spec)
+    return [dict(base) for _ in range(n_frames)]
+
+
+def _kim_q(vis_km):
+    """Aerosol size exponent, Kim et al. 2001 piecewise fit for 550 nm."""
+    v = max(float(vis_km), 1e-3)
+    if v > 50.0:
+        return 1.6
+    if v > 6.0:
+        return 1.3
+    if v > 1.0:
+        return 0.16 * v + 0.34
+    if v > 0.5:
+        return v - 0.5
+    return 0.0
+
+
+def _water_vapour(w, t_c, rh):
+    """Precipitable water [cm] and the per-km vapour density [cm/km]."""
+    e = max(rh, 0.0) * 6.112 * math.exp(17.62 * t_c / (243.12 + t_c))   # hPa
+    w_km = 21.67 * e / max(t_c + 273.15, 1.0)                           # cm/km
+    return w_km * 2.0, w_km                                             # ~2 km scale height
+
+
+def _sky_emissivity(t_c, rh, cloud):
+    """Clark-Allen clear-sky emissivity with the Walton/EnergyPlus cloud term."""
+    td = t_c - (100.0 - min(max(rh, 1e-3), 1.0) * 100.0) / 5.0          # dew point [C]
+    eps = 0.787 + 0.764 * math.log(max(td + 273.15, 1.0) / 273.0)
+    n = 10.0 * min(max(cloud, 0.0), 1.0)
+    eps *= (1.0 + 0.0224 * n - 0.0035 * n ** 2 + 0.00028 * n ** 3)
+    return min(max(eps, 0.3), 0.99)
+
+
+# Band coupling of the sky: the sky is NOT a blackbody at its broadband
+# temperature. In 3-5 um it is almost transparent (kappa 0.04-0.12), in 8-12 um
+# it is close to opaque (kappa 0.40-0.55). Feeding a broadband 280 K sky into
+# the band Planck integral overstates MWIR sky radiance by roughly 5x and makes
+# sky and ground read the same, which destroys any contrast cue.
+SKY_KAPPA = dict(mwir=(0.18, 0.55, 0.04, 0.12), lwir=(0.42, 0.55, 0.40, 0.55))
+
+
+def _sky_kappa(w_cm, cloud):
+    out = {}
+    for b, (a, k, lo, hi) in SKY_KAPPA.items():
+        kap = 1.0 - math.exp(-a * max(w_cm, 1e-3) ** k)
+        kap = min(max(kap, lo), hi)
+        # cloud fills the gap towards an opaque (radiating) sky
+        kap = kap + (1.0 - kap) * 0.55 * min(max(cloud, 0.0), 1.0)
+        out[b] = min(max(kap, 0.0), 0.99)
+    return out
+
+
 def derive(w):
     """Weather state -> physical quantities consumed by every modality."""
     cloud = min(max(float(w["cloud_cover"]), 0.0), 1.0)
@@ -70,35 +186,55 @@ def derive(w):
     vis_km = max(float(w["visibility_m"]) / 1000.0, 0.05)
     rh = min(max(float(w["rh"]), 0.0), 1.0)
     wind = max(float(w["wind_ms"]), 0.0)
-    T_air = float(w["air_temp_c"]) + 273.15
+    t_c = float(w["air_temp_c"])
+    T_air = t_c + 273.15
     sin_el = max(math.sin(math.radians(float(w["sun_elev_deg"]))), 0.0)
 
-    # solar: documented clear-sky approximation with cloud/diffuse split
+    # solar: direct normal + diffuse horizontal. The direct term is DNI, NOT the
+    # horizontal irradiance: the caller already multiplies by cos(incidence), so
+    # folding sin(elevation) in here counted it twice and starved tilted
+    # surfaces at low sun.
     if sin_el <= 0.01:
-        G_dir = G_dif = 0.0
+        dni = dif = 0.0
+        airmass = 38.0
     else:
-        m = 1.0 / sin_el
-        G_dir = 1361.0 * 0.75 ** (m ** 0.678) * sin_el
-        G_dif = 0.15 * 1361.0 * sin_el * (0.3 + 0.7 * cloud)
-    solar = G_dir * (1.0 - 0.85 * cloud ** 2.5) + G_dif
+        # Kasten-Young air mass, finite at the horizon (1/sin diverges)
+        el_deg = max(float(w["sun_elev_deg"]), 0.0)
+        airmass = 1.0 / (sin_el + 0.50572 * (el_deg + 6.07995) ** -1.6364)
+        dni = 1361.0 * 0.7 ** (airmass ** 0.678)
+        # cloud extinction is exponential in optical depth, not a magic power
+        tau_c = 0.1 + 18.0 * cloud ** 2
+        dni *= math.exp(-tau_c)
+        dif = 0.30 * 1361.0 * sin_el * (0.2 + 0.8 * cloud) * math.exp(-0.6 * tau_c)
+    solar = dni * sin_el + dif
 
-    # sky long-wave temperature: Swinbank clear sky blended toward cloud base
-    t_clear = 0.0552 * T_air ** 1.5 * (1.0 - 0.25 * rh)
-    t_sky = t_clear + (T_air - 2.0 - t_clear) * cloud
+    # sky: Clark-Allen emissivity -> grey equivalent temperature, plus the
+    # per-band coupling that decides how much of it a given camera actually sees
+    w_cm, w_km = _water_vapour(w, t_c, rh)
+    eps_sky = _sky_emissivity(t_c, rh, cloud)
+    t_sky = eps_sky ** 0.25 * T_air
+    kappa = _sky_kappa(w_cm, cloud)
 
     wetness = min(1.0, rain / 4.0)
+    beta_opt = 3.912 / vis_km  # Koschmieder extinction at 550 nm, per km
 
-    beta_opt = 3.912 / vis_km  # Koschmieder extinction, per km
+    # 905 nm lidar: aerosol scattering scales as lambda^-q from the 550 nm
+    # Koschmieder value; raindrops are near-neutral but much stronger per mm/h
+    q = _kim_q(vis_km)
+    beta_905 = beta_opt * (0.905 / 0.55) ** (-q)
+    beta_lidar = beta_905 + 0.072 * rain ** 0.72
 
-    # 905 nm extinction: aerosol scattering scales as lambda^-1.3 from the
-    # Koschmieder value at 550 nm (so a little weaker), rain drops are close to
-    # neutral but much stronger per mm/h.  Natural units (1/km), like beta_opt.
-    beta_lidar = 0.8 * beta_opt + 0.072 * rain ** 0.72
-
+    # Thermal IR: aerosol (Kruse/Kim) + molecular absorption driven by water
+    # vapour. 8-12 um is dominated by water vapour (aerosol is nearly
+    # negligible there); 3-5 um keeps a fixed CO2/N2O background.
+    beta_aer_mwir = beta_opt * (4.0 / 0.55) ** (-q)
+    beta_aer_lwir = beta_opt * (10.0 / 0.55) ** (-q)
+    mol = dict(mwir=0.28 + 0.06 * w_km, lwir=0.02 + 0.13 * w_km,
+               swir=0.20 + 0.10 * w_km)
+    aer = dict(mwir=beta_aer_mwir, lwir=beta_aer_lwir, swir=beta_opt)
     tau_ir = {}
-    vis_scale = (20.0 / vis_km) ** 0.3
-    for b, tau0 in IR_TAU_CLEAR.items():
-        tau_ir[b] = tau0 * (1.0 + 0.4 * rh) * vis_scale + 0.02 * rain ** 0.8
+    for b in ("mwir", "lwir", "swir"):
+        tau_ir[b] = (aer[b] + mol[b]) * (1.0 + 0.5 * wetness) + 0.02 * rain ** 0.8
 
     att = {}
     for name, p in RADAR_BANDS.items():
@@ -107,10 +243,13 @@ def derive(w):
     return dict(
         cloud_cover=cloud, rain_mmh=rain, visibility_km=vis_km,
         solar_w_m2=solar, solar_factor=solar / 700.0,
-        t_sky_k=t_sky, wetness=wetness, t_air_k=T_air,
-        beta_opt_per_km=beta_opt, beta_lidar_per_km=beta_lidar, tau_ir_per_km=tau_ir,
+        dni_w_m2=dni, diffuse_w_m2=dif, airmass=airmass,
+        t_sky_k=t_sky, eps_sky=eps_sky, sky_kappa=kappa,
+        water_vapour_cm=w_cm, wetness=wetness, t_air_k=T_air,
+        beta_opt_per_km=beta_opt, beta_lidar_per_km=beta_lidar,
+        beta_mol_per_km=mol, beta_aer_per_km=aer,
+        tau_ir_per_km=tau_ir,
         radar_att_db_km=att,
-        # optical backend helpers
         sun_factor_opt=max(0.02, (1.0 - 0.9 * cloud) * (0.15 + 0.85 * sin_el)),
         turbidity=2.0 + 7.0 * cloud + 2.0 * min(1.0, rain / 16.0),
     )

@@ -119,6 +119,11 @@ def build_world(cfg, t=0.0, jitter=None):
             j = jitter[spec["name"]]
             pos = pos + np.array(j.get("dpos", [0, 0, 0]), float)
             yaw += float(j.get("dyaw", 0.0))
+            # A trajectory supplies the instantaneous velocity; without this the
+            # Doppler shift and the MTI gate would use the static "vel" from the
+            # config and contradict the path the target is actually flying.
+            if "vel" in j:
+                vel = np.array(j["vel"], float)
 
         R = rot_z(yaw)
         wm = Mesh(m.v @ R.T + pos, m.f, spec.get("name", "obj%d" % i),
