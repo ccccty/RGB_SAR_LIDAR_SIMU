@@ -221,7 +221,19 @@ def main():
         bpy.context.view_layer.update()
         path = os.path.join(OUT_DIR, "images", "optical", "%06d.png" % fid)
         sc.render.filepath = path
-        bpy.ops.render.render(write_still=True)
+        try:
+            bpy.ops.render.render(write_still=True)
+        except RuntimeError as exc:
+            # OpenImageDenoise allocates its own buffers and dies with "out of
+            # memory" when several Blender instances share a busy machine. A
+            # denoise-free frame is slightly grainier; a missing frame is a hole
+            # in the dataset, so fall back instead of aborting the chunk.
+            if "denois" not in str(exc).lower() and "memory" not in str(exc).lower():
+                raise
+            print("WARN denoiser failed for frame %d, re-rendering without it" % fid,
+                  flush=True)
+            sc.cycles.use_denoising = False
+            bpy.ops.render.render(write_still=True)
         if not os.path.exists(path):
             raise RuntimeError("render did not produce %s (frame_path=%s)"
                                % (path, sc.render.frame_path()))

@@ -53,9 +53,9 @@ def main(run, fpc):
         d = float(np.hypot(a[0]-b[0], a[1]-b[1]))
         steps.append(d)
         if d > 40.0: jumps += 1
-        if d < 1e-9: zero += 1
+        if d < 0.5: zero += 1        # pixel quantisation, not a frozen frame
     st = np.array(steps) if steps else np.array([0.0])
-    print("  box centre step: median %.2f px  p95 %.2f  max %.2f  jumps>40px %d  identical %d" % (
+    print("  box centre step: median %.2f px  p95 %.2f  max %.2f  jumps>40px %d  quantised(<0.5px) %d" % (
         float(np.median(st)), float(np.percentile(st, 95)), float(st.max()), jumps, zero))
 
     # 3. pixel band
