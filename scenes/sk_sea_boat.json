@@ -1,0 +1,196 @@
+{
+ "seed": 27,
+ "ground": {
+  "enabled": true,
+  "type": "sea",
+  "size": 20000,
+  "nx": 48,
+  "ny": 48,
+  "wind_ms": 9,
+  "mat": "seawater",
+  "z": 0
+ },
+ "weather": {
+  "mode": "per_clip",
+  "pool": [
+   "clear",
+   "cloudy",
+   "rain",
+   "fog"
+  ]
+ },
+ "sun": {
+  "elev_deg": 42,
+  "az_deg": 135,
+  "irradiance": 720,
+  "on": true
+ },
+ "air": {
+  "temp_c": 18,
+  "rh": 0.55,
+  "wind_mps": 6
+ },
+ "objects": [
+  {
+   "name": "boat_target",
+   "cls": "boat",
+   "shape": "obj",
+   "model": "../assets/models/ship_medium.obj",
+   "decimate": 6000,
+   "scale": 0.45,
+   "pos": [
+    0,
+    900,
+    0.4
+   ],
+   "vel": [
+    -3.0,
+    3.0,
+    0
+   ],
+   "rot": 135,
+   "mat": "painted_metal",
+   "temp_c": 27,
+   "rcs_db": 12
+  }
+ ],
+ "sensors": {
+  "ir_camera": {
+   "pos": [
+    0,
+    -30,
+    6
+   ],
+   "look_at": [
+    0,
+    400,
+    30.0
+   ],
+   "fov_deg": 3.0,
+   "width": 480,
+   "height": 360
+  },
+  "optical": {
+   "pos": [
+    0,
+    -30,
+    6
+   ],
+   "look_at": [
+    0,
+    400,
+    30.0
+   ],
+   "fov_deg": 3.0,
+   "width": 960,
+   "height": 720
+  },
+  "radar": {
+   "band": "Ka",
+   "az_span_deg": 2.0,
+   "el_span_deg": 1.5,
+   "n_az": 40,
+   "n_el": 30,
+   "bandwidth_mhz": 4.0,
+   "n_samples": 384,
+   "chirp_us": 50,
+   "n_chirps": 16,
+   "tx_power_dbm": 40,
+   "noise_figure_db": 8,
+   "clutter_density": 0.04,
+   "mti_min_vr_mps": 1.0,
+   "pfa": 1e-06,
+   "swerling": "I",
+   "clutter_db": -12.0,
+   "ground_clutter_db": -35.0,
+   "pos": [
+    0,
+    -30,
+    6
+   ],
+   "look_at": [
+    0,
+    400,
+    30.0
+   ],
+   "up": [
+    0,
+    0,
+    1
+   ]
+  },
+  "lidar": {
+   "pos": [
+    0,
+    -30,
+    6
+   ],
+   "look_at": [
+    0,
+    400,
+    30
+   ],
+   "fov_deg": 4,
+   "n_az": 480,
+   "n_el": 120,
+   "max_range_m": 12000,
+   "range_spec_m": 5000,
+   "pulse_energy_nj": 4000,
+   "aperture_mm": 50,
+   "wavelength_nm": 905,
+   "vfov_deg": 3.0
+  }
+ },
+ "clip": {
+  "frames_per_clip": 50,
+  "seeker": {
+   "target_px": [
+    10,
+    60
+   ],
+   "target_m": 10.7,
+   "range_m": [
+    600,
+    9000
+   ],
+   "closing": "out",
+   "closing_mps": 12.0,
+   "profile": "linear",
+   "az_span_deg": 2.0,
+   "el_span_deg": 0.8,
+   "los_jitter_deg": 0.02,
+   "lag_s": 0.1,
+   "keep_z": true,
+   "wander_deg": 0.5,
+   "wander_hz": 0.09
+  },
+  "rig": {
+   "vibration_m": 0.03,
+   "vibration_deg": 0.06
+  }
+ },
+ "ir": {
+  "bands": [
+   "mwir",
+   "lwir"
+  ],
+  "netd_mk": 30,
+  "psf_px": 1.3,
+  "nuc": {
+   "enabled": true,
+   "prnu": 0.008,
+   "dsnu_counts": 25,
+   "column_fpn_counts": 6,
+   "dead_px": 0.0002,
+   "seed": 12345
+  }
+ },
+ "optical": {
+  "samples": 16,
+  "exposure": -0.6
+ },
+ "frames": {
+  "n": 500,
+  "dt": 0.1
+ }
+}

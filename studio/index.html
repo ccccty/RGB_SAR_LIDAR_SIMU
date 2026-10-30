@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>simkit 数据集工作台</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <h1>simkit 数据集工作台</h1>
+  <div class="sub">离线多传感器仿真 · 连续轨迹 · 多天气 · COCO 输出</div>
+</header>
+
+<main>
+<section class="panel form">
+  <h2>1. 选参数</h2>
+
+  <div class="field">
+    <label>场景</label>
+    <div class="chips" id="preset"></div>
+  </div>
+
+  <div class="field">
+    <label>目标成像大小（像素）</label>
+    <div class="chips" id="size">
+      <button data-v="small">小 8–20</button>
+      <button data-v="medium" class="on">中 18–45</button>
+      <button data-v="large">大 35–85</button>
+    </div>
+    <div class="hint" id="sizeHint">目标在画面里“差不多能看见”，不是占满画面</div>
+  </div>
+
+  <div class="field">
+    <label>距离趋势</label>
+    <div class="chips" id="closing">
+      <button data-v="in" class="on">接近</button>
+      <button data-v="out">远离</button>
+      <button data-v="hold">保持</button>
+    </div>
+  </div>
+
+  <div class="field">
+    <label>天气</label>
+    <div class="chips" id="weather"></div>
+    <div class="hint">“混合”= 每个片段随机一种天气；“演变”= 片段内天气平滑过渡</div>
+  </div>
+
+  <div class="field">
+    <label>传感器</label>
+    <div class="chips" id="sensors"></div>
+  </div>
+
+  <div class="field">
+    <label>雷达频段</label>
+    <select id="band"></select>
+  </div>
+
+  <div class="row">
+    <div class="field"><label>帧数</label><input id="frames" type="number" value="300" min="8" step="10"></div>
+    <div class="field"><label>帧率 fps</label><input id="fps" type="number" value="10" min="1" max="60" step="1"></div>
+  </div>
+  <div class="row">
+    <div class="field"><label>每段帧数</label><input id="fpc" type="number" value="50" min="2" step="5"></div>
+    <div class="field"><label>随机种子</label><input id="seed" type="number" value="7" step="1"></div>
+  </div>
+
+  <div class="field"><label>输出名（可选）</label><input id="name" type="text" placeholder="例如 rain_ka_500"></div>
+
+  <div class="actions">
+    <button id="btnPreview" class="ghost">先预览 8 帧</button>
+    <button id="btnGen" class="primary">生成数据集</button>
+  </div>
+  <div class="hint" id="estimate"></div>
+</section>
+
+<section class="panel out">
+  <h2>2. 看结果</h2>
+  <div id="jobs"></div>
+  <div id="gallery"></div>
+</section>
+
+<section class="panel wide">
+  <h2>3. 轨迹与连续性</h2>
+  <div class="hint">每个片段是一条连续轨迹：位置、速度、朝向都由时间解析给出，相邻帧只差一个积分步。</div>
+  <div id="plan"></div>
+</section>
+
+<section class="panel wide">
+  <h2>4. 已生成的数据集</h2>
+  <div id="datasets"></div>
+</section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

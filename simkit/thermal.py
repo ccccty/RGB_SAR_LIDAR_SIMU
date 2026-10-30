@@ -54,9 +54,15 @@ def solve(world, cfg, shadow=True):
     sdir = sun_vector(float(sun.get("elev_deg", 35.0)), float(sun.get("az_deg", 120.0)))
 
     w = cfg.get("_weather")
+    dni = dif = None
     if w:
-        # weather state machine wins over the static sun/air settings
+        # weather state machine wins over the static sun/air settings.
+        # dni is the DIRECT NORMAL irradiance: the cos(incidence) factor is
+        # applied below, so using the horizontal irradiance here counted
+        # sin(elevation) twice and starved tilted surfaces at low sun.
         G = float(w["solar_w_m2"]) if sun.get("on", True) else 0.0
+        dni = float(w.get("dni_w_m2", w["solar_w_m2"])) if sun.get("on", True) else 0.0
+        dif = float(w.get("diffuse_w_m2", 0.0)) if sun.get("on", True) else 0.0
         wind = float(cfg.get("weather", {}).get("wind_ms", wind))
 
     eps = props[world.face_mat, 0]
@@ -93,7 +99,15 @@ def solve(world, cfg, shadow=True):
         h = np.where(gnd, h + wet * (8.0 + 15.0 * wind), h)
         alpha = np.where(gnd, alpha * (1.0 - 0.25 * wet), alpha)
 
-    q_in = (alpha * G * cos_inc * shade
+    if dni is None:
+        direct = alpha * G * cos_inc * shade
+        diffuse = 0.0
+    else:
+        direct = alpha * dni * cos_inc * shade
+        # diffuse sky light: without it every shaded face is pure black by day,
+        # while a real one is lit by the whole sky dome
+        diffuse = alpha * dif * vf_sky
+    q_in = (direct + diffuse
             + eps * SIGMA * (vf_sky * T_sky ** 4 + vf_gnd * T_ground ** 4)
             + q_int)
 
