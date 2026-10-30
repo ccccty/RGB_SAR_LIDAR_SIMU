@@ -10,6 +10,8 @@ bounces, flat-facet PO (no edge diffraction / creeping waves), no MIMO virtual
 array, no range migration. Sufficient for detector training data; not for RCS
 certification.
 """
+import os
+
 import numpy as np
 
 from . import materials as matlib
@@ -242,29 +244,58 @@ def simulate(world, cfg):
     for i, fb, fd, amp in echoes:
         by_beam.setdefault(i, []).append((fb, fd, amp))
 
-    CUBE_CAP = 512 * 1024 * 1024                 # bytes
-    bytes_per_beam = n_s * n_c * 16
+    # Chunk size is a memory budget, not a speed knob: padding every chunk up to
+    # it wastes FFT work, so shrink it to the beams that are actually left.
+    # Per-process budget; several chunk workers can run at once, so this is
+    # deliberately smaller than the machine's memory.
+    CUBE_CAP = int(float(os.environ.get("SIMKIT_CUBE_MB", "192")) * 1024 * 1024)
+    # 32-bit: a range-Doppler map is a power image, not something that needs
+    # double precision, and single precision halves the FFT cost.
+    cplx = np.complex64
+    real = np.float32
+    bytes_per_beam = n_s * n_c * 8
     keep_cube = (n_beams * bytes_per_beam) <= CUBE_CAP
     chunk = max(1, min(n_beams, int(CUBE_CAP // max(bytes_per_beam, 1))))
-    if chunk < n_beams:
-        keep_cube = False
-    cube = np.zeros((n_beams, n_s, n_c), np.complex128) if keep_cube else None
+
+    x = np.arange(n_s, dtype=real)
+    y = np.arange(n_c, dtype=real)
+    probe = np.zeros((n_s, n_c), cplx)
+
+    def echo_plane(fb, fd, amp):
+        """One echo, as a separable outer product instead of a rank-1 exp grid."""
+        nonlocal probe
+        np.multiply.outer(np.exp(np.complex64(2j * np.pi * fb / fs) * x),
+                          np.exp(np.complex64(2j * np.pi * fd * pri) * y),
+                          out=probe)
+        np.multiply(probe, cplx(amp), out=probe)
+        return probe
+
+    cube = np.zeros((n_beams, n_s, n_c), cplx) if keep_cube else None
 
     rd_map = np.zeros((n_s, n_c))
     ra_map = np.zeros((n_beams, n_s))
+    win = (win_r * win_d).astype(real)
     for a in range(0, n_beams, chunk):
         bb = min(a + chunk, n_beams)
-        blk = (rng.normal(size=(bb - a, n_s, n_c))
-               + 1j * rng.normal(size=(bb - a, n_s, n_c))) * np.sqrt(pn / 2.0)
+        # Every beam chunk in this scene has the same size except the last one.
+        # Build the noise straight into a complex64 buffer: going through
+        # float64 (rng.normal) makes a complex128 temp that is twice the size and
+        # that is what ran three parallel workers out of memory.
+        m = bb - a
+        blk = np.empty((m, n_s, n_c), cplx)
+        blk.real = rng.standard_normal((m, n_s, n_c), dtype=np.float32)
+        blk.imag = rng.standard_normal((m, n_s, n_c), dtype=np.float32)
+        blk *= real(np.sqrt(pn / 2.0))
         for i in range(a, bb):
             for fb, fd, amp in by_beam.get(i, ()):
-                blk[i - a] += (amp * np.exp(1j * 2 * np.pi * fb * nvec / fs)[:, None]
-                               * np.exp(1j * 2 * np.pi * fd * cvec * pri)[None, :])
+                blk[i - a] += echo_plane(fb, fd, amp)
         if keep_cube:
             cube[a:bb] = blk
-        spec = np.fft.fftshift(np.fft.fft2(blk * win_r * win_d, axes=(1, 2)), axes=2)
-        power = np.abs(spec) ** 2
-        rd_map += power.sum(axis=0)
+        blk *= win
+        spec = np.fft.fftshift(np.fft.fft2(blk, axes=(1, 2)), axes=2)
+        power = np.abs(spec)          # complex64 -> float32, no imaginary cast
+        np.square(power, out=power)
+        rd_map += power.sum(axis=0, dtype=np.float64)
         ra_map[a:bb] = power.max(axis=2)
 
     axis_r = np.fft.fftfreq(n_s, 1.0 / fs) * C_LIGHT * t_chirp / (2.0 * b)
@@ -275,13 +306,6 @@ def simulate(world, cfg):
         range_axis=axis_r, doppler_axis=axis_d,
         detections=det, sigma=sig, snr_db=snr_db, beams=angles,
         radar_cfg=rc, pn=pn, cube_chunked=(cube is None),
-    )
-
-    return dict(
-        cube=cube, rd_map=rd_map, range_angle=ra_map,
-        range_axis=axis_r, doppler_axis=axis_d,
-        detections=det, sigma=sig, snr_db=snr_db, beams=angles,
-        radar_cfg=rc, pn=pn,
     )
 
 

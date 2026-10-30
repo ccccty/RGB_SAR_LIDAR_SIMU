@@ -15,7 +15,7 @@
    {
     "preset": "clear",
     "wind_ms": 4,
-    "sun_elev_deg": 45
+    "sun_elev_deg": 52
    },
    {
     "preset": "cloudy",
@@ -27,6 +27,22 @@
     "rain_mmh": 6,
     "wind_ms": 11,
     "sun_elev_deg": 30
+   },
+   {
+    "preset": "clear",
+    "wind_ms": 2,
+    "sun_elev_deg": 68
+   },
+   {
+    "preset": "cloudy",
+    "wind_ms": 9,
+    "sun_elev_deg": 22
+   },
+   {
+    "preset": "rain",
+    "rain_mmh": 14,
+    "wind_ms": 14,
+    "sun_elev_deg": 26
    }
   ]
  },
@@ -107,14 +123,14 @@
     900
    ],
    "band": "Ka",
-   "az_span_deg": 3,
-   "el_span_deg": 3,
-   "n_az": 80,
-   "n_el": 24,
-   "bandwidth_mhz": 50,
-   "n_samples": 1600,
+   "az_span_deg": 6,
+   "el_span_deg": 4,
+   "n_az": 48,
+   "n_el": 14,
+   "bandwidth_mhz": 30,
+   "n_samples": 1024,
    "chirp_us": 50,
-   "n_chirps": 64,
+   "n_chirps": 32,
    "tx_power_dbm": 40,
    "noise_figure_db": 8,
    "det_snr_db": 11,
@@ -163,7 +179,24 @@
   "exposure": -0.6
  },
  "frames": {
-  "n": 6,
+  "n": 340,
   "dt": 0.6
+ },
+ "randomize": {
+  "enabled": true,
+  "placement": {
+   "camera": "ir_camera",
+   "range_m": [
+    450.0,
+    1500.0
+   ],
+   "fov_frac": 0.72
+  },
+  "pose_jitter_yaw_deg": 14.0,
+  "pose_jitter_z_m": 6.0,
+  "sensor_jitter_m": 6.0,
+  "sensor_jitter_yaw_deg": 0.12,
+  "temp_jitter_c": 5.0,
+  "sun_az_jitter_deg": 22.0
  }
 }

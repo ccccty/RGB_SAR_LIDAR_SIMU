@@ -64,52 +64,119 @@ class BVH:
         """origin (3,), dirs (N,3) unit vectors. Returns dict of (N,) arrays."""
         origin = np.asarray(origin, float)
         dirs = np.asarray(dirs, float)
+        origin = np.broadcast_to(origin, dirs.shape).copy()
+        return self.ray_cast_batch(origin, dirs)
+
+    def ray_cast_batch(self, origins, dirs, leaf_size=8, max_stack=128):
+        """origins (N,3), dirs (N,3). One ray per row, all traversed together.
+
+        The scalar implementation below cost one Python-level traversal per ray,
+        which dominated every timing in this project (a single IR frame spent
+        45 s in the thermal shadow pass alone). Traversing every ray at once,
+        with a per-ray explicit stack, removes that constant factor without
+        changing a single hit.
+        """
+        origins = np.ascontiguousarray(origins, dtype=float)
+        dirs = np.ascontiguousarray(dirs, dtype=float)
         N = len(dirs)
-        t_hit = np.full(N, np.inf)
-        tri_hit = np.full(N, -1, np.int64)
+        if N == 0:
+            z = np.zeros(0)
+            return {"t": z, "tri": np.zeros(0, np.int64), "hit": np.zeros(0, bool),
+                    "point": np.zeros((0, 3))}
+        origins = np.broadcast_to(origins, dirs.shape).copy()
+
         bmin, bmax = self.bmin, self.bmax
         left, right, start, count = self.left, self.right, self.start, self.count
-        # inverse direction for slab test, tolerate zeros
+
         inv = 1.0 / np.where(np.abs(dirs) < 1e-12, 1e-12, dirs)
-        for i in range(N):
-            d = dirs[i]
-            iv = inv[i]
-            o = origin
-            stack = [0]
-            best = np.inf
-            best_tri = -1
-            while stack:
-                node = stack.pop()
-                # slab test
-                t1 = (bmin[node] - o) * iv
-                t2 = (bmax[node] - o) * iv
-                tn = np.minimum(t1, t2).max()
-                tf = np.maximum(t1, t2).min()
-                if tf < max(tn, 0.0) or tn > best:
-                    continue
-                if self.count[node] > 0:
-                    lo = start[node]
-                    hi = lo + count[node]
-                    idx = self.order[lo:hi]
-                    th, ok = self._hit_tris(idx, o, d)
-                    if ok.any():
-                        j = int(np.argmin(th))
-                        if th[j] < best:
-                            best = float(th[j])
-                            best_tri = int(idx[j])
-                    continue
-                l = left[node]
-                r = right[node]
-                if l >= 0:
-                    stack.append(l)
-                if r >= 0:
-                    stack.append(r)
-            t_hit[i] = best
-            tri_hit[i] = best_tri
-        hit = tri_hit >= 0
-        tt = np.where(hit, t_hit, 0.0)
-        pts = origin + dirs * tt[:, None]
-        return {"t": t_hit, "tri": tri_hit, "hit": hit, "point": pts}
+        best = np.full(N, np.inf)
+        best_tri = np.full(N, -1, np.int64)
+
+        stack = np.zeros((max_stack, N), np.int32)
+        sp = np.zeros(N, np.int32)
+        node = np.zeros(N, np.int32)
+        alive = np.ones(N, bool)
+        K = leaf_size
+
+        while True:
+            idx = np.nonzero(alive)[0]
+            if idx.size == 0:
+                break
+            nd = node[idx]
+            o = origins[idx]
+            iv = inv[idx]
+            bb_lo = bmin[nd]
+            bb_hi = bmax[nd]
+            t1 = (bb_lo - o) * iv
+            t2 = (bb_hi - o) * iv
+            tn = np.minimum(t1, t2).max(axis=1)
+            tf = np.maximum(t1, t2).min(axis=1)
+            bnd = best[idx]
+            miss = (tf < np.maximum(tn, 0.0)) | (tn > bnd)
+
+            leaf = (~miss) & (count[nd] > 0)
+            if leaf.any():
+                li = np.nonzero(leaf)[0]
+                lo = start[nd[li]].astype(np.int64)
+                nleaf = count[nd[li]].astype(np.int64)
+                kin = np.arange(K)
+                tri_idx = self.order[np.minimum(lo[:, None] + kin[None, :], len(self.order) - 1)]
+                valid = kin[None, :] < nleaf[:, None]
+                th, ok = self._hit_tris_rays(tri_idx, o[li], dirs[idx[li]])
+                ok &= valid
+                th = np.where(ok, th, np.inf)
+                j = np.argmin(th, axis=1)
+                tmin = th[np.arange(li.size), j]
+                better = tmin < best[idx[li]]
+                if better.any():
+                    bi = li[better]
+                    best[idx[bi]] = tmin[better]
+                    best_tri[idx[bi]] = tri_idx[np.arange(li.size)[better], j[better]]
+
+            # everything that missed or was a leaf pops; internal nodes descend
+            pop = miss | leaf
+            if pop.any():
+                pi = idx[pop]
+                sp[pi] -= 1
+                ok_pop = sp[pi] >= 0
+                pi2 = pi[ok_pop]
+                node[pi2] = stack[sp[pi2], pi2]
+                dead = pi[~ok_pop]
+                if dead.size:
+                    alive[dead] = False
+
+            desc = (~pop)
+            if desc.any():
+                di = idx[desc]
+                dn = node[di]
+                st = sp[di]
+                stack[np.minimum(st, max_stack - 1), di] = right[dn]
+                sp[di] = st + 1
+                node[di] = left[dn]
+
+        hit = best_tri >= 0
+        tt = np.where(hit, best, 0.0)
+        pts = origins + dirs * tt[:, None]
+        return {"t": best, "tri": best_tri, "hit": hit, "point": pts}
+
+    def _hit_tris_rays(self, idx, o, d):
+        """idx (M,K), o (M,3), d (M,3) -> (M,K) distances and hits."""
+        v0 = self.v0[idx]
+        e1 = self.v1[idx] - v0
+        e2 = self.v2[idx] - v0
+        oo = o[:, None, :]
+        dd = d[:, None, :]
+        p = np.cross(dd, e2)
+        det = (e1 * p).sum(axis=2)
+        ok = np.abs(det) > 1e-12
+        inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+        tv = oo - v0
+        u = (tv * p).sum(axis=2) * inv
+        qv = np.cross(tv, e1)
+        v = (qv * dd).sum(axis=2) * inv
+        tt = (e2 * qv).sum(axis=2) * inv
+        ok &= (u >= 0) & (u <= 1) & (v >= 0) & (u + v <= 1) & (tt > 1e-9)
+        return np.where(ok, tt, np.inf), ok
 
     def _hit_tris(self, idx, o, d):
         v0 = self.v0[idx]

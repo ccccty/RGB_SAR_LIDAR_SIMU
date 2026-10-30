@@ -184,6 +184,7 @@ def main():
     deps = bpy.context.evaluated_depsgraph_get()
 
     for fi, fr in enumerate(manifest["frames"]):
+        fid = int(fr.get("frame", fi))
         # per-frame weather -> sun strength, sky turbidity, ambient level
         w = fr.get("weather") or {}
         if w:
@@ -204,7 +205,7 @@ def main():
                 ob.location = Vector(tuple(float(x) for x in pose["pos"]))
                 ob.rotation_euler = (0.0, 0.0, math.radians(float(pose["yaw"])))
         bpy.context.view_layer.update()
-        path = os.path.join(OUT_DIR, "images", "optical", "%06d.png" % fi)
+        path = os.path.join(OUT_DIR, "images", "optical", "%06d.png" % fid)
         sc.render.filepath = path
         bpy.ops.render.render(write_still=True)
         if not os.path.exists(path):
@@ -234,9 +235,9 @@ def main():
             visible = (not hit) or (hob is not None and hob.name == name)
             boxes[name] = dict(x0=round(x0, 1), y0=round(y0, 1), x1=round(x1, 1), y1=round(y1, 1),
                                visible=bool(visible), source="corners")
-        json.dump(dict(frame=fi, image="%06d.png" % fi, width=W, height=H, boxes=boxes,
+        json.dump(dict(frame=fid, image="%06d.png" % fid, width=W, height=H, boxes=boxes,
                        weather=dict(w or {})),
-                  open(os.path.join(OUT_DIR, "labels", "optical", "%06d.json" % fi), "w",
+                  open(os.path.join(OUT_DIR, "labels", "optical", "%06d.json" % fid), "w",
                        encoding="utf-8"), indent=1)
         log("frame %d/%d rendered" % (fi + 1, len(manifest["frames"])))
 
