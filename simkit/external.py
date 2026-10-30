@@ -78,10 +78,18 @@ def check_outputs(out_dir):
     return dict(images=len(imgs))
 
 
-def write_manifest(cfg, states, out_dir):
+def write_manifest(cfg, states, out_dir, part=None):
     from . import labels as lab
-    path = os.path.join(out_dir, "optical_frames.json")
-    lab.write_json(path, dict(frames=[dict(t=s["t"], objects=s["poses"],
+    # Parallel chunks share the output directory, so the manifest name must be
+    # per-chunk or one worker renders another worker's frames.
+    if part is None:
+        path = os.path.join(out_dir, "optical_frames.json")
+    else:
+        path = os.path.join(out_dir, "optical_frames.part%03d.json" % int(part))
+    # "frame" is the global frame id. Without it a chunked run renders every
+    # chunk as 000000.png.. and the chunks silently overwrite each other.
+    lab.write_json(path, dict(frames=[dict(frame=int(s["frame"]), t=s["t"],
+                                            objects=s["poses"],
                                             weather=dict(s.get("weather") or {}))
                                        for s in states]))
     return path

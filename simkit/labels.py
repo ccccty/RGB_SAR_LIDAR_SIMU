@@ -17,7 +17,10 @@ def project_points(pts, cam, width, height):
     return np.stack([sx, sy, z], axis=1)
 
 
-def boxes_from_mask(obj_id, world, min_px=25):
+# Small objects are the point of a detection dataset: a UAV a few pixels across
+# is a legitimate (hard) example, not noise. Below ~8 px the mask is a stray
+# speckle, so that is where the cut sits.
+def boxes_from_mask(obj_id, world, min_px=8):
     """2D boxes from the object-id buffer; fall back to projected corners."""
     out = {}
     for o in world.objs:

@@ -26,6 +26,19 @@ SCENES = [
     ("final_sea", "海面 · 帆船", "boat", "Ka"),
 ]
 
+# Scene title/class/band lookup for runs exported by name. Anything not listed
+# still exports; it just gets a generic title.
+SCENE_META = {
+    "final_air": ("空中 · Global Hawk", "uav", "Ka"),
+    "ds_air_uav": ("空中 · 无人机", "uav", "Ka"),
+    "ds_ground_vehicle": ("地面 · 巡视器", "vehicle", "W"),
+    "ds_sea_boat": ("海面 · 船只", "boat", "Ka"),
+    "ds1000_air": ("空中 · 无人机", "uav", "Ka"),
+    "ds1000_ground": ("地面 · 巡视器", "vehicle", "W"),
+    "ds1000_sea": ("海面 · 船只", "boat", "Ka"),
+}
+WEB_FRAMES = int(os.environ.get("SIMKIT_WEB_FRAMES", "0")) or None
+
 MOD_IMG = [
     ("optical", "images/optical", "可见光 RGB"),
     ("mwir", "images/ir_preview_mwir", "中波红外 3–5 µm"),
@@ -255,18 +268,48 @@ def main(dest, runs):
 
     bands = radar_band_table()
     scenes = []
-    for scene_id, title, cls, band in SCENES:
+    wanted = [(s[0], s[1], s[2], s[3]) for s in SCENES if os.path.isdir(os.path.join(runs, s[0]))]
+    if not wanted:
+        # No canonical runs: export whatever the runs/ directory holds, which is
+        # how the 1000-frame dataset gets published. A merged dataset package has
+        # one directory per scene but a single scenes.json at its root instead of
+        # a per-scene meta.json, so accept both.
+        root_scenes = {}
+        sp = os.path.join(runs, "scenes.json")
+        if os.path.exists(sp):
+            try:
+                for s in json.load(open(sp, encoding="utf-8")):
+                    root_scenes[s.get("name")] = s
+            except (OSError, ValueError):
+                root_scenes = {}
+        for nm in sorted(os.listdir(runs)):
+            p = os.path.join(runs, nm)
+            if not os.path.isdir(p):
+                continue
+            if not (os.path.exists(os.path.join(p, "meta.json")) or nm in root_scenes):
+                continue
+            title, cls, band = SCENE_META.get(nm, (nm, nm, "Ka"))
+            wanted.append((nm, title, cls, band))
+    for scene_id, title, cls, band in wanted:
         src = os.path.join(runs, scene_id)
         if not os.path.isdir(src):
             print("skip (missing):", src)
             continue
         out = os.path.join(data, scene_id)
         os.makedirs(out, exist_ok=True)
+        shutil.rmtree(out, ignore_errors=True)
+        os.makedirs(out, exist_ok=True)
 
         cfg_src = None
         meta = {}
         mp = os.path.join(src, "meta.json")
-        if os.path.exists(mp):
+        if not os.path.exists(mp) and scene_id in (locals().get("root_scenes") or {}):
+            rec = root_scenes[scene_id]
+            meta = dict(weather=rec.get("weather") or [],
+                        config=rec.get("config"),
+                        frames=[{"frame": i} for i in range(int(rec.get("stats", {}).get("frames", 0)) or 0)])
+            mp = None
+        if mp and os.path.exists(mp):
             meta = json.load(open(mp, encoding="utf-8"))
             cfg_src = meta.get("config")
         budget = None
@@ -278,10 +321,18 @@ def main(dest, runs):
                 shutil.copy(cfg_src, os.path.join(out, "cfg.json"))
 
         n_frames = len(meta.get("weather") or []) or 6
+        # a merged package carries every scene's frame count, not one weather
+        # record per frame; when the request asks for more frames than there are
+        # weather states the states simply repeat, which is what generation did.
+        have = int((meta.get("stats") or {}).get("frames") or 0) if isinstance(meta.get("stats"), dict) else 0
+        n_frames = max(n_frames, have)
+        if WEB_FRAMES:
+            n_frames = min(n_frames, int(WEB_FRAMES))
         frames = []
         for f in range(n_frames):
             name = "%06d.png" % f
-            fr = dict(i=f, weather=(meta.get("weather") or [{}] * n_frames)[f], mods={})
+            wl = meta.get("weather") or [{}]
+            fr = dict(i=f, weather=wl[f % len(wl)], mods={})
             for mod, rel, label in MOD_IMG:
                 sp = os.path.join(src, rel, name)
                 if not os.path.exists(sp):

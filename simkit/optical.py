@@ -56,8 +56,10 @@ def render_frames(cfg, cfg_path, out_dir, manifest_path, script_path, quiet=Fals
                 print(" ", line)
     # Blender returns 0 even when the inline Python script raised, so the only
     # trustworthy signal is the files themselves.
+    # Check the frame ids this manifest actually asked for. Chunks carry global
+    # ids, so counting from 0 would happily accept a neighbour chunk's files.
     missing = []
-    for i in range(_count_frames(manifest_path)):
+    for i in _frame_ids(manifest_path):
         img = os.path.join(out_dir, "images", "optical", "%06d.png" % i)
         lab = os.path.join(out_dir, "labels", "optical", "%06d.json" % i)
         if not os.path.exists(img):
@@ -79,3 +81,13 @@ def _count_frames(manifest_path):
             return len(json.load(fh).get("frames") or [])
     except Exception:
         return 0
+
+
+def _frame_ids(manifest_path):
+    """Global frame ids of the manifest; falls back to 0..n-1 for old manifests."""
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as fh:
+            frames = json.load(fh).get("frames") or []
+    except Exception:
+        return []
+    return [int(f.get("frame", i)) for i, f in enumerate(frames)]

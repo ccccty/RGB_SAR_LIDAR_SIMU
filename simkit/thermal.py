@@ -70,13 +70,14 @@ def solve(world, cfg, shadow=True):
     shade = np.ones(len(cent))
     if shadow and G > 0:
         orig = cent + nrm * 2e-3
-        bvh = world.bvh
-        for i in range(len(cent)):
-            if cos_inc[i] <= 0.0:
-                shade[i] = 0.0
-                continue
-            t = bvh.ray_cast(orig[i], sdir[None, :])["t"][0]
-            shade[i] = 0.0 if np.isfinite(t) else 1.0
+        lit = cos_inc > 0.0
+        shade[~lit] = 0.0
+        if lit.any():
+            # one batched cast for every lit face; the old per-face loop was the
+            # single most expensive thing in the whole generator
+            dirs = np.broadcast_to(sdir, (int(lit.sum()), 3))
+            t = world.bvh.ray_cast_batch(orig[lit], dirs)["t"]
+            shade[lit] = np.where(np.isfinite(t), 0.0, 1.0)
 
     nz = np.clip(nrm[:, 2], -1.0, 1.0)
     vf_sky = 0.5 * (1.0 + nz)
