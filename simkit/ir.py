@@ -32,7 +32,8 @@ def transmittance(range_m, tau_per_km):
 def rasterize(world, cam, face_value, background=0.0):
     """Z-buffer flat shading of per-face scalar values."""
     W, H = int(cam["width"]), int(cam["height"])
-    p, r, u, f = sensor_basis(cam["pos"], cam["look_at"], cam.get("up", (0, 0, 1)))
+    p, r, u, f = sensor_basis(cam["pos"], cam["look_at"], cam.get("up", (0, 0, 1)),
+                              cam.get("roll_deg", 0.0))
     fx = (W / 2.0) / np.tan(np.radians(cam.get("fov_deg", 30.0)) / 2.0)
     fy = fx
 
@@ -84,6 +85,32 @@ def rasterize(world, cam, face_value, background=0.0):
         sub_d[upd] = zpix[upd]
         img[y0:y1, x0:x1][upd] = face_value[i]
         pid[y0:y1, x0:x1][upd] = world.face_obj[i]
+
+    # An object smaller than a pixel can fall between pixel centres and leave no
+    # trace at all: at 8 km the aircraft is 2.6 px across in the search lens and
+    # the triangle test drew exactly zero pixels of it, so the frame carried a
+    # label but no target. A real focal plane still returns one pixel of signal
+    # there, so stamp the object's own mean radiance into the pixel its centre
+    # projects to (a point-target response at the sampling limit).
+    present = set(np.unique(pid).tolist())
+    for o in getattr(world, "objs", []):
+        if not o.get("label", True) or o["id"] in present:
+            continue
+        rel = np.asarray(o["corners"], float).mean(axis=0) - p
+        z = float(rel @ f)
+        if z <= 0.05:
+            continue
+        xu = int(W / 2.0 + fx * float(rel @ r) / z)
+        yv = int(H / 2.0 - fy * float(rel @ u) / z)
+        if not (0 <= xu < W and 0 <= yv < H):
+            continue
+        if depth[yv, xu] < z:
+            continue                     # something really is in front of it
+        sel = world.face_obj == o["id"]
+        val = float(np.mean(face_value[sel])) if sel.any() else background
+        img[yv, xu] = val
+        pid[yv, xu] = o["id"]
+        depth[yv, xu] = z
 
     img = np.where(np.isnan(img), background, img)
     return img, depth, pid
@@ -155,7 +182,8 @@ def render(world, cfg, temps_k, cam=None):
 
     eps_face = np.array([_eps(n) for n in mat_names])[world.face_mat]
 
-    p, r, u, f = sensor_basis(cam["pos"], cam["look_at"], cam.get("up", (0, 0, 1)))
+    p, r, u, f = sensor_basis(cam["pos"], cam["look_at"], cam.get("up", (0, 0, 1)),
+                              cam.get("roll_deg", 0.0))
     cent = world.verts[world.faces].mean(axis=1)
     rng = np.linalg.norm(cent - p, axis=1)
 
@@ -253,9 +281,20 @@ def render(world, cfg, temps_k, cam=None):
         if win:
             tlo, thi = win[0] + 273.15, win[1] + 273.15
         else:
-            med = float(np.median(t_img))
-            half = min(20.0, max(8.0, (np.percentile(t_img, 98) - np.percentile(t_img, 2)) * 0.6))
-            tlo, thi = med - half, med + half
+            # A fixed +-20 K window centred on the median is what a camera with no
+            # AGC would use, and on a sky-filled frame the sky's own gradient fills
+            # the window: a 1.5 K aircraft then landed on 9 of 255 grey levels and
+            # the thermal panel looked empty in every composite (measured).
+            # Stretch to the frame's own 1..99.5 percentile instead -- the same
+            # thing a real AGC does -- so a hot target saturates to white.
+            lo_k, hi_k = np.percentile(t_img, [1.0, 99.5])
+            span = float(hi_k - lo_k)
+            if span < 6.0:                      # near-isothermal frame: hold 6 K
+                mid = 0.5 * (float(hi_k) + float(lo_k))
+                lo_k, hi_k = mid - 3.0, mid + 3.0
+            else:
+                lo_k, hi_k = float(lo_k), float(hi_k)
+            tlo, thi = lo_k, hi_k
         prev = np.clip((t_img - tlo) / max(thi - tlo, 1e-6), 0, 1)
     return dict(
         radiance=img,

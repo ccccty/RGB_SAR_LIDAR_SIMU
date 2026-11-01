@@ -41,7 +41,8 @@ def cfg_get(cfg, key):
 
 
 def beam_grid(cam, n_az, n_el, az_span, el_span):
-    p, r, u, f = sensor_basis(cam["pos"], cam["look_at"], cam.get("up", (0, 0, 1)))
+    p, r, u, f = sensor_basis(cam["pos"], cam["look_at"], cam.get("up", (0, 0, 1)),
+                              cam.get("roll_deg", 0.0))
     az = np.linspace(-az_span / 2, az_span / 2, n_az)
     el = np.linspace(-el_span / 2, el_span / 2, n_el)
     dirs, angles = [], []
@@ -149,6 +150,58 @@ def simulate(world, cfg):
     dist = hit["t"].copy()
     dist[~ok] = np.inf
 
+    # A target can be smaller than the beam raster. At 9.6 km an 11 m aircraft
+    # subtends 0.07 deg in azimuth but only 0.011 deg in elevation -- under the
+    # 0.039 deg elevation step -- so 1536 rays stepped straight over it and every
+    # transmit power from 10 W to 100 kW returned sigma = 0. A real beam still
+    # illuminates it, so anything the raster missed but a centre ray reaches is
+    # integrated over its own faces and parked in the nearest beam.
+    hit_ids = set(np.unique(obj_of_beam[obj_of_beam >= 0]).tolist())
+    for o in world.objs:
+        if not o.get("label", True) or o["id"] in hit_ids:
+            continue
+        c = np.asarray(o["corners"], float).mean(axis=0)
+        v = c - p
+        R = float(np.linalg.norm(v))
+        if R < 1e-6:
+            continue
+        dvec = v / R
+        # A single centre ray is too strict: in the cluttered scene a 2 m fence
+        # post can cross the boresight while the rest of the rover is in plain
+        # view, and one blocked ray then erased 17 of 20 frames. Probe the
+        # centre plus the eight corners and accept a partial view.
+        corners = np.asarray(o["corners"], float)
+        probes = np.vstack([c[None, :], c + (corners - c) * 0.7])
+        pdirs = probes - p
+        pdirs /= np.linalg.norm(pdirs, axis=1, keepdims=True)
+        ph = bvh.ray_cast(p, pdirs)
+        _tri = np.where(ph["hit"], ph["tri"], 0)
+        _obj = world.face_obj[_tri]
+        selfhit = ph["hit"] & (_obj == o["id"])
+        # Looking down at 3 degrees over open ground, almost every probe lands on
+        # the ground a few metres short of the target; that is not occlusion. A
+        # ground hit at roughly the target's range counts as clear line of sight.
+        clear = ph["hit"] & (_obj < 0) & (np.abs(ph["t"] - R) < 0.25 * R + 5.0)
+        if not (selfhit.any() or clear.any()):
+            continue                     # something solid really is in the way
+        fm = world.face_obj == o["id"]
+        if not fm.any():
+            continue
+        cos_i = np.abs(normals[fm] @ (-dvec))
+        foot = np.full(int(fm.sum()), (R * bw_az0) * (R * bw_el0))
+        s_obj = float(np.sum(facet_sigma(areas[fm], cos_i,
+                                         rho_tab[world.face_mat[fm]],
+                                         rough_tab[world.face_mat[fm]], lam, foot,
+                                         spec_scale, diff_gamma)))
+        if not np.isfinite(s_obj) or s_obj <= 0.0:
+            continue
+        b = int(np.argmax(dirs @ dvec))
+        sig[b] += s_obj
+        obj_of_beam[b] = o["id"]
+        if R < dist[b]:
+            dist[b] = R
+            pts[b] = c
+
     # explicit per-object RCS override (dBsm) wins over the geometric estimate
     for o in world.objs:
         if o.get("rcs_db") is not None:
@@ -203,17 +256,45 @@ def simulate(world, cfg):
         pf = min(max(float(pfa), 1e-12), 0.5)
         det_db = 10.0 * np.log10(max(-np.log(pf), 1e-12))
         rc["det_snr_db"] = det_db
-    pg_db = float(rc.get("processing_gain_db", 10.0 * np.log10(max(int(rc["n_chirps"]), 1))))
+    # Coherent gain is the whole 2-D array, not just the chirps. pn above is the
+    # *ADC-band* noise (n_samples / chirp time), so the range FFT that follows it
+    # is part of the matched filter and contributes n_samples of gain as well.
+    # Counting only n_chirps made the detector ~30 dB deafer than the cube it
+    # ships from the same numbers: a 0.5 m^2 rover at 2.6 km sits in the RD map
+    # at roughly 30 dB (measured peak/cell-noise of the synthesised beat signal)
+    # while this line called it -1.6 dB, i.e. under the 11.4 dB Pfa=1e-6 gate,
+    # so it never produced a detection point in 17 of 20 frames.
+    pg_db = float(rc.get("processing_gain_db",
+                         10.0 * np.log10(max(int(rc["n_samples"]) * int(rc["n_chirps"]), 1))))
     snr_db = 10.0 * np.log10(np.maximum(pr, 1e-30) / pn) + pg_db
 
     # radial velocity from object motion
+    # Doppler is the *closing* rate, so it is the target velocity relative to the
+    # radar. Using the target's own velocity alone put a 200 m/s closing aircraft
+    # at 1.4 m/s -- right on the zero-Doppler clutter ridge and inside the MTI
+    # notch, i.e. an RD map whose velocity axis means nothing.
+    v_rad = np.asarray(rc.get("vel", [0.0, 0.0, 0.0]), float)
     vr = np.zeros(len(dirs))
     for o in world.objs:
         m = obj_of_beam == o["id"]
         if not m.any():
             continue
         u = dirs[m]
-        vr[m] = -(u @ np.asarray(o.get("vel", [0, 0, 0]), float))
+        vr[m] = -(u @ (np.asarray(o.get("vel", [0, 0, 0]), float) - v_rad))
+    # A single PRF measures Doppler modulo the pulse repetition rate: fd = 2v/lam
+    # is only resolved inside +-PRF/2, i.e. +-lam/(4*pri) = +-64.9 m/s at 77 GHz
+    # and pri = 15 us. The cube is synthesised from the same fd, so a 164 m/s
+    # rover is *drawn* at its aliased 34 m/s cell, but v_r used to carry the true
+    # 164 m/s: dataset.py places the RD box at argmin|doppler_axis - v_r|, so the
+    # box landed on the +-Nyquist edge row instead of on the echo (measured: box
+    # row 255 / pixel 2, echo row 196 / pixel 78). Report what the CPI measures.
+    # The MTI gate keeps the true closing rate: this model has one PRF and does
+    # no ambiguity resolution, so notching the aliased value would invent blind
+    # speeds every 130 m/s and silently drop fast targets sitting on them.
+    v_nyq = lam / (4.0 * float(rc["pri_us"]) * 1e-6)
+    vr_true = vr.copy()
+    if np.isfinite(v_nyq) and v_nyq > 0.0:
+        vr = (vr + v_nyq) % (2.0 * v_nyq) - v_nyq
     # ---- beat signal synthesis ----
     # The range-Doppler cube is (beams x samples x chirps) complex and grows
     # fast: 2400 beams x 1600 samples x 64 chirps is 3.7 GB. Detections are
@@ -224,7 +305,12 @@ def simulate(world, cfg):
     b = float(rc["bandwidth_mhz"]) * 1e6
     t_chirp = float(rc["chirp_us"]) * 1e-6
     pri = float(rc["pri_us"]) * 1e-6
-    r_max = C_LIGHT / (2.0 * b) * n_s
+    # FMCW beat frequency maps to range as f_b = 2B*R/(c*T) and the FFT only
+    # resolves up to fs/2, so the unambiguous range is n_s*c/(4B). The old n_s*c/(2B)
+    # was twice that: targets beyond the window passed the range gate and then
+    # clamped onto the last bin, which is exactly how a 9.6 km aircraft ended up
+    # "detected" at 5.1 km.
+    r_max = C_LIGHT * n_s / (4.0 * b)
 
     rng = np.random.default_rng(int(cfg.get("_frame_seed", 0)))
 
@@ -233,10 +319,13 @@ def simulate(world, cfg):
     mti_v = float(rc.get("mti_min_vr_mps", 0.0))
     det = []
     echoes = []          # (beam, beat_freq, doppler_freq, amplitude)
-    for i in idx:
-        if not ok[i] or snr_db[i] < float(rc["det_snr_db"]):
+    # `idx` is the geometry-hit set; a sub-beam target injected above never
+    # produced a hit, yet it is exactly the echo a seeker cares about.
+    det_idx = np.where(ok | (obj_of_beam >= 0))[0]
+    for i in det_idx:
+        if snr_db[i] < float(rc["det_snr_db"]):
             continue
-        if mti_v > 0.0 and abs(float(vr[i])) < mti_v:
+        if mti_v > 0.0 and abs(float(vr_true[i])) < mti_v:
             continue
         r = float(dist[i])
         if r < 0.5 or r > r_max:
@@ -324,10 +413,23 @@ def simulate(world, cfg):
         spec = np.fft.fftshift(np.fft.fft2(blk, axes=(1, 2)), axes=2)
         power = np.abs(spec)          # complex64 -> float32, no imaginary cast
         np.square(power, out=power)
-        rd_map += power.sum(axis=0, dtype=np.float64)
+        # An RD map is one beam's picture. Summing all beams incoherently adds
+        # 10*log10(n_beams) = +31 dB to the noise floor while a point target is
+        # in one or two beams, so a target the detector calls 30 dB strong (the
+        # rover in the low air-to-ground scene) sat at 1/255 in the shipped image
+        # and its RD box landed on a black cell, while the ground clutter that
+        # fills every beam took the bright cells. Take the per-cell maximum over
+        # beams instead -- the same statistic ra_map already uses along Doppler.
+        np.maximum(rd_map, power.max(axis=0), out=rd_map)
         ra_map[a:bb] = power.max(axis=2)
 
     axis_r = np.fft.fftfreq(n_s, 1.0 / fs) * C_LIGHT * t_chirp / (2.0 * b)
+    # A real beat signal has a conjugate-symmetric spectrum, so the second half of
+    # the range axis is a mirror, not new information. Keeping it drew every echo
+    # twice (once at +R, once at -R) and left the range axis non-monotonic.
+    _half = max(1, n_s // 2)
+    rd_map = rd_map[:_half]
+    axis_r = axis_r[:_half]
     axis_d = np.fft.fftshift(np.fft.fftfreq(n_c, pri)) * lam / 2.0
 
     return dict(

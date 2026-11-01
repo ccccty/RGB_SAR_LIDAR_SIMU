@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>simkit · RGB / SAR / LiDAR 多模态仿真数据集</title>
-<meta name="description" content="离线多模态传感器仿真：可见光、中波/长波红外、毫米波雷达、激光雷达，带 COCO 标注，纯 Python + numpy。">
+<meta name="description" content="离线多模态传感器仿真：可见光、中波/长波红外、毫米波雷达、激光雷达、SAR，带 COCO 标注，纯 Python + numpy。">
 <link rel="stylesheet" href="app.css">
 <script src="data/boot.js"></script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='11' fill='none' stroke='%2337c2ff' stroke-width='3'/><circle cx='16' cy='16' r='4' fill='%2337c2ff'/></svg>">
@@ -16,30 +16,33 @@
   <nav class="tabs" id="tabs">
     <button data-tab="gallery" class="on">数据集</button>
     <button data-tab="compare">多模态对照</button>
+    <button data-tab="sar">SAR 成像</button>
+    <button data-tab="seeker">导引头视角</button>
     <button data-tab="lidar">点云</button>
     <button data-tab="radar">雷达</button>
     <button data-tab="explore">参数实验</button>
     <button data-tab="about">原理与离线部署</button>
   </nav>
+  <div class="devbadge" id="devBadge" hidden>MOCK 数据</div>
 </div>
 
 <main>
 
 <!-- ================= 数据集 ================= -->
 <section id="gallery" class="on">
-  <h1>三场景 × 三天气 × 五模态</h1>
+  <h1>三场景 × 三天气 × 多模态</h1>
   <p class="lead">全部图像由 <b>纯 numpy / Blender 无头渲染</b>离线生成，同一帧里
-    可见光、两个红外波段、毫米波雷达、激光雷达共享<b>同一份三维世界与同一套天气参数</b>，
-    因此可以直接做跨模态配准与融合训练。下面是成品数据集。</p>
+    可见光、两个红外波段、毫米波雷达、激光雷达（以及可选 SAR）共享<b>同一份三维世界与同一套天气参数</b>，
+    因此可以直接做跨模态配准与融合训练。下面是成品数据集，模态按钮只列<b>这一份数据里真有图</b>的那些。</p>
 
-  <div class="row" style="margin-bottom:18px">
+  <div class="row toolbar">
     <div class="seg" id="galScene"></div>
     <div class="seg" id="galMod"></div>
   </div>
 
-  <div class="grid g2" style="grid-template-columns:minmax(0,1fr) 320px">
-    <div class="card" style="padding:12px">
-      <div class="viewer" id="galViewer" style="aspect-ratio:4/3">
+  <div class="layout-main">
+    <div class="card pad-s">
+      <div class="viewer checker" id="galViewer" style="aspect-ratio:4/3">
         <img id="galImg" alt="">
         <svg class="overlay" id="galSvg"></svg>
         <div class="ovl-tl" id="galTL"></div>
@@ -53,8 +56,8 @@
         <span class="tag" id="galCount"></span>
       </div>
     </div>
-    <div>
-      <div class="card" style="margin-bottom:16px">
+    <div class="stack">
+      <div class="card">
         <h3>当前帧</h3>
         <div id="galInfo"></div>
       </div>
@@ -75,7 +78,7 @@
   <p class="lead">拖滑块把 <b>可见光</b> 和任一其他模态做<b>淡入淡出叠加</b>，
     可以看出标注框、目标轮廓在各模态之间是否对齐——这是检验仿真一致性的最快办法。</p>
 
-  <div class="row" style="margin-bottom:16px">
+  <div class="row toolbar">
     <div class="seg" id="cmpScene"></div>
     <div class="seg" id="cmpMod"></div>
     <label class="row" style="gap:6px;font-size:13px;color:var(--dim)">
@@ -83,7 +86,7 @@
     </label>
   </div>
 
-  <div class="card" style="padding:12px">
+  <div class="card pad-s">
     <div class="viewer" id="cmpViewer" style="aspect-ratio:4/3">
       <img id="cmpA" alt="">
       <img id="cmpB" class="overlay" style="object-fit:contain" alt="">
@@ -101,6 +104,178 @@
   </div>
 </section>
 
+<!-- ================= SAR ================= -->
+<section id="sar">
+  <h1>SAR 合成孔径成像</h1>
+  <p class="lead">同一份三维世界，换一种成像几何：距离向靠<b>脉冲压缩</b>（带宽决定分辨率），
+    方位向靠<b>平台运动合成的大孔径</b>（相干积累时间决定分辨率）。
+    注意图像<b>行 = 方位向（沿航迹）、列 = 地距向（近 → 远）</b>，行列的含义和光学图不同，
+    长宽比也不同——所以刻度必须单独标，不能套用光学的画幅。</p>
+
+  <div class="row toolbar">
+    <div class="seg" id="sarScene"></div>
+    <div class="seg" id="sarDr"></div>
+    <span class="spacer"></span>
+    <span class="tag" id="sarPill">—</span>
+  </div>
+
+  <div id="sarBody">
+    <div class="layout-main">
+      <div class="card pad-s">
+        <div class="sar-plot" id="sarPlot">
+          <div class="viewer checker sar-viewer" id="sarViewer" style="aspect-ratio:4/3">
+            <div class="zstage" id="sarStage">
+              <img id="sarImg" alt="">
+              <canvas id="sarCanvas"></canvas>
+              <svg class="overlay" id="sarSvg"></svg>
+              <div class="ovl-tl" id="sarTL"></div>
+              <div class="ovl-br" id="sarBR"></div>
+            </div>
+            <div class="zbadge">点击放大 · 滚轮缩放 · 拖动平移 · 双击复位</div>
+          </div>
+          <div class="sar-ticks" id="sarTicks"></div>
+        </div>
+        <div class="cbar">
+          <span class="cbar-lab" id="sarCbLo">暗（噪底）</span>
+          <div class="cbar-bar"></div>
+          <span class="cbar-lab" id="sarCbHi">亮（饱和）</span>
+          <span class="cbar-cur" id="sarCbCur">45 dB · γ=1.00</span>
+        </div>
+        <div class="ctl">
+          <button class="btn" id="sarPrev">◀</button>
+          <input type="range" id="sarRange" min="0" max="5" value="0">
+          <button class="btn" id="sarNext">▶</button>
+          <button class="btn" id="sarPlay">播放</button>
+          <span class="tag" id="sarCount"></span>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="card">
+          <h3>成像参数</h3>
+          <div id="sarGeo"></div>
+        </div>
+        <div class="card">
+          <h3>辐射统计</h3>
+          <div id="sarStats"></div>
+        </div>
+        <div class="card">
+          <h3>平台运动</h3>
+          <div id="sarPlat"></div>
+        </div>
+      </div>
+    </div>
+
+    <p class="note" id="sarNote">
+      拉伸说明：导出的 PNG 已经是<b>导出时做过一次 DB 拉伸</b>的 8-bit 灰度，
+      这里切换 30 / 45 / 60 dB 只是对这份幅度做 <b>gamma 重映射</b>（窄窗口把弱散射提亮，宽窗口压回高亮），
+      目的是让只有几个像素的目标可判读，<b>不改动原始数据</b>。
+      <b>拉伸仅用于显示，数值分析请用原始 dB</b>，右侧「辐射统计」给的才是导出时算好的 dB 值。
+    </p>
+  </div>
+
+  <div class="card empty-card" id="sarNone" hidden>
+    <h3>这份数据集还没有 SAR 帧</h3>
+    <p>manifest 里没有任何 <code>mods.sar</code> 条目，所以这里不显示空图。
+      生成带 SAR 的数据需要仿真内核的 SAR 后端，导出时把 <code>sensors.sar</code>
+      打开即可；页签本身不会因为缺数据而报错。</p>
+  </div>
+</section>
+
+<!-- ================= 导引头 ================= -->
+<section id="seeker">
+  <h1>导引头：窄视场与宽视场，同一时刻</h1>
+  <p class="lead">同一帧、同一世界、两路相机：<b>窄视场 2.2°（导引头，跟踪）</b> 与
+    <b>宽视场 18°（搜索）</b>。目标在窄视场里只有几十像素、在宽视场里只有几个像素，
+    所以每个视场都配了<b>定位括号 + 取景放大镜</b>，图本身还能点击放大、滚轮缩放、拖动平移。
+    下方的曲线是<b>连续轨迹</b>在时间上的投影：同一片段内目标沿一条解析轨迹运动，
+    相邻帧只差一个积分步，不是逐帧随机摆放。</p>
+
+  <div class="row toolbar">
+    <div class="seg" id="skScene"></div>
+    <span class="spacer"></span>
+    <span class="tag" id="skPill">—</span>
+  </div>
+
+  <div id="skBody">
+    <div class="layout-2">
+      <div class="card">
+        <div class="card-hd"><h3>窄视场 · 导引头</h3><span class="tag hi" id="skSeekFov">—</span></div>
+        <div class="viewer checker zoom" id="skSeekView" style="aspect-ratio:4/3">
+          <div class="zstage" id="skSeekStage">
+            <img id="skSeekImg" alt="">
+            <svg class="overlay" id="skSeekSvg"></svg>
+            <div class="ovl-tl" id="skSeekTL"></div>
+          </div>
+          <div class="mag" id="skSeekMagWrap">
+            <canvas id="skSeekMag"></canvas>
+            <div class="mag-cap" id="skSeekMagCap">—</div>
+          </div>
+        </div>
+        <div class="stat-row" id="skSeekStats"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-hd"><h3>宽视场 · 搜索</h3><span class="tag" id="skWideFov">—</span></div>
+        <div class="viewer checker zoom" id="skWideView" style="aspect-ratio:4/3">
+          <div class="zstage" id="skWideStage">
+            <img id="skWideImg" alt="">
+            <svg class="overlay" id="skWideSvg"></svg>
+            <div class="ovl-tl" id="skWideTL"></div>
+          </div>
+          <div class="mag" id="skWideMagWrap">
+            <canvas id="skWideMag"></canvas>
+            <div class="mag-cap" id="skWideMagCap">—</div>
+          </div>
+        </div>
+        <div class="stat-row" id="skWideStats"></div>
+      </div>
+    </div>
+
+    <div class="card ctl-card">
+      <div class="ctl">
+        <button class="btn" id="skPrev">◀</button>
+        <input type="range" id="skRange" min="0" max="5" value="0">
+        <button class="btn" id="skNext">▶</button>
+        <button class="btn" id="skPlay">播放</button>
+        <span class="spacer"></span>
+        <span class="tag" id="skCount"></span>
+      </div>
+    </div>
+
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card">
+        <div class="card-hd">
+          <h3>视线距离 — 帧</h3>
+          <span class="mono muted" id="skRangeNow" style="font-size:12px"></span>
+        </div>
+        <svg class="chart" id="skRangeChart"></svg>
+      </div>
+      <div class="card">
+        <div class="card-hd">
+          <h3>目标画面占比 — 帧</h3>
+          <span class="mono muted" id="skPxNow" style="font-size:12px"></span>
+        </div>
+        <svg class="chart" id="skPxChart"></svg>
+      </div>
+    </div>
+
+    <p class="note">
+      曲线横轴是帧序（同一片段内每帧固定步长），竖线是当前帧，点曲线可跳帧。
+      <b>距离在缩、像素在涨</b>是同一条轨迹的两种读法：距离按 <code>range_m</code>，
+      像素按 <code>target_px</code> 与画幅宽度之比算出「画面占比」（线性占比，不是面积占比）。
+      宽视场里目标只有几个像素时，占比会低到 0.2% 量级——这不是渲染失败，是视场角换来的必然结果。
+    </p>
+  </div>
+
+  <div class="card empty-card" id="skNone" hidden>
+    <h3>这份数据集没有双视场帧</h3>
+    <p>manifest 里没有任何 <code>views</code> 字段（也没有 <code>*_wide</code> 图），
+      所以这里不显示空图。用带 <code>clip.views</code> 的场景重新导出即可；
+      页签本身不会因为缺数据而报错。</p>
+  </div>
+</section>
+
 <!-- ================= 点云 ================= -->
 <section id="lidar">
   <h1>激光雷达点云</h1>
@@ -108,7 +283,7 @@
     <b>激光雷达链路方程</b>算光子数，噪声底由「反射率 10% 目标的作用距离」单点标定。
     下面是浏览器端实时投影的 <b>3D 点云</b>，可按反射强度或距离着色，鼠标拖动旋转。</p>
 
-  <div class="row" style="margin-bottom:16px">
+  <div class="row toolbar">
     <div class="seg" id="pcScene"></div>
     <div class="seg" id="pcColor"></div>
     <label class="row" style="gap:6px;font-size:13px;color:var(--dim)">
@@ -116,8 +291,8 @@
     </label>
   </div>
 
-  <div class="grid g2" style="grid-template-columns:minmax(0,1fr) 300px">
-    <div class="card" style="padding:12px">
+  <div class="layout-main" style="grid-template-columns:minmax(0,1fr) 300px">
+    <div class="card pad-s">
       <div class="viewer" id="pcViewer" style="aspect-ratio:4/3">
         <canvas id="pcCanvas"></canvas>
         <div class="ovl-tl" id="pcTL"></div>
@@ -131,14 +306,14 @@
         <span class="tag" id="pcCount"></span>
       </div>
     </div>
-    <div>
-      <div class="card" style="margin-bottom:16px">
+    <div class="stack">
+      <div class="card">
         <h3>点云统计</h3>
         <div id="pcInfo"></div>
       </div>
       <div class="card">
         <h3>距离图</h3>
-        <div class="viewer" style="aspect-ratio:16/9">
+        <div class="viewer checker" style="aspect-ratio:16/9">
           <img id="pcRangeImg" alt="">
         </div>
       </div>
@@ -153,14 +328,13 @@
     下面把<b>距离-方位原始图</b>和<b>检出的点云（俯视）</b>并排显示，
     点按信噪比着色，虚线为 MTI 多普勒门限剔除掉的地物。</p>
 
-  <div class="row" style="margin-bottom:16px">
+  <div class="row toolbar">
     <div class="seg" id="rdScene"></div>
-    <div class="seg" id="rdView"></div>
   </div>
 
-  <div class="grid g2" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr) 300px">
-    <div class="card" style="padding:12px">
-      <div class="viewer" id="rdViewer" style="aspect-ratio:4/3">
+  <div class="layout-3">
+    <div class="card pad-s">
+      <div class="viewer checker" id="rdViewer" style="aspect-ratio:4/3">
         <img id="rdImg" alt="">
         <canvas id="rdOverlay"></canvas>
         <div class="ovl-tl" id="rdTL"></div>
@@ -172,12 +346,12 @@
         <button class="btn" id="rdNext">▶</button>
         <span class="tag" id="rdCount"></span>
       </div>
-      <label class="mono muted" style="font-size:12px;display:block;margin-top:8px">
+      <label class="mono muted" style="font-size:12px;display:block;margin-top:8px;line-height:1.6">
         <input type="checkbox" id="rdMark"> 在图上标出最强回波（否则只是原始距离-角度图）
       </label>
     </div>
 
-    <div class="card" style="padding:12px">
+    <div class="card pad-s">
       <div class="viewer" id="rdPtViewer" style="aspect-ratio:4/3">
         <canvas id="rdCanvas"></canvas>
         <div class="ovl-tl" id="rdPtTL"></div>
@@ -187,12 +361,13 @@
         <span class="mono muted" style="font-size:12px">检出点俯视图（距离 / 方位）</span>
       </div>
     </div>
-    <div>
-      <div class="card" style="margin-bottom:16px">
+
+    <div class="stack">
+      <div class="card">
         <h3>检测统计</h3>
         <div id="rdInfo"></div>
       </div>
-      <div class="card" style="margin-bottom:16px">
+      <div class="card">
         <h3>链路预算余量</h3>
         <div id="rdBudget"></div>
       </div>
@@ -250,11 +425,12 @@
 
   <div class="grid g2">
     <div class="card">
-      <h3>四个模态怎么算的</h3>
+      <h3>各模态怎么算的</h3>
       <div class="kv"><span>可见光</span><span>Blender 4.5 无头 Cycles</span></div>
       <div class="kv"><span>红外</span><span>逐面能量平衡 + Planck 波段积分</span></div>
       <div class="kv"><span>毫米波雷达</span><span>面元 PO + 雷达方程 + 雨衰</span></div>
       <div class="kv"><span>激光雷达</span><span>脉冲 TOF + 链路方程</span></div>
+      <div class="kv"><span>SAR</span><span>距离-方位栅格 + 后向散射</span></div>
       <div class="kv"><span>标注</span><span>COCO（掩膜/投影）+ PLY 点云</span></div>
       <div class="kv"><span>依赖</span><span>numpy · Blender · 无网络</span></div>
     </div>
@@ -264,7 +440,7 @@
       <div class="kv"><span>红外 NUC</span><span>固定图案相关 0.962</span></div>
       <div class="kv"><span>雷达雨衰</span><span>2 km Ka：35.1 → 28.8 dB</span></div>
       <div class="kv"><span>自检</span><span>20 项全 PASS</span></div>
-      <div class="kv"><span>单帧耗时</span><span>IR+雷达 ≈2.2 s</span></div>
+      <div class="kv"><span>生成耗时</span><span>约分钟级（随传感器组合与场景规模变化）</span></div>
     </div>
   </div>
 
@@ -293,6 +469,7 @@ node tools\serve_web.js          :: http://127.0.0.1:18080</pre>
     <div class="kv"><span>雷达 RCS</span><span>几何 PO + rcs_db 覆盖，非实测</span></div>
     <div class="kv"><span>海面</span><span>六正弦叠加，无白冠、无破碎波</span></div>
     <div class="kv"><span>红外预览</span><span>MWIR/LWIR 经 AGC 后高度相关</span></div>
+    <div class="kv"><span>SAR</span><span>点散射近似，无相位屏与多视处理</span></div>
     <div class="kv"><span>天气</span><span>晴/阴/雨三档，缺雾、雪、沙尘</span></div>
     <div class="kv"><span>光学标定</span><span>仅标定天空，地面与阴影未单独标</span></div>
   </div>
@@ -303,15 +480,14 @@ node tools\serve_web.js          :: http://127.0.0.1:18080</pre>
   </p>
 
   <p class="note" style="margin-top:10px">
-    源码与完整文档：<a href="https://github.com/ccccty/RGB_SAR_LIDAR_SIMU"
-    style="color:var(--accent)">github.com/ccccty/RGB_SAR_LIDAR_SIMU</a>
+    源码与完整文档：<a href="https://github.com/ccccty/RGB_SAR_LIDAR_SIMU">github.com/ccccty/RGB_SAR_LIDAR_SIMU</a>
     · MIT License
   </p>
 </section>
 
 </main>
 
-<footer>simkit · 纯离线多模态传感器仿真 · <span id="genInfo"></span></footer>
+<footer>纯离线多模态传感器仿真 · <span id="genInfo"></span></footer>
 
 <script src="app.js"></script>
 </body>

@@ -1,4 +1,17 @@
-/* simkit web app -- no build step, no dependencies, works offline. */
+/* simkit web app -- no build step, no dependencies, works offline.
+ *
+ * Layout of this file:
+ *   1  helpers / modality tables
+ *   2  tabs
+ *   3  shared drawing (boxes, locator, zoom, charts)
+ *   4  gallery / compare
+ *   5  point cloud
+ *   6  radar
+ *   7  SAR
+ *   8  seeker (dual field of view)
+ *   9  explore (live physics)
+ *  10  boot
+ */
 (function () {
   'use strict';
 
@@ -9,28 +22,133 @@
     if (txt !== undefined) e.textContent = txt;
     return e;
   };
+  var NS = 'http://www.w3.org/2000/svg';
   var f1 = function (v) { return (Math.round(v * 10) / 10).toFixed(1); };
   var f2 = function (v) { return (Math.round(v * 100) / 100).toFixed(2); };
   var f0 = function (v) { return String(Math.round(v)); };
+  var isNum = function (v) { return typeof v === 'number' && isFinite(v); };
+  var num = function (v) { return isNum(v) ? v : null; };
+  function fmtM(v) {
+    if (!isNum(v)) return '—';
+    return Math.abs(v) >= 1000 ? f2(v / 1000) + ' km' : f0(v) + ' m';
+  }
+  function fmtAxis(v) {
+    if (!isNum(v)) return '';
+    var a = Math.abs(v);
+    if (a >= 1000) return f1(v / 1000) + 'k';
+    if (a >= 10) return f0(v);
+    return f1(v);
+  }
+  function svgEl(tag, attrs) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) if (Object.prototype.hasOwnProperty.call(attrs, k)) {
+      e.setAttribute(k, attrs[k]);
+    }
+    return e;
+  }
 
+  // ---------- modalities ----------
   var MOD_LABEL = {
     optical: '可见光', mwir: '中波红外', lwir: '长波红外',
+    optical_wide: '可见光 · 宽视场', mwir_wide: '中波红外 · 宽视场',
+    lwir_wide: '长波红外 · 宽视场',
     radar_ra: '雷达距离-角度', radar: '雷达距离-多普勒',
+    sar: 'SAR 合成孔径',
     lidar_range: '激光距离', lidar_intensity: '激光强度'
   };
-  var MODS_ALL = ['optical', 'mwir', 'lwir', 'radar_ra', 'radar', 'lidar_range', 'lidar_intensity'];
+  var MODS_ALL = [
+    'optical', 'optical_wide', 'mwir', 'mwir_wide', 'lwir', 'lwir_wide',
+    'radar_ra', 'sar', 'lidar_range', 'lidar_intensity'
+  ];
   // Only offer modalities that are actually in the manifest: the range-Doppler
   // image is written by the kernel but is a 1600x64 strip with a 2 px target, so
   // export_web.py leaves it out of the site on purpose. An empty tab is worse
-  // than no tab.
+  // than no tab. Same rule covers sar / *_wide when a dataset has none.
   var MODS = MODS_ALL.slice();
   var WNAME = { clear: '晴', cloudy: '阴', rain: '雨', fog: '雾', storm: '暴风雨' };
 
   var MAN = null;
   var S = { scene: 0, frame: 0, mod: 'optical' };
 
+  // Dev-only override: ?manifest=_tmp/webmock/manifest.json
+  var Q = {};
+  (function () {
+    var q = location.search.replace(/^\?/, '');
+    if (!q) return;
+    q.split('&').forEach(function (kv) {
+      var i = kv.indexOf('=');
+      var k = i < 0 ? kv : kv.slice(0, i);
+      var v = i < 0 ? '' : kv.slice(i + 1);
+      try { Q[decodeURIComponent(k)] = decodeURIComponent(v); } catch (e) { Q[k] = v; }
+    });
+  })();
+  var MAN_URL = Q.manifest || '';
+  var FELL_BACK = false;   // ?manifest= died and we used data/boot.js instead
+
+  // Footer label for manifest.generated. Today the exporter writes a bare tag
+  // ("simkit"); if it ever writes a date we say so instead of printing a number
+  // nobody can interpret. No value is hard coded here.
+  function genLabel(g) {
+    if (!g) return '';
+    var s = String(g);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+      return '生成于 ' + s.replace('T', ' ').replace(/\.[0-9]+.*$/, '');
+    }
+    return '数据来源 ' + s;
+  }
+
+  // One quiet line of text, for conditions the user should be told about but
+  // which should not look like an error (a dev-only URL parameter going stale).
+  function notice(txt) {
+    var el = document.getElementById('loadNotice');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'loadNotice';
+      el.className = 'notice';
+      document.body.appendChild(el);
+    }
+    el.textContent = txt;
+  }
+
+  function imgURL(e) {
+    if (!e || !e.img) return '';
+    return ((MAN && MAN.base) || 'data/') + e.img;
+  }
+
+  // Label for a modality key. The curated table keeps the tab bar compact for the
+  // keys we ship; anything the exporter invents later (a new band, a new view) is
+  // labelled from scene.mods[].title rather than showing a bare key.
+  var MOD_TITLE = {};
+  function modLabel(m) {
+    return MOD_LABEL[m] || MOD_TITLE[m] || m;
+  }
+
+  // Per-scene modality list. scene.mods is the exporter's own list
+  // ([{key,title,boxes}]) and carries the Chinese title, so the button text is
+  // not duplicated here. A key is only offered when at least one frame really
+  // has pixels for it -- the "no empty button" rule the site always had, now
+  // applied per scene and per whatever the exporter discovered on disk.
+  function sceneMods(sc) {
+    var out = [], seen = {};
+    (sc.mods || []).forEach(function (m) {
+      if (!m || !m.key || seen[m.key]) return;
+      var has = (sc.frames || []).some(function (f) { return f.mods && f.mods[m.key]; });
+      if (!has) return;
+      seen[m.key] = 1;
+      out.push({ id: m.key, label: m.title || modLabel(m.key) });
+    });
+    (sc.frames || []).forEach(function (f) {
+      Object.keys(f.mods || {}).forEach(function (k) {
+        if (seen[k]) return;
+        seen[k] = 1;
+        out.push({ id: k, label: modLabel(k) });
+      });
+    });
+    return out;
+  }
+
   // ---------- tabs ----------
-  var TABS = ['gallery', 'compare', 'lidar', 'radar', 'explore', 'about'];
+  var TABS = ['gallery', 'compare', 'sar', 'seeker', 'lidar', 'radar', 'explore', 'about'];
   function showTab(name) {
     TABS.forEach(function (t) {
       var sec = $(t);
@@ -39,17 +157,23 @@
     Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-tab') === name);
     });
+    if (name !== 'seeker') skStop();
+    if (name !== 'sar') sarStop();
+    if (name === 'gallery') setTimeout(galSync, 20);
     if (name === 'lidar') setTimeout(resizePC, 30);
-    if (name === 'radar') setTimeout(function () { drawRadar(); drawRdMark(curFrame()); }, 30);
+    if (name === 'radar') setTimeout(function () { rdSync(); drawRadar(); drawRdMark(curFrame()); }, 30);
     if (name === 'explore') setTimeout(function () { if (BANDS) exploreUpdate(); }, 40);
     if (name === 'compare') setTimeout(renderCompare, 30);
+    if (name === 'sar') setTimeout(sarSync, 30);
+    if (name === 'seeker') setTimeout(skSync, 30);
   }
   Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (b) {
     b.addEventListener('click', function () { showTab(b.getAttribute('data-tab')); });
   });
 
-  // ---------- helpers ----------
+  // ---------- shared helpers ----------
   function seg(host, items, cur, onPick) {
+    if (!host) return;
     host.innerHTML = '';
     items.forEach(function (it) {
       var b = el('button', it.id === cur ? 'on' : '', it.label);
@@ -57,113 +181,258 @@
       host.appendChild(b);
     });
   }
+  function kvInto(host, rows) {
+    if (!host) return;
+    host.innerHTML = '';
+    rows.forEach(function (r) {
+      var d = el('div', 'kv');
+      d.appendChild(el('span', '', r[0]));
+      var v = el('span', '', (r[1] === null || r[1] === undefined || r[1] === '') ? '—' : String(r[1]));
+      if (r[2]) v.style.color = r[2];
+      d.appendChild(v);
+      host.appendChild(d);
+    });
+  }
   function sceneList() {
     return MAN.scenes.map(function (s, i) { return { id: String(i), label: s.title }; });
   }
-  function curScene() { return MAN.scenes[S.scene]; }
+  function curScene() { return MAN.scenes[Math.min(S.scene, MAN.scenes.length - 1)]; }
   function curFrame() {
     var sc = curScene();
-    return sc.frames[Math.min(S.frame, sc.frames.length - 1)];
+    if (!sc || !sc.frames.length) return null;
+    return sc.frames[Math.max(0, Math.min(S.frame, sc.frames.length - 1))];
   }
   function weatherText(fr) {
-    var w = fr.weather || {};
+    var w = (fr && fr.weather) || {};
     var nm = WNAME[w.name] || WNAME[w.preset] || w.name || '—';
     return nm + ' · 云量 ' + f0((w.cloud_cover || 0) * 100) + '% · 雨 ' +
       f1(w.rain_mmh || 0) + ' mm/h · 能见度 ' + f1((w.visibility_m || 0) / 1000) + ' km';
   }
-  function boxSvg(svg, boxes, w, h) {
+  function aspectStyle(host, w, h) {
+    if (!host || !w || !h) return;
+    var ar = w / h;
+    if (ar > 3.2) ar = 3.2; else if (ar < 0.55) ar = 0.55;
+    host.style.aspectRatio = String(ar);
+  }
+  // A dataset can carry SAR in one scene only. Rather than show an empty plot,
+  // jump to the first scene that actually has the data (the user can switch back
+  // with the scene pills). Returns true when it moved.
+  function ensureScene(pred) {
+    if (!MAN || pred(curScene())) return false;
+    for (var i = 0; i < MAN.scenes.length; i++) {
+      if (pred(MAN.scenes[i])) { S.scene = i; S.frame = 0; return true; }
+    }
+    return false;
+  }
+
+  // Draw boxes in image-pixel coordinates. The overlay <svg> carries the image's
+  // viewBox with preserveAspectRatio=meet, so it stays glued to a letterboxed
+  // <img> without any code measuring the rendered rect.
+  //
+  // opt.locator adds corner brackets + faint leader lines around the first box:
+  // a 3 px target is otherwise unfindable even when the box is drawn correctly.
+  function drawBoxes(svg, boxes, w, h, opt) {
+    if (!svg) return;
+    opt = opt || {};
     svg.innerHTML = '';
-    if (!boxes || !boxes.length) return;
-    var NS = 'http://www.w3.org/2000/svg';
+    if (!w || !h) return;
     svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    if (!boxes || !boxes.length) return;
+
+    var col = opt.color || '#37c2ff';
+    var sw = Math.max(w / 320, 1.2);
+    var fs = Math.max(w / 52, 9);
+
     boxes.forEach(function (b) {
-      var r = document.createElementNS(NS, 'rect');
-      r.setAttribute('x', b.x0); r.setAttribute('y', b.y0);
-      r.setAttribute('width', Math.max(b.x1 - b.x0, 1));
-      r.setAttribute('height', Math.max(b.y1 - b.y0, 1));
-      r.setAttribute('fill', 'none');
-      r.setAttribute('stroke', '#37c2ff');
-      r.setAttribute('stroke-width', Math.max(w / 320, 1.2));
-      svg.appendChild(r);
-      var t = document.createElementNS(NS, 'text');
-      t.setAttribute('x', b.x0 + 2);
-      t.setAttribute('y', Math.max(b.y0 - 4, 10));
-      t.setAttribute('fill', '#37c2ff');
-      t.setAttribute('font-size', Math.max(w / 48, 9));
-      t.setAttribute('font-family', 'monospace');
-      t.textContent = b.label || 'target';
-      svg.appendChild(t);
+      var bw = Math.max(b.x1 - b.x0, 1), bh = Math.max(b.y1 - b.y0, 1);
+      svg.appendChild(svgEl('rect', {
+        x: b.x0, y: b.y0, width: bw, height: bh, fill: 'none',
+        stroke: col, 'stroke-width': sw, 'vector-effect': 'non-scaling-stroke'
+      }));
+      if (b.label) {
+        svg.appendChild(svgEl('text', {
+          x: b.x0 + 2, y: Math.max(b.y0 - 4, fs + 1), fill: col,
+          'font-size': fs, 'font-family': 'ui-monospace, monospace'
+        })).textContent = b.label;
+      }
     });
+
+    if (opt.locator) {
+      var b0 = boxes[0];
+      var cx = (b0.x0 + b0.x1) / 2, cy = (b0.y0 + b0.y1) / 2;
+      var L = Math.max(w, h) * 0.115, hh = L / 2, arm = L * 0.3;
+      var lc = opt.locColor || '#ffffff';
+      [[0, cy, cx - hh, cy], [cx + hh, cy, w, cy],
+       [cx, 0, cx, cy - hh], [cx, cy + hh, cx, h]].forEach(function (s) {
+        svg.appendChild(svgEl('line', {
+          x1: s[0], y1: s[1], x2: s[2], y2: s[3], stroke: lc,
+          'stroke-width': Math.max(sw * 0.6, 0.8), 'stroke-opacity': 0.22,
+          'stroke-dasharray': '5 7', 'vector-effect': 'non-scaling-stroke'
+        }));
+      });
+      [[cx - hh, cy - hh + arm, cx - hh, cy - hh, cx - hh + arm, cy - hh],
+       [cx + hh - arm, cy - hh, cx + hh, cy - hh, cx + hh, cy - hh + arm],
+       [cx - hh, cy + hh - arm, cx - hh, cy + hh, cx - hh + arm, cy + hh],
+       [cx + hh - arm, cy + hh, cx + hh, cy + hh, cx + hh, cy + hh - arm]
+      ].forEach(function (p) {
+        svg.appendChild(svgEl('path', {
+          d: 'M' + p[0] + ' ' + p[1] + 'L' + p[2] + ' ' + p[3] + 'L' + p[4] + ' ' + p[5],
+          fill: 'none', stroke: lc, 'stroke-width': Math.max(sw, 1.1),
+          'stroke-opacity': 0.9, 'stroke-linecap': 'square', 'vector-effect': 'non-scaling-stroke'
+        }));
+      });
+      if (opt.locLabel) {
+        var t = svgEl('text', {
+          x: cx - hh, y: Math.max(cy - hh - 5, fs), fill: lc, 'fill-opacity': 0.9,
+          'font-size': fs, 'font-family': 'ui-monospace, monospace'
+        });
+        t.textContent = opt.locLabel;
+        svg.appendChild(t);
+      }
+    }
+  }
+
+  // ---------- zoom (click to magnify, wheel, drag) ----------
+  function makeZoom(host, stage, opts) {
+    opts = opts || {};
+    var Z = { s: 1, x: 0, y: 0, down: null, moved: false };
+
+    function apply() {
+      if (Z.s <= 1.001) { Z.s = 1; Z.x = 0; Z.y = 0; }
+      stage.style.transform = 'translate(' + Z.x.toFixed(2) + 'px,' + Z.y.toFixed(2) +
+        'px) scale(' + Z.s.toFixed(3) + ')';
+      host.classList.toggle('zoomed', Z.s > 1.001);
+      if (opts.onChange) opts.onChange(Z);
+    }
+    function setOrigin() {
+      var o = (opts.origin && opts.origin()) || [0.5, 0.5];
+      var px = Math.max(0, Math.min(1, o[0])) * 100;
+      var py = Math.max(0, Math.min(1, o[1])) * 100;
+      stage.style.transformOrigin = px.toFixed(2) + '% ' + py.toFixed(2) + '%';
+    }
+    function clampPan() {
+      var r = host.getBoundingClientRect();
+      var mx = Math.max(0, r.width * (Z.s - 1) * 0.5);
+      var my = Math.max(0, r.height * (Z.s - 1) * 0.5);
+      Z.x = Math.max(-mx, Math.min(mx, Z.x));
+      Z.y = Math.max(-my, Math.min(my, Z.y));
+    }
+
+    Z.reset = function () { Z.s = 1; Z.x = 0; Z.y = 0; apply(); };
+    Z.apply = apply;
+
+    host.addEventListener('dblclick', function () { Z.reset(); });
+    host.addEventListener('click', function () {
+      if (Z.moved) { Z.moved = false; return; }
+      if (Z.s > 1.001) { Z.reset(); return; }
+      setOrigin();
+      Z.s = opts.clickScale || 4;
+      clampPan();
+      apply();
+    });
+    host.addEventListener('wheel', function (e) {
+      if (Z.s <= 1.001) return;   // at fit-to-width the page keeps the wheel
+      e.preventDefault();
+      Z.s = Math.max(1, Math.min(opts.max || 24, Z.s * (e.deltaY > 0 ? 0.86 : 1.16)));
+      clampPan();
+      apply();
+    }, { passive: false });
+    host.addEventListener('mousedown', function (e) {
+      if (Z.s <= 1.001) return;
+      Z.down = { x: e.clientX, y: e.clientY, bx: Z.x, by: Z.y };
+      host.classList.add('dragging');
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', function (e) {
+      if (!Z.down) return;
+      var dx = e.clientX - Z.down.x, dy = e.clientY - Z.down.y;
+      if (Math.abs(dx) + Math.abs(dy) > 3) Z.moved = true;
+      Z.x = Z.down.bx + dx;
+      Z.y = Z.down.by + dy;
+      clampPan();
+      apply();
+    });
+    window.addEventListener('mouseup', function () {
+      if (!Z.down) return;
+      Z.down = null;
+      host.classList.remove('dragging');
+    });
+    return Z;
   }
 
   // ---------- gallery ----------
   function galSync() {
     var sc = curScene(), fr = curFrame();
+    if (!sc || !fr) return;
     seg($('galScene'), sceneList(), String(S.scene), function (id) {
       S.scene = parseInt(id, 10); S.frame = 0; galSync();
     });
-    seg($('galMod'), MODS.map(function (m) {
-      return { id: m, label: MOD_LABEL[m] };
-    }), S.mod, function (m) { S.mod = m; galSync(); });
+    // Buttons come from this scene's own modality list, so a scene that has no
+    // SAR (or no wide view) simply does not offer the button. No fixed state
+    // table: adding a band later only changes the exporter.
+    var list = sceneMods(sc);
+    var ok = false;
+    list.forEach(function (it) { if (it.id === S.mod) ok = true; });
+    if (!ok) S.mod = list.length ? list[0].id : '';
+    seg($('galMod'), list, S.mod, function (m) { S.mod = m; galSync(); });
 
-    var entry = fr.mods[S.mod];
+    var entry = fr.mods ? fr.mods[S.mod] : null;
     var img = $('galImg');
     if (entry) {
+      aspectStyle($('galViewer'), entry.w, entry.h);
       img.style.display = 'block';
-      img.src = 'data/' + entry.img;
-      img.onload = function () { boxSvg($('galSvg'), entry.boxes, img.naturalWidth, img.naturalHeight); };
-      boxSvg($('galSvg'), entry.boxes, entry.w, entry.h);
+      img.src = imgURL(entry);
+      var small = entry.boxes && entry.boxes.length &&
+        Math.max(entry.boxes[0].x1 - entry.boxes[0].x0,
+                 entry.boxes[0].y1 - entry.boxes[0].y0) < Math.min(entry.w, entry.h) * 0.05;
+      img.onload = function () {
+        drawBoxes($('galSvg'), entry.boxes, img.naturalWidth, img.naturalHeight,
+          { locator: small, locLabel: small ? '目标' : '' });
+      };
+      drawBoxes($('galSvg'), entry.boxes, entry.w, entry.h,
+        { locator: small, locLabel: small ? '目标' : '' });
     } else {
       img.style.display = 'none';
       $('galSvg').innerHTML = '';
     }
     $('galTL').textContent = sc.title + ' · 帧 ' + (fr.i + 1) + '/' + sc.frames.length + '\n' +
-      MOD_LABEL[S.mod];
+      modLabel(S.mod);
     $('galBR').textContent = entry ? (entry.w + '×' + entry.h) : '无数据';
     $('galRange').max = String(sc.frames.length - 1);
     $('galRange').value = String(fr.i);
     $('galCount').textContent = (fr.i + 1) + ' / ' + sc.frames.length;
 
-    var info = $('galInfo');
-    info.innerHTML = '';
-    [['天气', weatherText(fr)],
-     ['标注框', entry && entry.boxes ? entry.boxes.length + ' 个' : '—'],
-     ['雷达检出', fr.radar ? fr.radar.n + ' 点 / 杂波 ' + fr.radar.clutter : '—'],
-     ['点云', fr.cloud ? fr.cloud.shown + ' / ' + fr.cloud.n + ' 点' : '—']
-    ].forEach(function (kv) {
-      var d = el('div', 'kv');
-      d.appendChild(el('span', '', kv[0]));
-      d.appendChild(el('span', '', String(kv[1])));
-      info.appendChild(d);
-    });
+    kvInto($('galInfo'), [
+      ['天气', weatherText(fr)],
+      ['标注框', entry && entry.boxes ? entry.boxes.length + ' 个' : '—'],
+      ['雷达检出', fr.radar ? fr.radar.n + ' 点 / 杂波 ' + fr.radar.clutter : '—'],
+      ['点云', fr.cloud ? fr.cloud.shown + ' / ' + fr.cloud.n + ' 点' : '—'],
+      ['SAR', fr.sar ? (isNum(fr.sar.snr_db) ? f1(fr.sar.snr_db) + ' dB SNR' : '有') : '—']
+    ]);
 
-    var si = $('galSceneInfo');
-    si.innerHTML = '';
-    [['目标类别', sc.title.split('·')[1] ? sc.title.split('·')[1].trim() : sc.cls],
-     ['雷达波段', sc.band + ' 频段'],
-     ['帧数', sc.frames.length + ' 帧（晴/阴/雨循环）'],
-     ['模态', sc.frames[0] && Object.keys(sc.frames[0].mods).length + ' 路']
-    ].forEach(function (kv) {
-      var d = el('div', 'kv');
-      d.appendChild(el('span', '', kv[0]));
-      d.appendChild(el('span', '', String(kv[1])));
-      si.appendChild(d);
-    });
+    var nMods = 0;
+    (sc.frames || []).forEach(function (f) { nMods = Math.max(nMods, Object.keys(f.mods || {}).length); });
+    kvInto($('galSceneInfo'), [
+      ['目标类别', sc.title.split('·')[1] ? sc.title.split('·')[1].trim() : sc.cls],
+      ['雷达波段', sc.band ? sc.band + ' 频段' : '—'],
+      ['帧数', sc.frames.length + ' 帧（晴/阴/雨循环）'],
+      ['模态', nMods + ' 路']
+    ]);
 
     var th = $('galThumbs');
     th.innerHTML = '';
     sc.frames.forEach(function (f) {
-      var e = f.mods[S.mod];
+      var e = f.mods ? f.mods[S.mod] : null;
       if (!e) return;
-      var box = el('div', 'card');
-      box.style.padding = '6px';
+      var box = el('div', 'card pad-s');
       box.style.cursor = 'pointer';
+      box.style.padding = '6px';
       if (f.i === fr.i) box.style.borderColor = 'var(--accent)';
       var im = el('img');
-      im.src = 'data/' + e.img;
+      im.src = imgURL(e);
       im.style.width = '100%';
-      im.style.borderRadius = '8px';
+      im.style.borderRadius = '7px';
       im.style.display = 'block';
       box.appendChild(im);
       var cap = el('div', 'mono muted', '帧 ' + (f.i + 1));
@@ -192,34 +461,53 @@
   }
 
   // ---------- compare ----------
-  function cmpModList() {
-    return MODS.filter(function (m) { return m !== 'optical'; }).map(function (m) {
-      return { id: m, label: MOD_LABEL[m] };
+  function cmpModList(sc) {
+    // SAR has a different imaging geometry (range/azimuth grid), and a wide
+    // view has a different FOV, so fading either over an optical frame compares
+    // nothing. Keep both out of this slider; they have their own tabs.
+    return sceneMods(sc).filter(function (it) {
+      return it.id !== 'optical' && it.id !== 'sar' && !/_wide$/.test(it.id);
     });
   }
   var CMP = { mod: 'mwir' };
   function renderCompare() {
     var sc = curScene(), fr = curFrame();
+    if (!sc || !fr) return;
+    var list = cmpModList(sc);
+    if (!list.length) {
+      $('cmpBLabel').textContent = '—';
+      $('cmpB').style.display = 'none';
+      $('cmpTL').textContent = '这份数据集只有可见光一路，没有可对照的模态';
+      return;
+    }
+    var ok = false;
+    list.forEach(function (it) { if (it.id === CMP.mod) ok = true; });
+    if (!ok) CMP.mod = list[0].id;
+
     seg($('cmpScene'), sceneList(), String(S.scene), function (id) {
       S.scene = parseInt(id, 10); S.frame = 0; renderCompare(); galSync();
     });
-    seg($('cmpMod'), cmpModList(), CMP.mod, function (m) { CMP.mod = m; renderCompare(); });
+    seg($('cmpMod'), list, CMP.mod, function (m) { CMP.mod = m; renderCompare(); });
 
-    var a = fr.mods.optical, b = fr.mods[CMP.mod];
+    var a = fr.mods ? fr.mods.optical : null, b = fr.mods ? fr.mods[CMP.mod] : null;
     var A2 = $('cmpA'), B2 = $('cmpB');
-    if (a) { A2.src = 'data/' + a.img; A2.style.display = 'block'; }
+    if (a) {
+      aspectStyle($('cmpViewer'), a.w, a.h);
+      A2.src = imgURL(a);
+      A2.style.display = 'block';
+    }
     if (b) {
-      B2.src = 'data/' + b.img;
+      B2.src = imgURL(b);
       B2.style.display = 'block';
       B2.style.opacity = String(parseInt($('cmpMix').value, 10) / 100);
       if (a) { B2.style.width = A2.clientWidth + 'px'; B2.style.height = A2.clientHeight + 'px'; }
     } else { B2.style.display = 'none'; }
-    $('cmpBLabel').textContent = MOD_LABEL[CMP.mod];
+    $('cmpBLabel').textContent = modLabel(CMP.mod);
     $('cmpTL').textContent = sc.title + ' · 帧 ' + (fr.i + 1) + '\n' + weatherText(fr);
     $('cmpCount').textContent = (fr.i + 1) + ' / ' + sc.frames.length;
     var showBoxes = $('cmpBoxes').checked;
     var boxes = showBoxes && a ? a.boxes : [];
-    boxSvg($('cmpSvg'), boxes, a ? a.w : 640, a ? a.h : 480);
+    drawBoxes($('cmpSvg'), boxes, a ? a.w : 640, a ? a.h : 480);
   }
   function cmpStep(d) {
     var n = curScene().frames.length;
@@ -257,7 +545,14 @@
     var W = c.width, H = c.height;
     g.fillStyle = '#05070a'; g.fillRect(0, 0, W, H);
     var cl = pcCloud();
-    if (!cl || !cl.x.length) { $('pcTL').textContent = '无点云数据'; return; }
+    if (!cl || !cl.x.length) {
+      $('pcTL').textContent = '无点云数据';
+      var dp = Math.min(window.devicePixelRatio || 1, 2);
+      g.fillStyle = 'rgba(150,180,210,0.5)';
+      g.font = Math.round(13 * dp) + 'px monospace';
+      g.fillText('该场景未导出点云（PLY），只导出了图像模态', 16 * dp, H / 2);
+      return;
+    }
 
     var ctr = cloudCenter(cl);
     var cy = Math.cos(PC.yaw), sy = Math.sin(PC.yaw);
@@ -322,22 +617,17 @@
     $('pcRange').value = String(pcFrameIdx);
     $('pcCount').textContent = (pcFrameIdx + 1) + ' / ' + sc.frames.length;
 
-    var li = $('pcInfo');
-    li.innerHTML = '';
-    var mods = (fr && fr.mods) || {};
-    [['点数', fr && fr.cloud ? fr.cloud.n : '—'],
-     ['命中率', fr && fr.cloud ? f1((fr.cloud.hit || 0) * 100) + '%' : '—'],
-     ['量程', fr && fr.cloud ? f0(fr.cloud.maxr || 0) + ' m' : '—'],
-     ['帧序', (pcFrameIdx + 1) + ' / ' + sc.frames.length]
-    ].forEach(function (kv) {
-      var d = el('div', 'kv');
-      d.appendChild(el('span', '', kv[0]));
-      d.appendChild(el('span', '', String(kv[1])));
-      li.appendChild(d);
-    });
+    kvInto($('pcInfo'), [
+      ['点数', fr && fr.cloud ? fr.cloud.n : '—'],
+      ['命中率', fr && fr.cloud ? f1((fr.cloud.hit || 0) * 100) + '%' : '—'],
+      ['量程', fr && fr.cloud ? f0(fr.cloud.maxr || 0) + ' m' : '—'],
+      ['帧序', (pcFrameIdx + 1) + ' / ' + sc.frames.length]
+    ]);
 
+    var mods = (fr && fr.mods) || {};
     var rimg = mods.lidar_range;
-    $('pcRangeImg').src = rimg ? 'data/' + rimg.img : '';
+    if (rimg) { $('pcRangeImg').src = imgURL(rimg); $('pcRangeImg').style.display = 'block'; }
+    else { $('pcRangeImg').removeAttribute('src'); $('pcRangeImg').style.display = 'none'; }
     resizePC();
   }
   (function bindPC() {
@@ -408,31 +698,31 @@
 
   function rdSync() {
     var sc = curScene(), fr = curFrame();
+    if (!sc || !fr) return;
     seg($('rdScene'), sceneList(), String(S.scene), function (id) {
       S.scene = parseInt(id, 10); S.frame = 0; rdSync(); galSync();
     });
 
-    var e = fr.mods.radar_ra || fr.mods.radar;
-    $('rdImg').src = e ? 'data/' + e.img : '';
+    var e = (fr.mods && (fr.mods.radar_ra || fr.mods.radar)) || null;
+    if (e) {
+      $('rdImg').src = imgURL(e);
+      aspectStyle($('rdViewer'), e.w, e.h);
+    } else {
+      $('rdImg').removeAttribute('src');
+    }
     $('rdRange').max = String(sc.frames.length - 1);
     $('rdRange').value = String(fr.i);
     $('rdCount').textContent = (fr.i + 1) + ' / ' + sc.frames.length;
-    $('rdTL').textContent = sc.title + '\n' + sc.band + ' 频段 · ' + weatherText(fr);
+    $('rdTL').textContent = sc.title + '\n' + (sc.band ? sc.band + ' 频段 · ' : '') + weatherText(fr);
     drawRdMark(fr);
 
     var r = fr.radar;
-    var info = $('rdInfo');
-    info.innerHTML = '';
     var snrs = r && r.pts ? r.pts.map(function (p) { return p[3]; }) : [];
-    [['检出点', r ? r.n : '—'],
-     ['杂波点', r ? r.clutter : '—'],
-     ['最强 SNR', snrs.length ? f1(Math.max.apply(null, snrs)) + ' dB' : '—']
-    ].forEach(function (kv) {
-      var d = el('div', 'kv');
-      d.appendChild(el('span', '', kv[0]));
-      d.appendChild(el('span', '', String(kv[1])));
-      info.appendChild(d);
-    });
+    kvInto($('rdInfo'), [
+      ['检出点', r ? r.n : '—'],
+      ['杂波点', r ? r.clutter : '—'],
+      ['最强 SNR', snrs.length ? f1(Math.max.apply(null, snrs)) + ' dB' : '—']
+    ]);
 
     var bg = $('rdBudget');
     bg.innerHTML = '';
@@ -446,7 +736,7 @@
         ['RCS / 门限', f1(bud.rcs_db) + ' dBsm · ' + f0(bud.det_snr_db) + ' dB'],
         ['发射 / 积累', f0(bud.tx_power_dbm) + ' dBm · ' + bud.n_chirps + ' chirps']
       ];
-      bud.by_weather.forEach(function (w) {
+      (bud.by_weather || []).forEach(function (w) {
         rows.push([WNAME[w.preset] + ' 最大距离', f0(w.max_range_m) + ' m']);
         rows.push([WNAME[w.preset] + ' 余量',
           (w.margin_db >= 0 ? '+' : '') + f1(w.margin_db) + ' dB']);
@@ -461,7 +751,7 @@
         d.appendChild(v);
         bg.appendChild(d);
       });
-      var neg = bud.by_weather.filter(function (w) { return w.margin_db < 0; });
+      var neg = (bud.by_weather || []).filter(function (w) { return w.margin_db < 0; });
       if (neg.length) {
         bg.appendChild(el('div', 'note',
           '负余量意味着该天气下目标已超出作用距离，检出点少或为 0 是物理结果。'));
@@ -479,6 +769,9 @@
         '  朝向 ' + f0(b.yaw) + '°';
       bx.appendChild(d);
     });
+    if (!(r && r.boxes && r.boxes.length)) {
+      bx.appendChild(el('div', 'muted', '该帧没有导出的 3D 包围盒'));
+    }
     setTimeout(drawRadar, 20);
   }
   function drawRadar() {
@@ -501,6 +794,8 @@
     var img = $('rdImg');
     if (img && img.naturalWidth) {
       $('rdBR').textContent = img.naturalWidth + ' × ' + img.naturalHeight + ' px';
+    } else {
+      $('rdBR').textContent = '';
     }
     if (!rd || !rd.pts || !rd.pts.length) {
       $('rdPtBR').textContent = '该帧无检出点';
@@ -572,16 +867,677 @@
 
     $('rdPtBR').textContent = '俯视 · ' + nn + ' 点 · SNR ' + f1(snrMin) + '–' +
       f1(snrMax) + ' dB · 跨度 ' + f0(span) + ' m';
-    $('rdPtTL').textContent = (fr && fr.weather ? (WNAME[fr.weather.preset] || '') : '') +
+    $('rdPtTL').textContent = (fr && fr.weather ? (WNAME[fr.weather.preset] || WNAME[fr.weather.name] || '') : '') +
       '  检出 ' + rd.n + ' 点' + (rd.clutter ? ' / 杂波 ' + rd.clutter : '');
   }
 
+  // ---------- SAR ----------
+  // The shipped PNG is already an 8-bit amplitude image that the exporter
+  // stretched once. The 30/45/60 dB buttons therefore re-map that amplitude with
+  // a gamma curve: a narrow window lifts weak scatterers, a wide window pulls the
+  // bright ones back. No dB is re-derived in the browser and nothing is claimed
+  // to be a calibration -- the caption under the plot says exactly this.
+  var SAR = { dr: 45, src: '', simple: false, zoom: null };
+  var SAR_DR = [30, 45, 60];
+  var sarTimer = null;
+
+  function sceneHasSar(sc) {
+    if (!sc) return false;
+    if (sc.sar_meta) return true;
+    return (sc.frames || []).some(function (f) { return !!(f.mods && f.mods.sar); });
+  }
+  function sarMeta(fr, sc) { return (fr && fr.sar) || (sc && sc.sar_meta) || null; }
+
+  function sarSync() {
+    var sc = curScene(), fr = curFrame();
+    if (!sc || !fr) return;
+    if (ensureScene(sceneHasSar)) { sarSync(); return; }
+    seg($('sarScene'), sceneList(), String(S.scene), function (id) {
+      S.scene = parseInt(id, 10); S.frame = 0; sarSync();
+    });
+    seg($('sarDr'), SAR_DR.map(function (d) {
+      return { id: String(d), label: d + ' dB' };
+    }), String(SAR.dr), function (d) { SAR.dr = parseInt(d, 10); sarSync(); });
+
+    var has = sceneHasSar(sc);
+    $('sarBody').hidden = !has;
+    $('sarNone').hidden = has;
+    $('sarDr').hidden = !has;
+    $('sarPill').textContent = has
+      ? sc.title + ' · 帧 ' + (fr.i + 1) + '/' + sc.frames.length
+      : '无 SAR 数据';
+    $('sarCbLo').textContent = '暗 · 噪底';
+    $('sarCbHi').textContent = '亮 · 饱和';
+    $('sarCbCur').textContent = SAR.dr + ' dB · γ=' + f2(SAR.dr / 45);
+    if (!has) return;
+
+    var entry = fr.mods ? fr.mods.sar : null;
+    var meta = sarMeta(fr, sc) || {};
+
+    sarSetImage(entry);
+    if (!entry) {
+      $('sarTL').textContent = sc.title + ' · 帧 ' + (fr.i + 1) + '\n该帧没有 SAR 图';
+      $('sarBR').textContent = '—';
+      $('sarSvg').innerHTML = '';
+      $('sarTicks').innerHTML = '';
+    } else {
+      $('sarTL').textContent = sc.title + ' · 帧 ' + (fr.i + 1) + '/' + sc.frames.length +
+        '\n行 = 方位向 · 列 = 地距向 · ' + entry.w + '×' + entry.h;
+      $('sarBR').textContent = '拉伸 ' + SAR.dr + ' dB · γ=' + f2(SAR.dr / 45) +
+        (SAR.simple ? '（CSS 近似）' : '');
+      var small = entry.boxes && entry.boxes.length &&
+        Math.max(entry.boxes[0].x1 - entry.boxes[0].x0, entry.boxes[0].y1 - entry.boxes[0].y0) <
+        Math.min(entry.w, entry.h) * 0.05;
+      drawBoxes($('sarSvg'), entry.boxes, entry.w, entry.h,
+        { locator: small, locLabel: small ? '目标' : '', color: '#ffb454' });
+    }
+
+    $('sarRange').max = String(sc.frames.length - 1);
+    $('sarRange').value = String(fr.i);
+    $('sarCount').textContent = (fr.i + 1) + ' / ' + sc.frames.length;
+
+    var res = (meta.res_range_m !== undefined) ? meta.res_range_m : meta.res_range;
+    var resA = (meta.res_az_m !== undefined) ? meta.res_az_m : meta.res_az;
+    var geo = [
+      ['距离分辨率', isNum(res) ? f1(res) + ' m' : '—'],
+      ['方位分辨率', isNum(resA) ? f1(resA) + ' m' : '—'],
+      ['测绘带 近 / 远', (isNum(meta.near_m) && isNum(meta.far_m))
+        ? fmtM(meta.near_m) + ' / ' + fmtM(meta.far_m) : '—'],
+      ['测绘带宽', isNum(meta.width_m) ? fmtM(meta.width_m) : '—']
+    ];
+    var band = [meta.band, meta.polarization].filter(Boolean).join(' ');
+    if (band) geo.push(['波段 / 极化', band]);
+    kvInto($('sarGeo'), geo);
+
+    kvInto($('sarStats'), [
+      ['峰值 / 均值', (isNum(meta.peak_db) ? f1(meta.peak_db) : '—') + ' / ' +
+        (isNum(meta.mean_db) ? f1(meta.mean_db) : '—') + ' dB'],
+      ['噪声底', isNum(meta.noise_db) ? f1(meta.noise_db) + ' dB' : '—'],
+      ['SNR', isNum(meta.snr_db) ? f1(meta.snr_db) + ' dB' : '—'],
+      ['动态范围', isNum(meta.dynamic_range_db) ? f1(meta.dynamic_range_db) + ' dB' : '—'],
+      ['目标峰值', isNum(meta.target_peak_db) ? f1(meta.target_peak_db) + ' dB' : '—'],
+      ['目标对比度', isNum(meta.target_contrast_db) ? f1(meta.target_contrast_db) + ' dB' : '—'],
+      ['散射中心', isNum(meta.n_scatterers) ? f0(meta.n_scatterers) : '—']
+    ]);
+
+    var p = meta.platform || {};
+    kvInto($('sarPlat'), [
+      ['平台高度', isNum(p.altitude_m) ? f0(p.altitude_m) + ' m' : '—'],
+      ['平台速度', isNum(p.speed_mps) ? f1(p.speed_mps) + ' m/s' : '—'],
+      ['航向角', isNum(p.heading_deg) ? f1(p.heading_deg) + '°' : '—'],
+      ['斜视角', isNum(p.squint_deg) ? f1(p.squint_deg) + '°' : '—']
+    ]);
+
+    $('sarNote').innerHTML = '拉伸说明：导出的 PNG 已经是<b>导出时做过一次 DB 拉伸</b>的 8-bit 灰度，' +
+      '这里切换 30 / 45 / 60 dB 只是对这份幅度做 <b>gamma 重映射</b>' +
+      '（' + SAR.dr + ' dB 对应 γ=' + f2(SAR.dr / 45) + '），' +
+      '窄窗口把弱散射提亮、宽窗口压回高亮，目的是让只有几个像素的目标可判读，<b>不改动原始数据</b>。' +
+      (SAR.simple ? '当前是 <code>file://</code> 打开，画布像素不可读，' +
+        '灰度映射退化为 CSS 滤镜近似（结论一致，只有亮度曲线略有差异）。' : '');
+
+    sarLayout();
+  }
+
+  function sarStop() {
+    if (!sarTimer) return;
+    clearInterval(sarTimer);
+    sarTimer = null;
+    if ($('sarPlay')) $('sarPlay').textContent = '播放';
+  }
+
+  function sarSetImage(entry) {
+    var img = $('sarImg'), cv = $('sarCanvas');
+    if (!entry) {
+      img.removeAttribute('src');
+      img.style.display = 'none';
+      cv.style.display = 'none';
+      SAR.src = '';
+      return;
+    }
+    var src = imgURL(entry);
+    var paint = function () {
+      var w = img.naturalWidth || entry.w || 4;
+      var h = img.naturalHeight || entry.h || 3;
+      sarPaint(img, cv, w, h);
+      sarLayout();
+    };
+    if (SAR.src === src && img.complete && img.naturalWidth) { paint(); return; }
+    SAR.src = src;
+    img.onload = paint;
+    img.onerror = function () {
+      img.style.display = 'none';
+      cv.style.display = 'none';
+      $('sarTL').textContent = 'SAR 图加载失败：' + src;
+    };
+    img.src = src;
+    if (img.complete && img.naturalWidth) paint();
+  }
+
+  function sarPaint(img, cv, w, h) {
+    var gam = SAR.dr / 45;
+    cv.width = w;
+    cv.height = h;
+    var g = cv.getContext('2d');
+    g.clearRect(0, 0, w, h);
+    g.drawImage(img, 0, 0, w, h);
+    try {
+      var d = g.getImageData(0, 0, w, h);
+      var p = d.data, lut = new Uint8Array(256), i;
+      for (i = 0; i < 256; i++) lut[i] = Math.round(255 * Math.pow(i / 255, gam));
+      for (i = 0; i < p.length; i += 4) {
+        var v = lut[p[i]];
+        p[i] = v; p[i + 1] = v; p[i + 2] = v;
+      }
+      g.putImageData(d, 0, 0);
+      SAR.simple = false;
+    } catch (e) {
+      // file:// gives every document an opaque origin, so the canvas is tainted
+      // and getImageData throws. Keep the page usable: switch to a CSS filter.
+      SAR.simple = true;
+    }
+    cv.style.display = SAR.simple ? 'none' : 'block';
+    img.style.display = SAR.simple ? 'block' : 'none';
+    img.style.filter = SAR.simple
+      ? 'grayscale(1) brightness(' + (1 / gam).toFixed(2) + ') contrast(' +
+        (0.9 + 0.2 * gam).toFixed(2) + ')'
+      : 'none';
+  }
+
+  function sarLayout() {
+    var host = $('sarViewer'), plot = $('sarPlot'), ticks = $('sarTicks');
+    if (!host || !plot || !ticks) return;
+    var img = $('sarImg'), cv = $('sarCanvas');
+    var entry = curFrame() && curFrame().mods ? curFrame().mods.sar : null;
+    if (!entry) { ticks.innerHTML = ''; return; }
+    var w = (img && img.naturalWidth) || cv.width || entry.w;
+    var h = (img && img.naturalHeight) || cv.height || entry.h;
+    if (!w || !h) return;
+    host.style.aspectRatio = w + ' / ' + h;
+
+    var vr = host.getBoundingClientRect();
+    var pr = plot.getBoundingClientRect();
+    if (vr.width < 20 || !pr.width) return;
+    var s = Math.min(vr.width / w, vr.height / h);
+    var dw = w * s, dh = h * s;
+    var ox = (vr.left - pr.left) + (vr.width - dw) / 2;
+    var oy = (vr.top - pr.top) + (vr.height - dh) / 2;
+
+    var meta = sarMeta(curFrame(), curScene()) || {};
+    ticks.innerHTML = '';
+    var near = num(meta.near_m), far = num(meta.far_m), wid = num(meta.width_m);
+    var i, t, f;
+
+    if (near !== null && far !== null && far > near) {
+      for (i = 0; i <= 4; i++) {
+        f = i / 4;
+        t = el('div', 'tick x', fmtAxis(near + (far - near) * f));
+        t.style.left = (ox + dw * f).toFixed(1) + 'px';
+        t.style.top = (oy + dh + 6).toFixed(1) + 'px';
+        ticks.appendChild(t);
+      }
+      var xn = el('div', 'axis-name', '地距 (m) · 近 → 远');
+      xn.style.left = (ox + dw / 2).toFixed(1) + 'px';
+      xn.style.top = (oy + dh + 27).toFixed(1) + 'px';
+      xn.style.transform = 'translateX(-50%)';
+      ticks.appendChild(xn);
+    }
+    if (wid !== null) {
+      for (i = 0; i <= 4; i++) {
+        f = i / 4;
+        var val = (f - 0.5) * wid;
+        t = el('div', 'tick y', f === 0.5 ? '0' : (val > 0 ? '+' : '') + fmtAxis(val));
+        t.style.right = (Math.max(0, pr.width - ox + 6)).toFixed(1) + 'px';
+        t.style.top = (oy + dh * f).toFixed(1) + 'px';
+        ticks.appendChild(t);
+      }
+      var yn = el('div', 'axis-name', '方位 (m) · 相对中心');
+      yn.style.left = ox.toFixed(1) + 'px';
+      yn.style.top = '1px';
+      ticks.appendChild(yn);
+    }
+  }
+
+  (function bindSarZoom() {
+    var host = $('sarViewer');
+    if (!host) return;
+    SAR.zoom = makeZoom(host, $('sarStage'), {
+      clickScale: 3.5,
+      origin: function () {
+        var e = curFrame() && curFrame().mods ? curFrame().mods.sar : null;
+        if (!e || !e.boxes || !e.boxes.length) return [0.5, 0.5];
+        var b = e.boxes[0];
+        return [((b.x0 + b.x1) / 2) / (e.w || 1), ((b.y0 + b.y1) / 2) / (e.h || 1)];
+      }
+    });
+  })();
+
+  // ---------- seeker: narrow vs wide field of view ----------
+  var SK = { timer: null, seekZoom: null, wideZoom: null };
+
+  function sceneHasViews(sc) {
+    if (!sc) return false;
+    return (sc.frames || []).some(function (f) {
+      return !!(f.views && Object.keys(f.views).length) ||
+        !!(f.mods && (f.mods.optical_wide || f.mods.mwir_wide || f.mods.lwir_wide));
+    });
+  }
+
+  // Which image belongs to a view? The exporter writes the narrow view under the
+  // untagged modality key and the wide one under "<modality>_wide".
+  function panePick(fr, which) {
+    var mods = (fr && fr.mods) || {};
+    var order = which === 'wide'
+      ? ['optical_wide', 'mwir_wide', 'lwir_wide']
+      : ['optical', 'mwir', 'lwir'];
+    var i;
+    for (i = 0; i < order.length; i++) if (mods[order[i]]) return { key: order[i], e: mods[order[i]] };
+    var keys = Object.keys(mods);
+    for (i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      if (k === 'sar' || k === 'radar_ra' || k.indexOf('lidar') === 0) continue;
+      if ((k.indexOf('_wide') > 0) === (which === 'wide')) return { key: k, e: mods[k] };
+    }
+    return null;
+  }
+
+  // views[].name comes from the scene config, so it is not guaranteed to be
+  // "seeker"/"wide". Fall back to the narrowest / widest fov when the names differ.
+  function viewOf(fr, which) {
+    var vs = (fr && fr.views) || {};
+    var ks = Object.keys(vs);
+    if (!ks.length) return null;
+    if (vs[which]) return vs[which];
+    var sorted = ks.slice().sort(function (a, b) {
+      return (vs[a].fov_deg || 0) - (vs[b].fov_deg || 0);
+    });
+    return vs[which === 'wide' ? sorted[sorted.length - 1] : sorted[0]];
+  }
+  function targetCenter(e, w, h) {
+    if (e && e.boxes && e.boxes.length) {
+      var b = e.boxes[0];
+      return [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2];
+    }
+    return [w / 2, h / 2];
+  }
+  function boxSpanPx(e) {
+    if (!e || !e.boxes || !e.boxes.length) return 0;
+    var b = e.boxes[0];
+    return Math.max(b.x1 - b.x0, b.y1 - b.y0);
+  }
+
+  function skPane(which) {
+    var fr = curFrame() || {};
+    var v = viewOf(fr, which);
+    var pick = panePick(fr, which);
+    var e = pick ? pick.e : null;
+    var w = (v && v.w) || (e && e.w) || 640;
+    var h = (v && v.h) || (e && e.h) || 480;
+    // drawing space: the overlay must use the pixel grid the *labels* are written
+    // in, which is the render resolution recorded in views[].w/h. The shipped PNG
+    // may be a downscale of that (export_web.py caps images at 900 px), and a
+    // viewBox of the original grid still lands on the same pixels after "meet".
+    var dw = (v && v.w) || (e && e.w) || 640, dh = (v && v.h) || (e && e.h) || 480;
+    var span = (v && isNum(v.target_px)) ? v.target_px
+      : (isNum(fr.target_px) ? fr.target_px : boxSpanPx(e));
+    return {
+      fr: fr, v: v, e: e, w: w, h: h, dw: dw, dh: dh,
+      span: span,
+      ratio: w ? span / w * 100 : 0,
+      range: num(fr.range_m)
+    };
+  }
+
+  function skFillStats(host, P, missing) {
+    if (!host) return;
+    host.innerHTML = '';
+    var cells = [
+      { k: '目标像素跨度', v: (!missing && P.span) ? f1(P.span) : '—', u: 'px', c: '' },
+      { k: '画面占比（线性）', v: (!missing && P.span) ? f2(P.ratio) : '—', u: '%', c: 'accent' },
+      { k: '视线距离', v: (!missing && isNum(P.range)) ? fmtM(P.range).replace(/ (m|km)$/, '') : '—',
+        u: (!missing && isNum(P.range)) ? (P.range >= 1000 ? 'km' : 'm') : '', c: '' }
+    ];
+    cells.forEach(function (c) {
+      var d = el('div', 'stat' + (c.c ? ' ' + c.c : ''));
+      d.appendChild(el('div', 'k', c.k));
+      var v = el('div', 'v', c.v);
+      if (c.u && c.v !== '—') v.appendChild(el('em', '', c.u));
+      d.appendChild(v);
+      host.appendChild(d);
+    });
+  }
+
+  function skRender(which) {
+    var wide = which === 'wide';
+    var ids = {
+      view: wide ? 'skWideView' : 'skSeekView',
+      img: wide ? 'skWideImg' : 'skSeekImg',
+      svg: wide ? 'skWideSvg' : 'skSeekSvg',
+      tl: wide ? 'skWideTL' : 'skSeekTL',
+      stats: wide ? 'skWideStats' : 'skSeekStats',
+      fov: wide ? 'skWideFov' : 'skSeekFov',
+      cap: wide ? 'skWideMagCap' : 'skSeekMagCap'
+    };
+    var P = skPane(which);
+    var host = $(ids.view), img = $(ids.img), svg = $(ids.svg);
+    if (!host || !img) return;
+    aspectStyle(host, P.dw, P.dh);
+
+    if (!P.e) {
+      img.removeAttribute('src');
+      img.style.visibility = 'hidden';
+      svg.innerHTML = '';
+      $(ids.tl).textContent = wide ? '宽视场图缺失' : '窄视场图缺失';
+      $(ids.fov).textContent = P.v ? f1(P.v.fov_deg) + '° FOV' : '视场未知';
+      $(ids.cap).textContent = '无图';
+      skFillStats($(ids.stats), P, true);
+      return;
+    }
+    img.style.visibility = 'visible';
+    var src = imgURL(P.e);
+    if (img.getAttribute('src') !== src) {
+      img.onload = function () { skMag(which); };
+      img.setAttribute('src', src);
+    }
+    drawBoxes(svg, P.e.boxes, P.dw, P.dh,
+      { locator: true, locLabel: '目标', color: '#37c2ff' });
+
+    $(ids.fov).textContent = P.v
+      ? f1(P.v.fov_deg) + '° FOV' + (isNum(P.v.roll_deg) && Math.abs(P.v.roll_deg) > 0.05
+        ? ' · 滚转 ' + f1(P.v.roll_deg) + '°' : '')
+      : '视场未知';
+    $(ids.tl).textContent = (curScene().title || '') + ' · 帧 ' + ((P.fr.i || 0) + 1) + '\n' +
+      (wide ? '宽视场（搜索）' : '窄视场（导引头）') +
+      (P.v ? ' · ' + P.dw + '×' + P.dh : '');
+    skFillStats($(ids.stats), P, false);
+    skMag(which);
+  }
+
+  // The magnifier is the whole point of this tab: at fit-to-width a 3 px target
+  // is a speck. A nearest-neighbour crop centred on the box centre (4x the box
+  // span, clamped) makes it readable without touching the source pixels.
+  function skMag(which) {
+    var wide = which === 'wide';
+    var cv = $(wide ? 'skWideMag' : 'skSeekMag');
+    var cap = $(wide ? 'skWideMagCap' : 'skSeekMagCap');
+    var img = $(wide ? 'skWideImg' : 'skSeekImg');
+    if (!cv || !img) return;
+    var P = skPane(which);
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var SZ = cv.clientWidth || 112;
+    cv.width = Math.round(SZ * dpr);
+    cv.height = Math.round(SZ * dpr);
+    var g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = '#05070a';
+    g.fillRect(0, 0, SZ, SZ);
+    if (!P.e || !img.naturalWidth) { if (cap) cap.textContent = '无图'; return; }
+
+    var k = img.naturalWidth / (P.dw || img.naturalWidth);
+    var iw = img.naturalWidth, ih = img.naturalHeight;
+    var c = targetCenter(P.e, P.dw, P.dh);
+    var span = Math.max(P.span || boxSpanPx(P.e) || 4, 2) * k;
+    var crop = Math.max(span * 4, 10);
+    crop = Math.min(crop, Math.min(iw, ih) - 1);
+    var sx = Math.max(0, Math.min(iw - crop, c[0] * k - crop / 2));
+    var sy = Math.max(0, Math.min(ih - crop, c[1] * k - crop / 2));
+    var sq = Math.min(crop, ih - sy, iw - sx);
+
+    g.imageSmoothingEnabled = false;
+    g.drawImage(img, sx, sy, sq, sq, 0, 0, SZ, SZ);
+
+    var sc = SZ / sq;
+    var b = P.e.boxes && P.e.boxes[0];
+    if (b) {
+      g.strokeStyle = '#37c2ff';
+      g.lineWidth = 1;
+      g.strokeRect((b.x0 * k - sx) * sc, (b.y0 * k - sy) * sc,
+        Math.max((b.x1 - b.x0) * k * sc, 3), Math.max((b.y1 - b.y0) * k * sc, 3));
+    }
+    g.strokeStyle = 'rgba(255,255,255,.5)';
+    g.beginPath();
+    g.moveTo(SZ / 2 - 7, SZ / 2); g.lineTo(SZ / 2 - 2, SZ / 2);
+    g.moveTo(SZ / 2 + 2, SZ / 2); g.lineTo(SZ / 2 + 7, SZ / 2);
+    g.moveTo(SZ / 2, SZ / 2 - 7); g.lineTo(SZ / 2, SZ / 2 - 2);
+    g.moveTo(SZ / 2, SZ / 2 + 2); g.lineTo(SZ / 2, SZ / 2 + 7);
+    g.stroke();
+    if (cap) {
+      // sq = crop width in source pixels; SZ/sq is the pixel-level zoom applied
+      cap.textContent = Math.round(sq) + 'px · ' + f1(SZ / sq) + '×';
+      cap.title = '取景 ' + Math.round(sq) + ' 源像素，按 ' + f1(SZ / sq) +
+        ' 倍像素放大显示（目标只有几像素时用来判读）';
+    }
+  }
+
+  function skChart(svg, n, series, opt) {
+    if (!svg) return;
+    opt = opt || {};
+    var legend = series.filter(function (s) { return s.label; }).length > 0;
+    var W = 620, H = legend ? 190 : 176, padL = 52, padR = 12;
+    var padT = legend ? 36 : 12, padB = 26;
+    var pw = W - padL - padR, ph = H - padT - padB;
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.innerHTML = '';
+    if (!n) return;
+
+    var minV = Infinity, maxV = -Infinity, i, j, s;
+    for (i = 0; i < series.length; i++) {
+      for (j = 0; j < series[i].vals.length; j++) {
+        var v = series[i].vals[j];
+        if (isNum(v)) { if (v < minV) minV = v; if (v > maxV) maxV = v; }
+      }
+    }
+    if (!isFinite(minV)) {
+      svg.appendChild(svgEl('text', { x: W / 2, y: H / 2, 'text-anchor': 'middle', 'font-size': 12 }))
+        .textContent = '该场景未导出这条曲线';
+      return;
+    }
+    if (opt.zero) minV = 0;
+    if (maxV - minV < 1e-9) { maxV += 1; minV -= 1; }
+    var padv = (maxV - minV) * 0.08;
+    maxV += padv;
+    if (!opt.zero) minV -= padv;
+
+    // X axis is real time when the exporter wrote frame.t, frame index
+    // otherwise. Two clips recorded at different frame rates then line up
+    // instead of being stretched to the same width.
+    var ts = (opt.t && opt.t.length === n && opt.t.every(isNum)) ? opt.t : null;
+    if (ts) {
+      for (i = 1; i < n; i++) { if (ts[i] < ts[i - 1]) { ts = null; break; } }
+    }
+    var t0 = ts ? ts[0] : 0, t1 = ts ? ts[n - 1] : n - 1, tspan = t1 - t0;
+    var X = function (idx) {
+      if (!ts) return padL + (n <= 1 ? pw / 2 : pw * idx / (n - 1));
+      if (!(tspan > 0)) return padL + pw / 2;
+      return padL + pw * (ts[idx] - t0) / tspan;
+    };
+    var Y = function (val) { return padT + ph * (1 - (val - minV) / (maxV - minV)); };
+
+    for (i = 0; i <= 3; i++) {
+      var yy = padT + ph * i / 3;
+      svg.appendChild(svgEl('line', {
+        x1: padL, y1: yy, x2: padL + pw, y2: yy,
+        stroke: '#1d2634', 'stroke-width': 1
+      }));
+      var lab = svgEl('text', {
+        x: padL - 8, y: yy + 3.5, 'text-anchor': 'end', 'font-size': 10
+      });
+      lab.textContent = fmtAxis(maxV - (maxV - minV) * i / 3);
+      svg.appendChild(lab);
+    }
+    [0, 0.5, 1].forEach(function (fr_, k) {
+      var idx = k === 0 ? 0 : (k === 2 ? n - 1 : Math.round((n - 1) / 2));
+      var px = ts ? (padL + pw * fr_) : X(idx);
+      var t = svgEl('text', {
+        x: px, y: H - 8, 'text-anchor': k === 0 ? 'start' : (k === 2 ? 'end' : 'middle'),
+        'font-size': 10
+      });
+      t.textContent = ts ? fmtAxis(t0 + tspan * fr_) + ' s' : '帧 ' + (idx + 1);
+      svg.appendChild(t);
+    });
+    var axName = svgEl('text', {
+      x: padL + pw, y: padT - 4, 'text-anchor': 'end', 'font-size': 10, opacity: 0.7
+    });
+    axName.textContent = ts ? '横轴 = 时间' : '横轴 = 帧序号（无 t 字段）';
+    svg.appendChild(axName);
+
+    series.forEach(function (sr) {
+      var d = '', open = false;
+      for (var idx = 0; idx < sr.vals.length; idx++) {
+        var val = sr.vals[idx];
+        if (!isNum(val)) { open = false; continue; }
+        d += (open ? 'L' : 'M') + X(idx).toFixed(1) + ' ' + Y(val).toFixed(1);
+        open = true;
+      }
+      if (!d) return;
+      svg.appendChild(svgEl('path', {
+        d: d, fill: 'none', stroke: sr.color, 'stroke-width': 1.8,
+        'stroke-linejoin': 'round', 'stroke-linecap': 'round'
+      }));
+      for (idx = 0; idx < sr.vals.length; idx++) {
+        if (!isNum(sr.vals[idx])) continue;
+        svg.appendChild(svgEl('circle', {
+          cx: X(idx), cy: Y(sr.vals[idx]), r: 1.9, fill: sr.color
+        }));
+      }
+    });
+
+    var cur = Math.min(S.frame, n - 1);
+    svg.appendChild(svgEl('line', {
+      x1: X(cur), y1: padT, x2: X(cur), y2: padT + ph,
+      stroke: '#37c2ff', 'stroke-width': 1, 'stroke-opacity': 0.55,
+      'stroke-dasharray': '3 3'
+    }));
+    series.forEach(function (sr) {
+      var val = sr.vals[cur];
+      if (!isNum(val)) return;
+      svg.appendChild(svgEl('circle', {
+        cx: X(cur), cy: Y(val), r: 3.6, fill: '#0a0d12',
+        stroke: sr.color, 'stroke-width': 2
+      }));
+    });
+
+    // click a column to jump to that frame; column edges sit on the midpoints
+    // between samples so uneven frame spacing still gets a full-width target
+    for (i = 0; i < n; i++) {
+      var lx = i === 0 ? padL : (X(i - 1) + X(i)) / 2;
+      var rx = i === n - 1 ? padL + pw : (X(i) + X(i + 1)) / 2;
+      var hit = svgEl('rect', {
+        x: lx, y: padT, width: Math.max(2, rx - lx), height: ph,
+        fill: 'transparent', style: 'cursor:pointer'
+      });
+      (function (idx) {
+        hit.addEventListener('click', function () { S.frame = idx; skSync(); });
+      })(i);
+      svg.appendChild(hit);
+    }
+
+    var lg = padL + 2, lgy = 12;
+    series.forEach(function (sr) {
+      if (!sr.label) return;
+      svg.appendChild(svgEl('rect', {
+        x: lg, y: lgy - 5, width: 9, height: 3, fill: sr.color
+      }));
+      var t = svgEl('text', { x: lg + 14, y: lgy, 'font-size': 10 });
+      t.textContent = sr.label;
+      svg.appendChild(t);
+      lgy += 13;
+    });
+  }
+
+  function skCharts(sc) {
+    var n = sc.frames.length;
+    var ranges = sc.frames.map(function (f) { return isNum(f.range_m) ? f.range_m : null; });
+    var seekPct = sc.frames.map(function (f) {
+      var v = viewOf(f, 'seeker');
+      if (!v || !isNum(v.target_px) || !v.w) return null;
+      return v.target_px / v.w * 100;
+    });
+    var widePct = sc.frames.map(function (f) {
+      var v = viewOf(f, 'wide');
+      if (!v || !isNum(v.target_px) || !v.w) return null;
+      return v.target_px / v.w * 100;
+    });
+
+    var tAxis = sc.frames.map(function (f) { return isNum(f.t) ? f.t : null; });
+    if (tAxis.some(function (v) { return v === null; })) tAxis = null;
+
+    skChart($('skRangeChart'), n, [{ vals: ranges, color: '#37c2ff', label: '视线距离 (m)' }],
+      { zero: true, t: tAxis });
+    skChart($('skPxChart'), n, [
+      { vals: seekPct, color: '#37c2ff', label: '窄视场 2.2°' },
+      { vals: widePct, color: '#ffb454', label: '宽视场 18°' }
+    ], { zero: true, t: tAxis });
+
+    var fr = curFrame() || {};
+    $('skRangeNow').textContent = isNum(fr.range_m) ? '当前 ' + fmtM(fr.range_m) : '未导出 range_m';
+    var sp = skPane('seeker');
+    $('skPxNow').textContent = sp.span ? '当前 ' + f2(sp.ratio) + ' %' : '未导出 target_px';
+  }
+
+  function skSync() {
+    var sc = curScene(), fr = curFrame();
+    if (!sc || !fr) return;
+    if (ensureScene(sceneHasViews)) { skSync(); return; }
+    var has = sceneHasViews(sc);
+    $('skBody').hidden = !has;
+    $('skNone').hidden = has;
+    seg($('skScene'), sceneList(), String(S.scene), function (id) {
+      S.scene = parseInt(id, 10); S.frame = 0; skSync();
+    });
+    $('skPill').textContent = has
+      ? sc.title + ' · 帧 ' + (fr.i + 1) + '/' + sc.frames.length
+      : '无双视场数据';
+    if (!has) return;
+
+    $('skRange').max = String(sc.frames.length - 1);
+    $('skRange').value = String(fr.i);
+    $('skCount').textContent = (fr.i + 1) + ' / ' + sc.frames.length;
+
+    skRender('seeker');
+    skRender('wide');
+    skCharts(sc);
+  }
+
+  function skStop() {
+    if (!SK.timer) return;
+    clearInterval(SK.timer);
+    SK.timer = null;
+    if ($('skPlay')) $('skPlay').textContent = '播放';
+  }
+  function skPlay() {
+    if (SK.timer) { skStop(); return; }
+    $('skPlay').textContent = '暂停';
+    SK.timer = setInterval(function () {
+      var n = curScene().frames.length;
+      S.frame = (S.frame + 1) % n;
+      skSync();
+    }, 900);
+  }
+  function skStep(d) {
+    var n = curScene().frames.length;
+    S.frame = (S.frame + d + n) % n;
+    skSync();
+  }
+
+  (function bindSkZoom() {
+    if (!$('skSeekView')) return;
+    var mk = function (which) {
+      return function () {
+        var P = skPane(which);
+        if (!P.e) return [0.5, 0.5];
+        var c = targetCenter(P.e, P.dw, P.dh);
+        return [c[0] / (P.dw || 1), c[1] / (P.dh || 1)];
+      };
+    };
+    SK.seekZoom = makeZoom($('skSeekView'), $('skSeekStage'), { clickScale: 6, origin: mk('seeker') });
+    SK.wideZoom = makeZoom($('skWideView'), $('skWideStage'), { clickScale: 8, origin: mk('wide') });
+  })();
+
   // ---------- explore ----------
-  // Band constants come from web/data/radar_bands.json, which tools/export_web.py
+  // Band constants come from data/radar_bands.json, which tools/export_web.py
   // writes straight out of simkit/radar.py -- so the browser cannot drift from
   // the kernel. Nothing here is a hand-copied number.
   var BANDS = null;
-  var PGR_DEFAULT = 15.0;
 
   function radarRange(band, rcsDbsm, rain, ptxDbm, nch) {
     var b = BANDS[band];
@@ -606,6 +1562,7 @@
     return lo;
   }
   function exploreUpdate() {
+    if (!BANDS) return;
     var rcs = parseFloat($('exRcs').value);
     var rain = parseFloat($('exRain').value);
     var ptx = parseFloat($('exPtx').value);
@@ -735,6 +1692,9 @@
   function boot() {
     var have = {};
     MAN.scenes.forEach(function (s) {
+      (s.mods || []).forEach(function (m) {
+        if (m && m.key && m.title) MOD_TITLE[m.key] = m.title;
+      });
       s.frames.forEach(function (f) {
         Object.keys(f.mods || {}).forEach(function (k) { have[k] = 1; });
       });
@@ -742,15 +1702,32 @@
     MODS = MODS_ALL.filter(function (m) { return have[m]; });
     if (MODS.indexOf(S.mod) < 0) S.mod = MODS[0];
 
-    $('genInfo').textContent = MAN.scenes.length + ' 场景 · ' +
-      MAN.scenes.reduce(function (a, s) { return a + s.frames.length; }, 0) + ' 帧 · ' +
+    // Footer is assembled from the manifest itself, never from constants: a
+    // dataset that only exports three scenes or two bands should say so.
+    var nFrame = MAN.scenes.reduce(function (a, s) { return a + s.frames.length; }, 0);
+    var g = genLabel(MAN.generated);
+    $('genInfo').textContent =
+      (g ? g + ' · ' : '') + MAN.scenes.length + ' 场景 · ' + nFrame + ' 帧 · ' +
       MODS.length + ' 种模态';
-    galSync(); pcSync(); rdSync(); renderCompare();
+
+    if (MAN_URL) {
+      var b = $('devBadge');
+      b.hidden = false;
+      if (FELL_BACK) {
+        b.textContent = '回落 · 内置数据';
+        b.title = '按 URL 参数加载失败，已回落到 data/boot.js';
+      } else {
+        b.textContent = 'MOCK · ' + MAN_URL.split('/').pop();
+        b.title = '开发预览：manifest 来自 ' + MAN_URL;
+      }
+    }
+
+    galSync(); pcSync(); rdSync(); renderCompare(); sarSync(); skSync();
     if (BANDS) exploreUpdate();
   }
 
   document.addEventListener('DOMContentLoaded', function () {
-    $('galPrev').addEventListener('click', function () { galStep(-1); });
+    if ($('galPrev')) $('galPrev').addEventListener('click', function () { galStep(-1); });
     $('galNext').addEventListener('click', function () { galStep(1); });
     $('galPlay').addEventListener('click', galPlay);
     $('galRange').addEventListener('input', function () {
@@ -792,34 +1769,83 @@
       $(id).addEventListener('input', exploreUpdate);
     });
     $('rdMark').addEventListener('change', function () { drawRdMark(curFrame()); });
+
+    // SAR controls
+    $('sarPrev').addEventListener('click', function () {
+      var n = curScene().frames.length;
+      S.frame = (S.frame - 1 + n) % n; sarSync();
+    });
+    $('sarNext').addEventListener('click', function () {
+      var n = curScene().frames.length;
+      S.frame = (S.frame + 1) % n; sarSync();
+    });
+    $('sarRange').addEventListener('input', function () {
+      S.frame = parseInt(this.value, 10); sarSync();
+    });
+    $('sarPlay').addEventListener('click', function () {
+      if (sarTimer) { sarStop(); return; }
+      $('sarPlay').textContent = '暂停';
+      sarTimer = setInterval(function () {
+        var n = curScene().frames.length;
+        S.frame = (S.frame + 1) % n; sarSync();
+      }, 800);
+    });
+
+    // seeker controls
+    $('skPrev').addEventListener('click', function () { skStep(-1); });
+    $('skNext').addEventListener('click', function () { skStep(1); });
+    $('skRange').addEventListener('input', function () {
+      S.frame = parseInt(this.value, 10); skSync();
+    });
+    $('skPlay').addEventListener('click', skPlay);
+
     window.addEventListener('resize', function () {
-      resizePC(); drawRadar(); drawRdMark(curFrame()); exploreUpdate();
+      resizePC();
+      drawRadar();
+      drawRdMark(curFrame());
+      if (BANDS) exploreUpdate();
+      sarLayout();
+      skMag('seeker');
+      skMag('wide');
     });
     $('rdImg').addEventListener('load', function () { drawRdMark(curFrame()); });
+    var sarI = $('sarImg');
+    if (sarI) sarI.addEventListener('load', function () { sarLayout(); });
 
     // data/boot.js is a pre-baked copy of the same two JSON files. It is what
     // makes the page work from file:// (no server, no fetch), which is the
     // air-gapped case this project actually targets. When it is present we use
     // it; otherwise we fall back to fetching the JSON, which is what a normal
-    // static host serves.
+    // static host serves. ?manifest= forces the fetch path (dev only).
     function fromBoot() {
+      if (MAN_URL) return null;
       var d = window.SIMKIT_DATA;
       if (!d || !d.manifest || !d.bands) return null;
       return Promise.resolve([d.manifest, d.bands]);
     }
     var loadData = fromBoot() || Promise.all([
-      fetch('data/manifest.json', { cache: 'no-cache' })
+      fetch(MAN_URL || 'data/manifest.json', { cache: 'no-cache' })
         .then(function (r) { if (!r.ok) throw new Error('manifest ' + r.status); return r.json(); }),
       fetch('data/radar_bands.json', { cache: 'no-cache' })
         .then(function (r) { if (!r.ok) throw new Error('bands ' + r.status); return r.json(); })
     ]);
     loadData.then(function (res) { MAN = res[0]; BANDS = res[1]; boot(); exploreUpdate(); })
       .catch(function (e) {
+        // A bad ?manifest= (typo, file moved, server down) used to leave a blank
+        // page even though data/boot.js was sitting right there. Rescue it.
+        var d = window.SIMKIT_DATA;
+        if (MAN_URL && d && d.manifest && d.bands) {
+          FELL_BACK = true;
+          MAN = d.manifest; BANDS = d.bands; boot(); exploreUpdate();
+          notice('按 URL 参数加载失败，已回落到内置数据');
+          return;
+        }
         document.body.insertAdjacentHTML('beforeend',
           '<div style="position:fixed;bottom:16px;left:16px;background:#ff5d6c;color:#000;' +
-          'padding:10px 16px;border-radius:8px;font:13px monospace;z-index:99">' +
+          'padding:10px 16px;border-radius:8px;font:13px monospace;z-index:99;max-width:70vw">' +
           '数据未加载：请先运行 tools/export_web.py 生成 data/boot.js<br>' +
           String(e) + '</div>');
       });
   });
+
 })();

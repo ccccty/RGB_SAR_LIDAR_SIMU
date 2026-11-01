@@ -72,11 +72,13 @@ function send(ws, id, method, params) {
     return r.result && r.result.result ? r.result.result.value : null;
   }
 
-  const tabs = ['gallery', 'compare', 'lidar', 'radar', 'explore', 'about'];
+  const tabs = ['gallery', 'compare', 'sar', 'seeker', 'lidar', 'radar', 'explore', 'about'];
   const report = {};
   for (let i = 0; i < tabs.length; i++) {
     const t = tabs[i];
-    const click = await evalJs('document.querySelectorAll("#tabs button")[' + i + '].click()');
+    // click by data-tab, not by index: the tab list grows as modalities are
+    // added and an index-based probe silently starts testing the wrong panel
+    const click = await evalJs('(function(){var b=document.querySelector(\'#tabs button[data-tab="' + t + '"]\')||document.querySelectorAll("#tabs button")[' + i + '];if(!b)return "missing";b.click();return null;})()');
     await sleep(900);
     const q = '(() => { var s=document.getElementById("' + t + '");' +
       'var imgs=[].slice.call(s.querySelectorAll("img")).map(function(i){return {w:i.naturalWidth,h:i.naturalHeight};});' +

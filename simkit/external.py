@@ -97,13 +97,33 @@ def write_manifest(cfg, states, out_dir, part=None):
                               fov_deg=v.get("fov_deg"))
         return out
 
+    def _views(s):
+        """Per-frame field-of-view poses (narrow seeker + wide search).
+
+        A clip may render several cameras at once; the manifest carries one
+        entry per view so the renderer never has to guess which lens it is
+        looking through. Legacy single-camera runs simply have one entry.
+        """
+        out = {}
+        for name, v in (s.get("views") or {}).items():
+            out[name] = dict(pos=[float(x) for x in v["pos"]],
+                             look_at=[float(x) for x in v.get("look_at", [0, 0, 0])],
+                             fov_deg=v.get("fov_deg"),
+                             width=v.get("width"), height=v.get("height"),
+                             tag=v.get("tag", ""),
+                             roll_deg=float(v.get("roll_deg", 0.0) or 0.0))
+        return out
+
     # "camera" is per frame because a seeker/gimbal mount moves: without it the
     # optical renderer would shoot every frame from the static config pose while
     # IR/radar/lidar tracked the target, and the boxes would disagree.
     lab.write_json(path, dict(frames=[dict(frame=int(s["frame"]), t=s["t"],
                                             objects=s["poses"],
                                             camera=_cams(s),
+                                            views=_views(s),
                                             range_m=s.get("range_m"),
+                                            target_px=s.get("target_px"),
+                                            view_px=s.get("view_px"),
                                             weather=dict(s.get("weather") or {}))
                                        for s in states]))
     return path

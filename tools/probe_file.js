@@ -60,10 +60,10 @@ function send(ws, id, method, params) {
   res.url = await ev('location.protocol');
   res.hasBoot = await ev('!!(window.SIMKIT_DATA && window.SIMKIT_DATA.manifest)');
   res.scenes = await ev('window.SIMKIT_DATA ? window.SIMKIT_DATA.manifest.scenes.length : -1');
-  const tabs = ['gallery','compare','lidar','radar','explore','about'];
+  const tabs = ['gallery','compare','sar','seeker','lidar','radar','explore','about'];
   res.tabs = {};
   for (let i = 0; i < tabs.length; i++) {
-    await ev('document.querySelectorAll("#tabs button")[' + i + '].click()');
+    await ev('(function(){var b=document.querySelector(\'#tabs button[data-tab="' + tabs[i] + '"]\')||document.querySelectorAll("#tabs button")[' + i + '];if(b)b.click();})()');
     await sleep(800);
     res.tabs[tabs[i]] = await ev('(() => { var s=document.getElementById("' + tabs[i] + '");' +
       'var imgs=[].slice.call(s.querySelectorAll("img"));' +

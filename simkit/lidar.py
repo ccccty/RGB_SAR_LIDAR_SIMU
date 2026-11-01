@@ -48,7 +48,8 @@ def _cfg(user):
 
 
 def beam_grid(rc):
-    p, r, u, f = sensor_basis(rc["pos"], rc["look_at"], rc.get("up", (0, 0, 1)))
+    p, r, u, f = sensor_basis(rc["pos"], rc["look_at"], rc.get("up", (0, 0, 1)),
+                              rc.get("roll_deg", 0.0))
     n_az, n_el = int(rc["n_az"]), int(rc["n_el"])
     haz = np.radians(float(rc["fov_deg"]))
     if rc.get("vfov_deg"):

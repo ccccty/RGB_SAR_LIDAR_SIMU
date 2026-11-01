@@ -10,6 +10,9 @@ venv/
 out/
 *.log
 
+# YOLO exports (regenerate with: python tools\export_yolo.py)
+datasets/
+
 # blender / third-party runtimes (never commit; download the portable build)
 third_party/
 *.blend1

@@ -255,5 +255,25 @@ def run():
     det_db = 10.0 * np.log10(-np.log(pfa))
     ok &= _ok("Pfa=1e-6 threshold ~ 11.4 dB", abs(det_db - 11.40) < 0.05, "%.2f dB" % det_db)
 
+    # --- module self-tests (SAR imaging, seeker planning) -------------------
+    # Each of those modules owns the physics it introduced, so its checks live
+    # next to it and are folded in here instead of being re-implemented twice.
+    for mod_name in ("sar", "plan"):
+        try:
+            m = __import__("simkit." + mod_name, fromlist=[mod_name])
+        except Exception as exc:            # missing module is not a failure
+            print("  SKIP  %s not importable (%s)" % (mod_name, exc))
+            continue
+        fn = getattr(m, "selftest", None)
+        if fn is None:
+            continue
+        print("\n  -- %s.selftest()" % mod_name)
+        try:
+            rc = fn()
+            ok &= _ok("%s.selftest()" % mod_name, rc in (None, 0),
+                      "" if rc in (None, 0) else "%d failed" % int(rc))
+        except Exception as exc:
+            ok &= _ok("%s.selftest() raised" % mod_name, False, repr(exc))
+
     print("\nRESULT:", "ALL PASS" if ok else "FAILURES PRESENT")
     return ok

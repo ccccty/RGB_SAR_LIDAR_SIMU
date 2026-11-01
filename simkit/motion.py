@@ -168,6 +168,124 @@ class Weave(Path):
         return self.v + self.lat * (self.a * c) + np.array([0.0, 0.0, self.za * c])
 
 
+class DiveWeave(Path):
+    """Diving, weaving *platform* track: the camera moves, the target does not.
+
+    The old seeker mode kept the camera parked and dragged the target towards it,
+    so the background never moved and every frame showed the same patch of
+    ground.  A real imaging seeker is the other way round: the airframe flies a
+    dive at ~180 m/s while a small lateral weave keeps the LOS from being a
+    straight line.  That ground rush is exactly the cue motion-based detectors
+    are trained on, so it has to come out of the geometry, not out of noise.
+
+    Geometry
+    --------
+    Track direction ``u`` is fixed by heading and dive angle, and is a unit
+    vector, so the along-track speed is a true speed.  The weave is horizontal
+    and ``u . lat == 0`` exactly, i.e. the sinusoid is perpendicular to the
+    flight path rather than to its horizontal projection.
+
+        pos(t) = p0 + u * (v * t) + lat * A * sin(w t + ph)
+        vel(t) =        u *  v     + lat * A w cos(w t + ph)      (exact d/dt)
+        acc(t) =                   - lat * A w^2 sin(w t + ph)
+
+    ``|vel|`` is therefore ``sqrt(v^2 + (A w cos)^2)``: constant to second order
+    (the RMS speed equals ``v`` when ``v`` is the configured speed), never a
+    finite difference of the position.
+
+    Standoff solve
+    --------------
+    ``p0``, the dive and the clip length are given, but the distance at which the
+    run must end is also given.  Those over-determine the track, so the
+    along-track speed is solved backwards from ``t_end`` and ``standoff_end_m``
+    instead of being assumed: the end point is the intersection of the track
+    line with the standoff sphere, a quadratic, so it stays closed form.
+    """
+
+    mode = "dive_weave"
+
+    def __init__(self, origin, target, speed_mps=180.0, heading_deg=90.0,
+                 dive_deg=-14.0, weave_amp_m=18.0, weave_hz=0.22,
+                 t_end=6.0, standoff_end_m=None, phase=0.0,
+                 target_vel=None, solve="standoff"):
+        self.p0 = np.asarray(origin, float)
+        self.tgt = np.asarray(target, float)
+        self.tvel = np.zeros(3) if target_vel is None else np.asarray(target_vel, float)
+        self.dur = max(float(t_end), 1e-6)
+        self.heading_deg = float(heading_deg)
+        self.dive_deg = float(dive_deg)
+
+        hd, dv = np.radians(self.heading_deg), np.radians(self.dive_deg)
+        self.u = np.array([np.cos(dv) * np.cos(hd),
+                           np.cos(dv) * np.sin(hd),
+                           np.sin(dv)])
+        # horizontal lateral: exactly perpendicular to u, so the weave cannot
+        # change the along-track speed
+        self.lat = _unit(np.cross(self.u, np.array([0.0, 0.0, 1.0])), (1.0, 0.0, 0.0))
+        self.A = float(weave_amp_m)
+        self.w = 2.0 * np.pi * float(weave_hz)
+        self.ph = float(phase)
+        self.speed_cfg = float(speed_mps)
+        self.standoff_cfg = None if standoff_end_m is None else float(standoff_end_m)
+        self.solve = str(solve).lower()
+
+        self.speed_track = self._solve_track_speed()
+        self.t_end = self.dur
+        self.standoff_actual = float(np.linalg.norm(
+            self.pos(self.dur) - self.target_at(self.dur)))
+
+    # ---- geometry -------------------------------------------------------
+    def target_at(self, t):
+        return self.tgt + self.tvel * float(t)
+
+    def _solve_track_speed(self):
+        """Along-track speed: RMS-equal to the configured speed, or solved from
+        the standoff sphere when a standoff is given."""
+        keep = np.sqrt(max(self.speed_cfg ** 2 - 0.5 * (self.A * self.w) ** 2, 1e-6))
+        if self.standoff_cfg is None or self.solve in ("speed", "keep", "rms"):
+            return float(keep)
+        s_end = np.sin(self.w * self.dur + self.ph)
+        B = (self.p0 - self.target_at(self.dur)) + self.lat * (self.A * s_end)
+        along = float(np.dot(self.u, B))
+        disc = along * along - float(np.dot(B, B)) + self.standoff_cfg ** 2
+        if disc < 0.0:
+            # the track line misses the standoff sphere: standoff below the
+            # perpendicular offset, nothing to solve, keep the configured speed
+            return float(keep)
+        x = -along - np.sqrt(disc)
+        if x <= 1e-6:
+            # already inside the standoff sphere at t=0: take the far crossing
+            x = -along + np.sqrt(disc)
+        if x <= 1e-6:
+            return float(keep)
+        return float(x / self.dur)
+
+    # ---- analytic kinematics -------------------------------------------
+    def pos(self, t):
+        t = float(t)
+        return (self.p0 + self.u * (self.speed_track * t)
+                + self.lat * (self.A * np.sin(self.w * t + self.ph)))
+
+    def vel(self, t):
+        t = float(t)
+        return (self.u * self.speed_track
+                + self.lat * (self.A * self.w * np.cos(self.w * t + self.ph)))
+
+    def accel(self, t):
+        t = float(t)
+        return self.lat * (-self.A * self.w * self.w * np.sin(self.w * t + self.ph))
+
+    def lateral_accel(self, t):
+        """Signed lateral acceleration (m/s^2, +ve to the right of the track)."""
+        return float(np.dot(self.accel(t), self.lat))
+
+    def altitude(self, t):
+        return float(self.pos(t)[2])
+
+    def range_at(self, t):
+        return float(np.linalg.norm(self.target_at(t) - self.pos(t)))
+
+
 class Waypoints(Path):
     """Centripetal Catmull-Rom through hand-placed waypoints, constant speed.
 
@@ -276,6 +394,20 @@ def make_path(spec, ground_z=None):
                        z0=float(ground_z if ground_z is not None else p0[2]),
                        vz=float(spec.get("climb_mps", 0.0)),
                        phase=float(spec.get("phase", 0.0)))
+
+    if mode in ("dive_weave", "diveweave", "dive"):
+        return DiveWeave(p0,
+                         spec.get("target", [0.0, 0.0, 0.0]),
+                         speed_mps=float(spec.get("speed_mps", 180.0)),
+                         heading_deg=float(spec.get("heading_deg", 90.0)),
+                         dive_deg=float(spec.get("dive_deg", -14.0)),
+                         weave_amp_m=float(spec.get("weave_amp_m", 0.0)),
+                         weave_hz=float(spec.get("weave_hz", 0.22)),
+                         t_end=float(spec.get("t_end", 6.0)),
+                         standoff_end_m=spec.get("standoff_end_m"),
+                         phase=float(spec.get("phase", 0.0)),
+                         target_vel=spec.get("target_vel"),
+                         solve=str(spec.get("solve", "standoff")))
 
     if mode in ("waypoints", "path", "spline"):
         pts = spec.get("points") or []

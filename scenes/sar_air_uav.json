@@ -1,0 +1,119 @@
+{
+ "seed": 41,
+ "ground": {
+  "enabled": true,
+  "type": "sea",
+  "size": 6000,
+  "nx": 32,
+  "ny": 32,
+  "wind_ms": 7,
+  "mat": "seawater",
+  "z": -0.5
+ },
+ "weather": {
+  "states": [
+   {"preset": "clear", "wind_ms": 5, "sun_elev_deg": 45},
+   {"preset": "cloudy", "wind_ms": 8, "sun_elev_deg": 38},
+   {"preset": "rain", "rain_mmh": 6, "wind_ms": 12, "sun_elev_deg": 30}
+  ]
+ },
+ "sun": {"elev_deg": 45, "az_deg": 140, "irradiance": 720, "on": true},
+ "air": {"temp_c": 16, "rh": 0.6, "wind_mps": 7},
+ "objects": [
+  {
+   "name": "uav_quad",
+   "cls": "uav",
+   "shape": "obj",
+   "model": "../assets/models/uav_demo.obj",
+   "scale": 5.0,
+   "decimate": 500,
+   "pos": [0, 0, 30],
+   "vel": [1.5, 1.2, 0.3],
+   "rot": 25,
+   "mat": "painted_metal",
+   "temp_c": 32,
+   "rcs_db": null
+  }
+ ],
+ "sensors": {
+  "sar": {
+   "band": "X",
+   "fc_ghz": 9.6,
+   "bandwidth_mhz": 250,
+   "prf_hz": 1500,
+   "n_pulses": 2048,
+   "n_samples": 768,
+   "n_cross": 512,
+   "altitude_m": 1200,
+   "speed_mps": 25,
+   "heading_deg": 90,
+   "squint_deg": 90,
+   "side": "right",
+   "swath_center_m": 1600,
+   "swath_width_m": 400,
+   "polarization": "VV",
+   "tx_power_w": 25,
+   "noise_figure_db": 4,
+   "loss_db": 3,
+   "antenna_len_m": 0.6,
+   "antenna_h_m": 0.25,
+   "resolution_scale": 1.0,
+   "looks": 2,
+   "oversample": 2,
+   "anchor": [0, 0, 0]
+  },
+  "optical": {
+   "pos": [0, -700, 120],
+   "look_at": [0, 0, 30],
+   "fov_deg": 1.2,
+   "width": 960,
+   "height": 720
+  },
+  "ir_camera": {
+   "pos": [0, -700, 120],
+   "look_at": [0, 0, 30],
+   "fov_deg": 1.2,
+   "width": 480,
+   "height": 360
+  },
+  "radar": {
+   "band": "Ku",
+   "pos": [0, -700, 120],
+   "look_at": [0, 0, 30],
+   "az_span_deg": 1.2,
+   "el_span_deg": 1.2,
+   "n_az": 48,
+   "n_el": 24,
+   "bandwidth_mhz": 200,
+   "n_samples": 400,
+   "chirp_us": 40,
+   "n_chirps": 32,
+   "tx_power_dbm": 33,
+   "noise_figure_db": 8,
+   "clutter_density": 0.02,
+   "mti_min_vr_mps": 1.0,
+   "pfa": 1e-06
+  },
+  "lidar": {
+   "pos": [0, -700, 120],
+   "look_at": [0, 0, 30],
+   "fov_deg": 2.0,
+   "n_az": 480,
+   "n_el": 120,
+   "max_range_m": 2000,
+   "range_spec_m": 800,
+   "pulse_energy_nj": 4000,
+   "aperture_mm": 50,
+   "wavelength_nm": 905
+  }
+ },
+ "ir": {
+  "bands": ["mwir", "lwir"],
+  "netd_mk": 30,
+  "psf_px": 1.3,
+  "nuc": {"enabled": true, "prnu": 0.008, "dsnu_counts": 25,
+          "column_fpn_counts": 6, "dead_px": 0.0002, "seed": 12345}
+ },
+ "optical": {"samples": 16, "exposure": -0.6},
+ "frames": {"n": 6, "dt": 0.5}
+}

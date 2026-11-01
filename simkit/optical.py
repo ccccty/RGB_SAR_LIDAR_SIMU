@@ -37,13 +37,21 @@ def available(cfg=None):
     return find_blender(cfg) is not None
 
 
-def render_frames(cfg, cfg_path, out_dir, manifest_path, script_path, quiet=False):
+def render_frames(cfg, cfg_path, out_dir, manifest_path, script_path, quiet=False,
+                  view_tags=None):
     exe = find_blender(cfg)
     if not exe:
         raise RuntimeError("Blender not found: set SIMKIT_BLENDER or optical.blender in the config")
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    cmd = [exe, "-b", "--factory-startup", "-noaudio", "-P", script_path, "--",
-           cfg_path, out_dir, manifest_path, root]
+    cmd = [exe, "-b", "--factory-startup", "-noaudio"]
+    # Cycles grabs every core by default. Three chunk workers then oversubscribe
+    # a 22-thread machine by 3x and the whole run is slower than one worker
+    # (measured: 64 s/frame instead of 25). The build script divides the cores
+    # among the workers and passes the budget down through this variable.
+    thr = os.environ.get("SIMKIT_BLENDER_THREADS")
+    if thr:
+        cmd += ["-t", str(max(1, int(thr)))]
+    cmd += ["-P", script_path, "--", cfg_path, out_dir, manifest_path, root]
     if not quiet:
         print("  blender:", " ".join(cmd[:6]), "...")
     p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -58,14 +66,16 @@ def render_frames(cfg, cfg_path, out_dir, manifest_path, script_path, quiet=Fals
     # trustworthy signal is the files themselves.
     # Check the frame ids this manifest actually asked for. Chunks carry global
     # ids, so counting from 0 would happily accept a neighbour chunk's files.
+    tags = [""] if view_tags is None else list(view_tags)
     missing = []
-    for i in _frame_ids(manifest_path):
-        img = os.path.join(out_dir, "images", "optical", "%06d.png" % i)
-        lab = os.path.join(out_dir, "labels", "optical", "%06d.json" % i)
-        if not os.path.exists(img):
-            missing.append(img)
-        if not os.path.exists(lab):
-            missing.append(lab)
+    for tag in tags:
+        for i in _frame_ids(manifest_path):
+            img = os.path.join(out_dir, "images", "optical" + tag, "%06d.png" % i)
+            lab = os.path.join(out_dir, "labels", "optical" + tag, "%06d.json" % i)
+            if not os.path.exists(img):
+                missing.append(img)
+            if not os.path.exists(lab):
+                missing.append(lab)
     if missing:
         out_lines = (p.stdout or "").splitlines()[-12:]
         err_lines = (p.stderr or "").splitlines()[-12:]

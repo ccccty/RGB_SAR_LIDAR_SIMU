@@ -156,7 +156,7 @@ def load_config(path):
     return cfg
 
 
-def sensor_basis(pos, look_at, up=(0, 0, 1)):
+def sensor_basis(pos, look_at, up=(0, 0, 1), roll_deg=0.0):
     p = np.asarray(pos, float)
     f = np.asarray(look_at, float) - p
     f = f / (np.linalg.norm(f) + 1e-12)
@@ -166,4 +166,14 @@ def sensor_basis(pos, look_at, up=(0, 0, 1)):
     r = np.cross(f, u)
     r = r / (np.linalg.norm(r) + 1e-12)
     u2 = np.cross(r, f)
+    # A banked seeker rolls the image about the optical axis. Blender applies
+    # roll to the optical camera, so every numpy renderer and every projection
+    # must apply it too or the modalities stop being registered: at 24.7 deg of
+    # bank the same target sat 40 px apart in the optical and the thermal frame
+    # (measured), which silently poisons any fused training set.
+    roll = float(roll_deg or 0.0)
+    if abs(roll) > 1e-9:
+        t = np.radians(roll)
+        c, s_ = np.cos(t), np.sin(t)
+        r, u2 = r * c + u2 * s_, -r * s_ + u2 * c
     return p, r, u2, f

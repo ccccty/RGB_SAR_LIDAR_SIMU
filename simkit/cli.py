@@ -107,7 +107,7 @@ def main(argv=None):
     m.add_argument("-c", "--scene", required=True)
     m.add_argument("-o", "--out", required=True)
     m.add_argument("-n", "--frames", type=int, default=None, help="total frames of the run")
-    m.add_argument("-s", "--sensors", default="ir,radar,lidar,optical")
+    m.add_argument("-s", "--sensors", default="ir,radar,lidar,optical,sar")
     m.add_argument("--seed", type=int, default=None)
     m.add_argument("-q", "--quiet", action="store_true")
     m.set_defaults(func=cmd_merge)

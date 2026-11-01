@@ -1,0 +1,263 @@
+{
+ "ground": {
+  "enabled": true,
+  "size": 8000,
+  "mat": "asphalt",
+  "z": 0
+ },
+ "weather": {
+  "mode": "per_clip",
+  "pool": [
+   "clear",
+   "cloudy",
+   "rain"
+  ]
+ },
+ "sun": {
+  "elev_deg": 46,
+  "az_deg": 150,
+  "irradiance": 700,
+  "on": true
+ },
+ "air": {
+  "temp_c": 21,
+  "rh": 0.5,
+  "wind_mps": 4
+ },
+ "ir": {
+  "bands": [
+   "mwir",
+   "lwir"
+  ],
+  "netd_mk": 30,
+  "psf_px": 1.3,
+  "nuc": {
+   "enabled": true,
+   "prnu": 0.008,
+   "dsnu_counts": 25,
+   "column_fpn_counts": 6,
+   "dead_px": 0.0002,
+   "seed": 12345
+  }
+ },
+ "optical": {
+  "samples": 16,
+  "exposure": -0.9
+ },
+ "frames": {
+  "n": 240,
+  "dt": 0.05
+ },
+ "seed": 317,
+ "objects": [
+  {
+   "name": "uav_low",
+   "cls": "uav",
+   "shape": "obj",
+   "model": "../assets/models/uav_demo.obj",
+   "pos": [
+    0,
+    0,
+    140
+   ],
+   "vel": [
+    3,
+    2,
+    0
+   ],
+   "rot": 180,
+   "mat": "painted_metal",
+   "label": true,
+   "decimate": 4000,
+   "scale": 3.5,
+   "temp_c": 25,
+   "rcs_db": -2.0
+  },
+  {
+   "name": "occ_c0_0",
+   "cls": "scenery",
+   "shape": "box",
+   "size": [
+    190.0,
+    26.0,
+    235.0
+   ],
+   "pos": [
+    -787.2176052442044,
+    -2159.298827383033,
+    0.0
+   ],
+   "rot": 159.96961404889106,
+   "mat": "building_wall",
+   "label": false,
+   "temp_c": 24.0
+  },
+  {
+   "name": "occ_c1_0",
+   "cls": "scenery",
+   "shape": "box",
+   "size": [
+    190.0,
+    26.0,
+    235.0
+   ],
+   "pos": [
+    1060.9929429100569,
+    -2609.777309862739,
+    0.0
+   ],
+   "rot": 202.1239740772227,
+   "mat": "building_wall",
+   "label": false,
+   "temp_c": 24.0
+  }
+ ],
+ "sensors": {
+  "ir_camera": {
+   "pos": [
+    0,
+    -3210.0,
+    84
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "fov_deg": 2.2,
+   "width": 768,
+   "height": 576
+  },
+  "optical": {
+   "pos": [
+    0,
+    -3210.0,
+    84
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "fov_deg": 2.2,
+   "width": 768,
+   "height": 576
+  },
+  "radar": {
+   "band": "Ka",
+   "az_span_deg": 2.0,
+   "el_span_deg": 2.0,
+   "n_az": 40,
+   "n_el": 28,
+   "bandwidth_mhz": 7.5,
+   "n_samples": 1024,
+   "chirp_us": 15,
+   "pri_us": 15,
+   "beamwidth_el_deg": 6.0,
+   "n_chirps": 256,
+   "tx_power_dbm": 40,
+   "noise_figure_db": 8,
+   "clutter_density": 0.04,
+   "mti_min_vr_mps": 0.8,
+   "pfa": 1e-06,
+   "swerling": "I",
+   "clutter_db": -12.0,
+   "ground_clutter_db": -35.0,
+   "pos": [
+    0,
+    -3210.0,
+    84
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0,
+    0,
+    1
+   ]
+  },
+  "lidar": {
+   "pos": [
+    0,
+    -3210.0,
+    84
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "fov_deg": 3.9600000000000004,
+   "n_az": 480,
+   "n_el": 120,
+   "max_range_m": 5000,
+   "range_spec_m": 2500.0,
+   "pulse_energy_nj": 4000,
+   "aperture_mm": 50,
+   "wavelength_nm": 905,
+   "vfov_deg": 2.97
+  }
+ },
+ "clip": {
+  "frames_per_clip": 120,
+  "camera": "ir_camera",
+  "views": [
+   {
+    "name": "seeker",
+    "tag": "",
+    "fov_deg": 2.2,
+    "width": 768,
+    "height": 576
+   },
+   {
+    "name": "wide",
+    "tag": "_wide",
+    "fov_deg": 18.0,
+    "width": 640,
+    "height": 480,
+    "sweep_deg": 0.8,
+    "sweep_hz": 0.06
+   }
+  ],
+  "seeker": {
+   "mode": "platform",
+   "platform": {
+    "origin": [
+     0,
+     -3210.0,
+     84
+    ],
+    "speed_mps": 100,
+    "heading_deg": 90.0,
+    "dive_deg": 1.0,
+    "weave_amp_m": 8.0,
+    "weave_hz": 0.25,
+    "standoff_end_m": 2100.0,
+    "solve": "standoff"
+   },
+   "target_m": 5.0,
+   "el_deg": -1.0,
+   "range_m": [
+    2100.0,
+    3210.0
+   ],
+   "los_jitter_deg": 0.02,
+   "wander_deg": 0.35,
+   "wander_hz": 0.09,
+   "lag_s": 0.12,
+   "bank_max_deg": 25,
+   "per_clip_variation": {
+    "enabled": true,
+    "bearing_deg": 22.0,
+    "dive_deg": 1.5
+   }
+  },
+  "rig": {
+   "vibration_m": 0.02,
+   "vibration_deg": 0.05
+  }
+ }
+}

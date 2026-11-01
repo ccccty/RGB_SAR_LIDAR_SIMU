@@ -8,8 +8,9 @@ if not exist "env\Scripts\python.exe" (
   exit /b 1
 )
 if "%SIMKIT_BLENDER%"=="" (
-  for /d %%D in ("third_party\blender-*") do set SIMKIT_BLENDER=%%~fD\blender.exe
+  for /d %%D in ("third_party\blender*") do set SIMKIT_BLENDER=%%~fD\blender.exe
 )
+if not exist "%SIMKIT_BLENDER%" set SIMKIT_BLENDER=
 echo === selftest ===
 "env\Scripts\python.exe" -m simkit selftest
 if errorlevel 1 exit /b 1

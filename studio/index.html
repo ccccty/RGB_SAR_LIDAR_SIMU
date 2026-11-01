@@ -2,93 +2,271 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>simkit 数据集工作台</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <header>
-  <h1>simkit 数据集工作台</h1>
-  <div class="sub">离线多传感器仿真 · 连续轨迹 · 多天气 · COCO 输出</div>
+  <div class="brand">
+    <h1>simkit 数据集工作台</h1>
+    <p class="sub">本地离线仿真 · 连续轨迹 · 双视场 · SAR · COCO 输出</p>
+  </div>
+  <div class="badges">
+    <span class="badge" id="sceneCount">场景 …</span>
+    <span class="badge">零依赖 · 离线</span>
+  </div>
 </header>
 
 <main>
-<section class="panel form">
-  <h2>1. 选参数</h2>
+  <section class="col">
+    <form class="panel" id="form" autocomplete="off" onsubmit="return false">
+      <div class="panel-head">
+        <h2>参数</h2>
+        <span class="hint-inline">改任意一项都会更新下方的中文摘要</span>
+      </div>
 
-  <div class="field">
-    <label>场景</label>
-    <div class="chips" id="preset"></div>
-  </div>
+      <details class="grp" open>
+        <summary>1 · 场景与目标</summary>
+        <div class="grp-body">
+          <div class="field">
+            <label for="scene">场景（自动扫描 <code>scenes/*.json</code>）</label>
+            <select id="scene"></select>
+            <div class="hint" id="sceneNote"></div>
+          </div>
+          <div class="field">
+            <label>目标像素区间（画面里的跨度）</label>
+            <div class="chips" id="size">
+              <button type="button" data-v="small">小</button>
+              <button type="button" data-v="medium" class="on">中</button>
+              <button type="button" data-v="large">大</button>
+            </div>
+            <div class="row2 tight">
+              <input id="pxLo" type="number" min="1" max="4000" step="1" value="18" aria-label="目标像素下限">
+              <input id="pxHi" type="number" min="1" max="4000" step="1" value="42" aria-label="目标像素上限">
+            </div>
+            <div class="hint">下限 / 上限，单位 px；视场越窄，同一距离上的像素越多</div>
+          </div>
+          <div class="field">
+            <label>接近方式</label>
+            <div class="chips" id="closing">
+              <button type="button" data-v="in" class="on">接近</button>
+              <button type="button" data-v="out">远离</button>
+              <button type="button" data-v="hold">保持</button>
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="closingMps">接近速率 m/s（0 = 按段时长推）</label>
+              <input id="closingMps" type="number" min="0" max="3000" step="10" value="0">
+            </div>
+            <div class="field">
+              <label for="rngLo">视线距离区间 m</label>
+              <input id="rngLo" type="number" min="1" max="400000" step="100" value="1500">
+              <input id="rngHi" type="number" min="1" max="400000" step="100" value="16000">
+            </div>
+          </div>
+        </div>
+      </details>
 
-  <div class="field">
-    <label>目标成像大小（像素）</label>
-    <div class="chips" id="size">
-      <button data-v="small">小 8–20</button>
-      <button data-v="medium" class="on">中 18–45</button>
-      <button data-v="large">大 35–85</button>
+      <details class="grp">
+        <summary>2 · 视场（单 / 双）</summary>
+        <div class="grp-body">
+          <div class="field">
+            <label>视场模式</label>
+            <div class="chips" id="viewsMode">
+              <button type="button" data-v="single" class="on">单视场</button>
+              <button type="button" data-v="dual">双视场</button>
+            </div>
+            <div class="hint">双视场 = 窄 2.2°@960×720 导引头 + 宽 18°@1280×960 搜索，同一帧两路都渲染</div>
+          </div>
+          <div class="field">
+            <label>窄视场（导引头）</label>
+            <div class="row3">
+              <label class="mini">FOV°<input id="nFov" type="number" min="0.1" max="120" step="0.1" value="2.2"></label>
+              <label class="mini">宽 px<input id="nW" type="number" min="64" max="4096" step="1" value="960"></label>
+              <label class="mini">高 px<input id="nH" type="number" min="64" max="4096" step="1" value="720"></label>
+            </div>
+          </div>
+          <div class="field" id="wideBox">
+            <label>宽视场（搜索）</label>
+            <div class="row3">
+              <label class="mini">FOV°<input id="wFov" type="number" min="0.1" max="120" step="0.5" value="18"></label>
+              <label class="mini">宽 px<input id="wW" type="number" min="64" max="4096" step="1" value="1280"></label>
+              <label class="mini">高 px<input id="wH" type="number" min="64" max="4096" step="1" value="960"></label>
+            </div>
+            <div class="hint">宽视场角必须大于窄视场角</div>
+          </div>
+        </div>
+      </details>
+
+      <details class="grp">
+        <summary>3 · SAR</summary>
+        <div class="grp-body">
+          <div class="field">
+            <label class="switch"><input id="sarOn" type="checkbox"> 生成 SAR 模态</label>
+            <div class="hint">SAR 由主控集成到 <code>simkit/dataset.py</code>；未集成时该传感器被忽略，其余模态不受影响</div>
+          </div>
+          <div class="sar-box" id="sarBox">
+            <div class="field">
+              <label>波段</label>
+              <div class="chips" id="sarBand">
+                <button type="button" data-v="X" class="on">X</button>
+                <button type="button" data-v="C">C</button>
+                <button type="button" data-v="Ku">Ku</button>
+              </div>
+              <div class="hint" id="sarBandNote"></div>
+            </div>
+            <div class="row2">
+              <div class="field">
+                <label for="sarBw">带宽 MHz</label>
+                <input id="sarBw" type="number" min="1" max="2000" step="10" value="100">
+              </div>
+              <div class="field">
+                <label>距离分辨率（由带宽推）</label>
+                <div class="readout" id="sarRes">1.50 m</div>
+              </div>
+            </div>
+            <div class="row2">
+              <div class="field">
+                <label for="swathC">测绘带中心 m</label>
+                <input id="swathC" type="number" min="10" max="200000" step="100" value="4000">
+              </div>
+              <div class="field">
+                <label for="swathW">测绘带宽度 m</label>
+                <input id="swathW" type="number" min="10" max="200000" step="100" value="1200">
+              </div>
+            </div>
+            <div class="row2">
+              <div class="field">
+                <label for="sarAlt">平台高度 m</label>
+                <input id="sarAlt" type="number" min="10" max="30000" step="100" value="3000">
+              </div>
+              <div class="field">
+                <label for="sarSpeed">平台速度 m/s</label>
+                <input id="sarSpeed" type="number" min="0" max="3000" step="10" value="150">
+              </div>
+            </div>
+            <div class="row2">
+              <div class="field">
+                <label for="sarSquint">斜视°</label>
+                <input id="sarSquint" type="number" min="-75" max="75" step="1" value="0">
+              </div>
+              <div class="field">
+                <label for="sarPol">极化</label>
+                <select id="sarPol">
+                  <option>VV</option><option>HH</option><option>VH</option><option>HV</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details class="grp">
+        <summary>4 · 轨迹</summary>
+        <div class="grp-body">
+          <div class="field">
+            <label>轨迹模式</label>
+            <div class="chips" id="traj">
+              <button type="button" data-v="platform" class="on">平台俯冲 + 蛇形</button>
+              <button type="button" data-v="seeker">相机静立 · 目标飞行</button>
+              <button type="button" data-v="world">世界轨迹（旧）</button>
+            </div>
+            <div class="hint">「平台」模式相机沿俯冲航路前进，地速效应落在画面上；另两种是旧模式</div>
+          </div>
+          <div class="plat-box" id="platBox">
+            <div class="row2">
+              <div class="field"><label for="pAlt">平台高度 m</label>
+                <input id="pAlt" type="number" min="10" max="30000" step="50" value="1200"></div>
+              <div class="field"><label for="pSpeed">平台速度 m/s</label>
+                <input id="pSpeed" type="number" min="0" max="3000" step="10" value="180"></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label for="pHeading">航向°</label>
+                <input id="pHeading" type="number" min="0" max="360" step="5" value="90"></div>
+              <div class="field"><label for="pDive">俯冲角°</label>
+                <input id="pDive" type="number" min="-89" max="89" step="1" value="-14"></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label for="pWeave">蛇形振幅 m</label>
+                <input id="pWeave" type="number" min="0" max="500" step="1" value="18"></div>
+              <div class="field"><label for="pWeaveHz">蛇形频率 Hz</label>
+                <input id="pWeaveHz" type="number" min="0" max="5" step="0.01" value="0.22"></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label for="pBack">起点后撤 m</label>
+                <input id="pBack" type="number" min="0" max="200000" step="100" value="3000"></div>
+              <div class="field"><label for="pStandoff">结束距离 m</label>
+                <input id="pStandoff" type="number" min="10" max="50000" step="10" value="260"></div>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details class="grp" open>
+        <summary>5 · 采集与天气</summary>
+        <div class="grp-body">
+          <div class="field">
+            <label>天气</label>
+            <div class="chips" id="weather"></div>
+            <div class="hint">「混合」= 每段随机一种；「演变」= 段内平滑过渡</div>
+          </div>
+          <div class="field">
+            <label>传感器（可多选）</label>
+            <div class="chips" id="sensors"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label for="frames">总帧数</label>
+              <input id="frames" type="number" min="1" max="20000" step="10" value="240"></div>
+            <div class="field"><label for="fps">帧率 fps</label>
+              <input id="fps" type="number" min="0.5" max="120" step="0.5" value="10"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label for="fpc">每段帧数</label>
+              <input id="fpc" type="number" min="1" max="5000" step="10" value="120"></div>
+            <div class="field"><label for="seed">随机种子</label>
+              <input id="seed" type="number" step="1" value="7"></div>
+          </div>
+          <div class="field"><label for="name">输出名后缀（可选）</label>
+            <input id="name" type="text" maxlength="40" placeholder="例如 dual_ku_rain"></div>
+        </div>
+      </details>
+
+      <div class="summary-strip" id="summary">正在读取场景…</div>
+
+      <div class="actions">
+        <button type="button" id="btnPlan" class="ghost">预览轨迹事实</button>
+        <button type="button" id="btnPreview" class="ghost">渲染 8 帧小样</button>
+        <button type="button" id="btnGen" class="primary">生成数据集</button>
+      </div>
+      <div class="alert" id="formErr" hidden></div>
+    </form>
+  </section>
+
+  <section class="col side">
+    <div class="panel">
+      <div class="panel-head"><h2>任务与进度</h2><span class="hint-inline" id="jobHint"></span></div>
+      <div id="jobs"></div>
     </div>
-    <div class="hint" id="sizeHint">目标在画面里“差不多能看见”，不是占满画面</div>
-  </div>
-
-  <div class="field">
-    <label>距离趋势</label>
-    <div class="chips" id="closing">
-      <button data-v="in" class="on">接近</button>
-      <button data-v="out">远离</button>
-      <button data-v="hold">保持</button>
+    <div class="panel">
+      <div class="panel-head"><h2>样张</h2><span class="hint-inline">点任务或「已生成的运行」里的「看」</span></div>
+      <div id="gallery"><div class="empty">还没有可看的样张。</div></div>
     </div>
-  </div>
+  </section>
 
-  <div class="field">
-    <label>天气</label>
-    <div class="chips" id="weather"></div>
-    <div class="hint">“混合”= 每个片段随机一种天气；“演变”= 片段内天气平滑过渡</div>
-  </div>
+  <section class="panel wide">
+    <div class="panel-head">
+      <h2>轨迹事实</h2>
+      <span class="hint-inline">来自 <code>plan.summary()</code>，只算轨迹，不渲染</span>
+    </div>
+    <div id="plan"><div class="empty">选好参数后点「预览轨迹事实」。</div></div>
+  </section>
 
-  <div class="field">
-    <label>传感器</label>
-    <div class="chips" id="sensors"></div>
-  </div>
-
-  <div class="field">
-    <label>雷达频段</label>
-    <select id="band"></select>
-  </div>
-
-  <div class="row">
-    <div class="field"><label>帧数</label><input id="frames" type="number" value="300" min="8" step="10"></div>
-    <div class="field"><label>帧率 fps</label><input id="fps" type="number" value="10" min="1" max="60" step="1"></div>
-  </div>
-  <div class="row">
-    <div class="field"><label>每段帧数</label><input id="fpc" type="number" value="50" min="2" step="5"></div>
-    <div class="field"><label>随机种子</label><input id="seed" type="number" value="7" step="1"></div>
-  </div>
-
-  <div class="field"><label>输出名（可选）</label><input id="name" type="text" placeholder="例如 rain_ka_500"></div>
-
-  <div class="actions">
-    <button id="btnPreview" class="ghost">先预览 8 帧</button>
-    <button id="btnGen" class="primary">生成数据集</button>
-  </div>
-  <div class="hint" id="estimate"></div>
-</section>
-
-<section class="panel out">
-  <h2>2. 看结果</h2>
-  <div id="jobs"></div>
-  <div id="gallery"></div>
-</section>
-
-<section class="panel wide">
-  <h2>3. 轨迹与连续性</h2>
-  <div class="hint">每个片段是一条连续轨迹：位置、速度、朝向都由时间解析给出，相邻帧只差一个积分步。</div>
-  <div id="plan"></div>
-</section>
-
-<section class="panel wide">
-  <h2>4. 已生成的数据集</h2>
-  <div id="datasets"></div>
-</section>
+  <section class="panel wide">
+    <div class="panel-head"><h2>已生成的运行</h2><span class="hint-inline" id="runsHint"></span></div>
+    <div id="datasets"></div>
+  </section>
 </main>
 
 <script src="app.js"></script>

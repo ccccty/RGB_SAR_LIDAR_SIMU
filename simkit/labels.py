@@ -7,7 +7,8 @@ import numpy as np
 
 def project_points(pts, cam, width, height):
     from .scene import sensor_basis
-    p, r, u, f = sensor_basis(cam["pos"], cam["look_at"], cam.get("up", (0, 0, 1)))
+    p, r, u, f = sensor_basis(cam["pos"], cam["look_at"], cam.get("up", (0, 0, 1)),
+                              cam.get("roll_deg", 0.0))
     fx = (width / 2.0) / np.tan(np.radians(cam.get("fov_deg", 30.0)) / 2.0)
     rel = np.asarray(pts, float) - p
     z = rel @ f

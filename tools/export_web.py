@@ -36,6 +36,10 @@ SCENE_META = {
     "ds1000_air": ("空中 · 无人机", "uav", "Ka"),
     "ds1000_ground": ("地面 · 巡视器", "vehicle", "W"),
     "ds1000_sea": ("海面 · 船只", "boat", "Ka"),
+    "seeker_air2air_high": ("高空空对空 · 导引头", "uav", "Ku"),
+    "seeker_surface2air": ("低空地対空 · 导引头", "uav", "Ka"),
+    "seeker_air2air_occluded": ("低空空对空 · 城市遮挡", "uav", "Ka"),
+    "seeker_air2ground": ("低空空对地 · 地面杂物", "vehicle", "W"),
 }
 WEB_FRAMES = int(os.environ.get("SIMKIT_WEB_FRAMES", "0")) or None
 
@@ -46,6 +50,7 @@ MOD_IMG = [
     ("radar_ra", "images/radar_ra", "雷达 · 距离-角度"),
     ("lidar_range", "lidar/range", "激光雷达 · 距离"),
     ("lidar_intensity", "lidar/intensity", "激光雷达 · 强度"),
+    ("sar", "images/sar", "SAR · 条带式"),
 ]
 MOD_LABEL = {
     "optical": "labels/optical",
@@ -53,7 +58,69 @@ MOD_LABEL = {
     "lwir": "labels/ir_lwir",
     "radar_ra": None,
     "lidar_range": "labels/lidar",
+    "sar": "labels/sar",
 }
+
+VIEW_TITLES = {
+    "seeker": "导引头窄视场",
+    "wide": "宽视场搜索",
+}
+
+
+def modalities(src, meta):
+    """Every modality actually on disk, expanded over the clip's views.
+
+    A dual-view run writes `images/optical` + `images/optical_wide` and
+    `labels/ir_mwir` + `labels/ir_mwir_wide`. Rather than trust the config, the
+    directory listing decides: a modality with no pixels is not offered, which
+    is the same rule the site uses for its buttons.
+    """
+    views = meta.get("views") or [dict(name="optical", tag="", fov_deg=None)]
+    out = []
+    seen = set()
+
+    def add(key, rel, label_rel, title):
+        if key in seen:
+            return
+        if not os.path.isdir(os.path.join(src, rel)):
+            return
+        try:
+            if not any(f.endswith(".png") for f in os.listdir(os.path.join(src, rel))):
+                return
+        except OSError:
+            return
+        seen.add(key)
+        out.append(dict(key=key, rel=rel, label=label_rel, title=title))
+
+    # group by modality, not by view: the site lists "可见光 · 窄/宽" next to each
+    # other, then the IR bands, then radar/lidar/SAR
+    for i, v in enumerate(views):
+        tag = "" if i == 0 else (v.get("tag") or "")
+        vname = "" if i == 0 else " · " + VIEW_TITLES.get(v.get("name"), v.get("name") or "")
+        add("optical" + tag, "images/optical" + tag, "labels/optical" + tag,
+            "可见光 RGB" + vname)
+    for i, v in enumerate(views):
+        tag = "" if i == 0 else (v.get("tag") or "")
+        vname = "" if i == 0 else " · " + VIEW_TITLES.get(v.get("name"), v.get("name") or "")
+        for bt, band in (("_mwir", "mwir"), ("_lwir", "lwir"), ("_swir", "swir"),
+                         ("", "lwir")):
+            key = band + tag
+            if key in seen:
+                continue
+            rel = "images/ir_preview%s%s" % (bt, tag)
+            if not os.path.isdir(os.path.join(src, rel)):
+                continue
+            label = "labels/ir%s%s" % (bt, tag)
+            if not os.path.isdir(os.path.join(src, label)):
+                continue
+            if bt == "" and os.path.isdir(os.path.join(src, "images/ir_preview_mwir")):
+                continue      # the "" slot is only for band-less single-band runs
+            title = {"mwir": "中波红外 3–5 µm", "lwir": "长波红外 8–12 µm",
+                     "swir": "短波红外"}.get(band, "红外")
+            add(key, rel, label, title + vname)
+    for key, rel, title in MOD_IMG[3:]:
+        add(key, rel, MOD_LABEL.get(key), title)
+    return out
 
 # The range/Doppler map (images/radar) is a 1600x64 strip where the target is a
 # couple of pixels; it is a legitimate dataset product but useless as a gallery
@@ -77,8 +144,17 @@ def read_ply(path, max_pts=1500):
     dt = np.dtype([("x", "<f4"), ("y", "<f4"), ("z", "<f4"), ("r", "<f4"),
                    ("i", "<f4"), ("s", "<f4"), ("o", "<i4")])
     if len(body) < n * dt.itemsize:
-        return []
+        # Tolerate a short tail instead of dropping the whole cloud: the lidar
+        # writer emits one separator byte too many on some frames, and a 57k
+        # point cloud that is one byte short is still a good cloud.
+        n = len(body) // dt.itemsize
+        if n <= 0:
+            return []
     a = np.frombuffer(body[: n * dt.itemsize], dt)
+    # a short tail leaves a partial record whose fields decode as NaN
+    ok = np.isfinite(a["x"]) & np.isfinite(a["y"]) & np.isfinite(a["z"])
+    if not ok.all():
+        a = a[ok]
     if n > max_pts:
         step = int(np.ceil(n / float(max_pts)))
         a = a[::step]
@@ -269,6 +345,20 @@ def main(dest, runs):
     bands = radar_band_table()
     scenes = []
     wanted = [(s[0], s[1], s[2], s[3]) for s in SCENES if os.path.isdir(os.path.join(runs, s[0]))]
+    # ... plus every other run on disk. The canonical list is a set of preferred
+    # titles, not an allow-list: once it matched, runs generated under new names
+    # silently vanished from the site (measured: four 240-frame seeker scenes
+    # dropped out while three 6-frame demos were exported).
+    _have = {w[0] for w in wanted}
+    for nm in sorted(os.listdir(runs)):
+        p = os.path.join(runs, nm)
+        if nm in _have or not os.path.isdir(p):
+            continue
+        if not (os.path.exists(os.path.join(p, "meta.json")) or
+                os.path.exists(os.path.join(p, "stats.json"))):
+            continue
+        title, cls, band = SCENE_META.get(nm, (nm, nm, "Ka"))
+        wanted.append((nm, title, cls, band))
     if not wanted:
         # No canonical runs: export whatever the runs/ directory holds, which is
         # how the 1000-frame dataset gets published. A merged dataset package has
@@ -328,20 +418,40 @@ def main(dest, runs):
         n_frames = max(n_frames, have)
         if WEB_FRAMES:
             n_frames = min(n_frames, int(WEB_FRAMES))
+        # per-frame index written by the generator: range, target size per view,
+        # weather. Falls back to the weather list for older runs.
+        rows = {}
+        fp = os.path.join(src, "frames.json")
+        if os.path.exists(fp):
+            try:
+                for r in json.load(open(fp, encoding="utf-8")):
+                    rows[int(r.get("frame", -1))] = r
+            except (OSError, ValueError):
+                rows = {}
+        mods = modalities(src, meta)
+        views_meta = meta.get("views") or []
         frames = []
+        sar_meta = None
         for f in range(n_frames):
             name = "%06d.png" % f
             wl = meta.get("weather") or [{}]
+            row = rows.get(f) or {}
             fr = dict(i=f, weather=wl[f % len(wl)], mods={})
-            for mod, rel, label in MOD_IMG:
+            for m in mods:
+                mod, rel, lb = m["key"], m["rel"], m["label"]
                 sp = os.path.join(src, rel, name)
                 if not os.path.exists(sp):
                     continue
                 os.makedirs(os.path.join(out, mod), exist_ok=True)
                 w, h = _shrink(sp, os.path.join(out, mod, name))
+                ow, oh = f_png_size(sp)
                 entry = dict(img="%s/%s/%s" % (scene_id, mod, name))
                 entry["w"], entry["h"] = w, h
-                lb = MOD_LABEL.get(mod)
+                # the shipped copy may be box-averaged down, so the boxes have to
+                # be rescaled into the shipped image's coordinate space -- the
+                # site draws them straight on top of the <img>
+                sx = (w / float(ow)) if ow else 1.0
+                sy = (h / float(oh)) if oh else 1.0
                 if lb:
                     lp = os.path.join(src, lb, "%06d.json" % f)
                     if os.path.exists(lp):
@@ -357,7 +467,56 @@ def main(dest, runs):
                                  x1=round(b["x1"], 1), y1=round(b["y1"], 1), label="target")
                             for b in d.get("boxes", [])
                         ]
+                if entry.get("boxes") and (sx != 1.0 or sy != 1.0):
+                    for b in entry["boxes"]:
+                        b["x0"] = round(b["x0"] * sx, 1)
+                        b["x1"] = round(b["x1"] * sx, 1)
+                        b["y0"] = round(b["y0"] * sy, 1)
+                        b["y1"] = round(b["y1"] * sy, 1)
                 fr["mods"][mod] = entry
+
+            # SAR: the image is a product, the geometry behind it is the story
+            sp = os.path.join(src, "labels/sar", "%06d.json" % f)
+            if os.path.exists(sp):
+                d = json.load(open(sp, encoding="utf-8"))
+                st = d.get("stats") or {}
+                res = d.get("resolution") or {}
+                sw = d.get("swath") or {}
+                pl = d.get("platform") or {}
+                fr["sar"] = dict(
+                    near_m=sw.get("near_m"), far_m=sw.get("far_m"), width_m=sw.get("width_m"),
+                    res_range_m=res.get("range_m"), res_az_m=res.get("azimuth_m"),
+                    peak_db=st.get("peak_db"), mean_db=st.get("mean_db"),
+                    noise_db=st.get("noise_db"), snr_db=st.get("snr_db"),
+                    dynamic_range_db=st.get("dynamic_range_db"),
+                    target_peak_db=st.get("target_peak_db"),
+                    target_contrast_db=st.get("target_contrast_db"),
+                    n_scatterers=st.get("n_scatterers"),
+                    platform=dict(altitude_m=pl.get("altitude_m"),
+                                  # the kernel reports the platform as a velocity
+                                  # vector; the page wants a scalar speed
+                                  speed_mps=(pl.get("speed_mps")
+                                             or (round(float(np.linalg.norm(pl["vel"])), 2)
+                                                 if pl.get("vel") else None)),
+                                  heading_deg=pl.get("heading_deg"),
+                                  squint_deg=pl.get("squint_deg")))
+                if sar_meta is None:
+                    sar_meta = dict(fr["sar"])
+
+            # range / apparent size history, plus per-view geometry
+            fr["t"] = row.get("t")
+            fr["range_m"] = row.get("range_m")
+            fr["target_px"] = row.get("target_px")
+            vp = row.get("view_px") or {}
+            vroll = row.get("view_roll") or {}
+            if views_meta:
+                vv = {}
+                for i, v in enumerate(views_meta):
+                    nm = v.get("name")
+                    vv[nm] = dict(fov_deg=v.get("fov_deg"), w=v.get("width"),
+                                  h=v.get("height"), target_px=vp.get(nm),
+                                  roll_deg=vroll.get(nm, 0.0))
+                fr["views"] = vv
 
             rp = os.path.join(src, "labels/radar", "%06d.json" % f)
             if os.path.exists(rp):
@@ -392,6 +551,10 @@ def main(dest, runs):
         scenes.append(dict(id=scene_id, title=title, cls=cls, band=band, budget=budget,
                            sensors=list(meta.get("sensors", [])),
                            categories=[c["name"] for c in meta.get("categories", [])],
+                           mods=[dict(key=m["key"], title=m["title"],
+                                      boxes=bool(m["label"])) for m in mods],
+                           views=views_meta,
+                           sar_meta=sar_meta,
                            frames=frames))
 
     with open(os.path.join(data, "radar_bands.json"), "w", encoding="utf-8") as fh:
