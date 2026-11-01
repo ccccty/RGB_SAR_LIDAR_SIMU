@@ -1,0 +1,83 @@
+[
+ {
+  "file": "air_optical.webp",
+  "label": "空中 · 可见光",
+  "scene": "air",
+  "group": "opt",
+  "w": 1280,
+  "h": 960,
+  "bytes": 4738
+ },
+ {
+  "file": "ground_optical.webp",
+  "label": "地面 · 可见光",
+  "scene": "ground",
+  "group": "opt",
+  "w": 1280,
+  "h": 960,
+  "bytes": 12674
+ },
+ {
+  "file": "sea_optical.webp",
+  "label": "海面 · 可见光",
+  "scene": "sea",
+  "group": "opt",
+  "w": 1280,
+  "h": 960,
+  "bytes": 12388
+ },
+ {
+  "file": "air_lwir.webp",
+  "label": "空中 · 长波红外",
+  "scene": "air",
+  "group": "ir",
+  "w": 1280,
+  "h": 960,
+  "bytes": 18124
+ },
+ {
+  "file": "ground_lwir.webp",
+  "label": "地面 · 长波红外",
+  "scene": "ground",
+  "group": "ir",
+  "w": 1280,
+  "h": 960,
+  "bytes": 63428
+ },
+ {
+  "file": "sea_lwir.webp",
+  "label": "海面 · 长波红外",
+  "scene": "sea",
+  "group": "ir",
+  "w": 1280,
+  "h": 960,
+  "bytes": 52962
+ },
+ {
+  "file": "ground_optical.webp",
+  "label": "地面 · 晴（默认天气）",
+  "scene": "ground",
+  "group": "wx",
+  "w": 1280,
+  "h": 960,
+  "bytes": 12674
+ },
+ {
+  "file": "ground_golden.webp",
+  "label": "地面 · 低太阳高度",
+  "scene": "ground",
+  "group": "wx",
+  "w": 1280,
+  "h": 960,
+  "bytes": 12128
+ },
+ {
+  "file": "ground_rain.webp",
+  "label": "地面 · 降雨",
+  "scene": "ground",
+  "group": "wx",
+  "w": 1280,
+  "h": 960,
+  "bytes": 14180
+ }
+]

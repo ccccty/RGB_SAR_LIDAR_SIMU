@@ -581,6 +581,18 @@ def main(dest, runs):
         json.dump(dict(manifest=man, bands=bands), fh,
                   ensure_ascii=False, separators=(",", ":"))
         fh.write(";\n")
+
+    # Keep the committed payload small: PNG -> WebP, thumbnails, and (the big
+    # one) the per-frame point clouds moved out of the manifest into
+    # data/cloud/<scene>.json. Set SIMKIT_NO_OPT=1 to keep the raw PNGs.
+    if os.environ.get("SIMKIT_NO_OPT") != "1":
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        try:
+            import opt_images
+            opt_images.optimize(data)
+        except Exception as exc:            # never fail an export over this
+            print("webp optimisation skipped: %s" % exc)
+
     total = 0
     for root, _, files in os.walk(data):
         for f in files:

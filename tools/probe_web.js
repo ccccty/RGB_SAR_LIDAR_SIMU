@@ -72,27 +72,39 @@ function send(ws, id, method, params) {
     return r.result && r.result.result ? r.result.result.value : null;
   }
 
-  const tabs = ['gallery', 'compare', 'sar', 'seeker', 'lidar', 'radar', 'explore', 'about'];
+  const tabs = ['home', 'gallery', 'compare', 'sar', 'seeker', 'lidar', 'radar',
+    'figures', 'explore', 'pipeline', 'about'];
   const report = {};
   for (let i = 0; i < tabs.length; i++) {
     const t = tabs[i];
     // click by data-tab, not by index: the tab list grows as modalities are
     // added and an index-based probe silently starts testing the wrong panel
     const click = await evalJs('(function(){var b=document.querySelector(\'#tabs button[data-tab="' + t + '"]\')||document.querySelectorAll("#tabs button")[' + i + '];if(!b)return "missing";b.click();return null;})()');
-    await sleep(900);
+    await sleep(700);
+    // Capture the tab before touching the scroll position, so the shot is the
+    // page as a visitor first sees it.
+    const shot = await send(ws, idc++, 'Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    fs.writeFileSync(path.join(OUT, t + '.png'), Buffer.from(shot.result.data, 'base64'));
+    // Lazy images only decode once they are near the viewport; a probe that
+    // measures without scrolling reports every below-the-fold image as broken.
+    await evalJs('(function(){var d=document.documentElement;var b=d.style.scrollBehavior;' +
+      'd.style.scrollBehavior="auto";window.scrollTo(0,document.body.scrollHeight);' +
+      'd.style.scrollBehavior=b;return 1;})()');
+    await sleep(500);
+    await evalJs('(function(){var d=document.documentElement;var b=d.style.scrollBehavior;' +
+      'd.style.scrollBehavior="auto";window.scrollTo(0,0);d.style.scrollBehavior=b;return 1;})()');
+    await sleep(250);
     const q = '(() => { var s=document.getElementById("' + t + '");' +
       'var imgs=[].slice.call(s.querySelectorAll("img")).map(function(i){return {w:i.naturalWidth,h:i.naturalHeight};});' +
       'var cvs=[].slice.call(s.querySelectorAll("canvas")).map(function(c){return c.width+"x"+c.height;});' +
       'return {on: s.classList.contains("on"), onList: [].slice.call(document.querySelectorAll("section")).filter(function(x){return x.classList.contains("on");}).map(function(x){return x.id;}), imgs: imgs.length, broken: imgs.filter(function(i){return i.w===0;}).length, cvs: cvs, h: s.offsetHeight}; })()';
     report[t] = await evalJs(q);
     if (click) report[t].clickErr = click;
-    const shot = await send(ws, idc++, 'Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
-    fs.writeFileSync(path.join(OUT, t + '.png'), Buffer.from(shot.result.data, 'base64'));
   }
   // Every modality button the gallery offers must actually resolve to an image.
   // A button whose frame entry is missing renders a blank pane, which is the
   // failure mode this catches.
-  await evalJs('document.querySelectorAll("#tabs button")[0].click()');
+  await evalJs('document.querySelector(\'#tabs button[data-tab="gallery"]\').click()');
   await sleep(600);
   const mods = [];
   const nmods = await evalJs('document.querySelectorAll("#galMod button").length');

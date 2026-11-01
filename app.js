@@ -114,6 +114,15 @@
     if (!e || !e.img) return '';
     return ((MAN && MAN.base) || 'data/') + e.img;
   }
+  // Filmstrip copy: half the pixels, a fifth of the bytes. Built by
+  // tools/opt_images.py from the same source frame, so a thumb can never show
+  // a different frame than the one it opens.
+  function thumbURL(e) {
+    if (!e || !e.img) return '';
+    var base = (MAN && MAN.base) || 'data/';
+    if (base !== 'data/') return imgURL(e);
+    return 'data/_t/' + e.img.replace(/\.(webp|png|jpg)$/i, '') + '.webp';
+  }
 
   // Label for a modality key. The curated table keeps the tab bar compact for the
   // keys we ship; anything the exporter invents later (a new band, a new view) is
@@ -147,20 +156,42 @@
     return out;
   }
 
-  // ---------- tabs ----------
-  var TABS = ['gallery', 'compare', 'sar', 'seeker', 'lidar', 'radar', 'explore', 'about'];
-  function showTab(name) {
+  // ---------- tabs + routing ----------
+  // Every tab is a real URL (#/sar), so a link can point at the view that
+  // proves the point, and the back button works. pushState rather than
+  // location.hash= so a click does not add two history entries.
+  var TABS = ['home', 'gallery', 'compare', 'sar', 'seeker', 'lidar', 'radar',
+    'figures', 'explore', 'pipeline', 'about'];
+  var CURRENT = 'home';
+  function hashTab() {
+    var m = /^#\/?([a-z0-9_]+)/i.exec(location.hash || '');
+    var t = m ? m[1] : 'home';
+    return TABS.indexOf(t) < 0 ? 'home' : t;
+  }
+  function showTab(name, opts) {
+    opts = opts || {};
+    if (TABS.indexOf(name) < 0) name = 'home';
+    CURRENT = name;
     TABS.forEach(function (t) {
       var sec = $(t);
       if (sec) sec.classList.toggle('on', t === name);
     });
     Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (b) {
-      b.classList.toggle('on', b.getAttribute('data-tab') === name);
+      var on = b.getAttribute('data-tab') === name;
+      b.classList.toggle('on', on);
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
+    if (opts.syncHash !== false && location.hash !== '#/' + name) {
+      try { history.pushState({ tab: name }, '', '#/' + name); } catch (e) { location.hash = '#/' + name; }
+    }
+    if (!opts.keepScroll) window.scrollTo({ top: 0, behavior: opts.instant ? 'auto' : 'smooth' });
+    if (!MAN) return;
     if (name !== 'seeker') skStop();
     if (name !== 'sar') sarStop();
+    if (name !== 'gallery' && playTimer) galPlay();
+    if (name === 'home') setTimeout(homeSync, 20);
     if (name === 'gallery') setTimeout(galSync, 20);
-    if (name === 'lidar') setTimeout(resizePC, 30);
+    if (name === 'lidar') setTimeout(function () { pcSync(); lidarPick(); resizePC(); }, 30);
     if (name === 'radar') setTimeout(function () { rdSync(); drawRadar(); drawRdMark(curFrame()); }, 30);
     if (name === 'explore') setTimeout(function () { if (BANDS) exploreUpdate(); }, 40);
     if (name === 'compare') setTimeout(renderCompare, 30);
@@ -169,6 +200,9 @@
   }
   Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (b) {
     b.addEventListener('click', function () { showTab(b.getAttribute('data-tab')); });
+  });
+  window.addEventListener('popstate', function () {
+    showTab(hashTab(), { syncHash: false, instant: true });
   });
 
   // ---------- shared helpers ----------
@@ -407,7 +441,8 @@
       ['天气', weatherText(fr)],
       ['标注框', entry && entry.boxes ? entry.boxes.length + ' 个' : '—'],
       ['雷达检出', fr.radar ? fr.radar.n + ' 点 / 杂波 ' + fr.radar.clutter : '—'],
-      ['点云', fr.cloud ? fr.cloud.shown + ' / ' + fr.cloud.n + ' 点' : '—'],
+      ['点云', fr.cloud ? fr.cloud.shown + ' / ' + fr.cloud.n + ' 点'
+        : (CLOUDIDX && CLOUDIDX[sc.id] ? '按需加载（' + CLOUDIDX[sc.id].points + ' 点）' : '—')],
       ['SAR', fr.sar ? (isNum(fr.sar.snr_db) ? f1(fr.sar.snr_db) + ' dB SNR' : '有') : '—']
     ]);
 
@@ -422,22 +457,21 @@
 
     var th = $('galThumbs');
     th.innerHTML = '';
+    var lazy = !$('galLazy') || $('galLazy').checked;
     sc.frames.forEach(function (f) {
       var e = f.mods ? f.mods[S.mod] : null;
       if (!e) return;
-      var box = el('div', 'card pad-s');
-      box.style.cursor = 'pointer';
-      box.style.padding = '6px';
-      if (f.i === fr.i) box.style.borderColor = 'var(--accent)';
+      var box = el('div', 'card' + (f.i === fr.i ? ' on-th' : ''));
       var im = el('img');
-      im.src = imgURL(e);
-      im.style.width = '100%';
-      im.style.borderRadius = '7px';
-      im.style.display = 'block';
+      im.src = lazy ? thumbURL(e) : imgURL(e);
+      im.alt = sc.title + ' 帧 ' + (f.i + 1);
+      im.loading = 'lazy';
+      im.decoding = 'async';
       box.appendChild(im);
-      var cap = el('div', 'mono muted', '帧 ' + (f.i + 1));
-      cap.style.fontSize = '11px';
-      cap.style.marginTop = '6px';
+      var cap = el('div', 'mono muted');
+      cap.style.cssText = 'font-size:11px;margin-top:6px;display:flex;justify-content:space-between';
+      cap.appendChild(el('span', '', '帧 ' + (f.i + 1)));
+      if (f.weather) cap.appendChild(el('span', '', WNAME[f.weather.name] || ''));
       box.appendChild(cap);
       box.addEventListener('click', function () { S.frame = f.i; galSync(); });
       th.appendChild(box);
@@ -519,10 +553,68 @@
   var PC = { yaw: -0.6, pitch: 0.35, zoom: 1, color: 'intensity', drag: null, spin: true };
   var pcFrameIdx = 0;
 
+  // Point clouds are the only payload big enough to hurt: they were 69% of the
+  // old 646 KB manifest for a tab most visitors never open. They now live in
+  // data/cloud/<scene>.json and are fetched the first time a scene's cloud is
+  // actually needed. The offline bundle (file://) still carries them inline, so
+  // the frame already has f.cloud there and nothing is fetched.
+  var CLOUD = {}, CLOUD_PEND = {};
+  // Per-scene point counts (data/cloud/_index.json). Half the clips only carry a
+  // few dozen lidar returns, so the first visit to the point-cloud tab opens the
+  // densest scene instead of an empty field -- with a notice saying it moved.
+  var CLOUDIDX = null;
+  function loadCloudIndex() {
+    fetch('data/cloud/_index.json')
+      .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+      .then(function (d) { CLOUDIDX = d; })
+      .catch(function () { CLOUDIDX = null; });
+  }
+  function lidarPick() {
+    if (!CLOUDIDX || !MAN || PC.picked) return;
+    var cur = CLOUDIDX[curScene().id];
+    if (cur && cur.points >= 800) return;
+    var best = -1, bestN = 0;
+    MAN.scenes.forEach(function (s, i) {
+      var e = CLOUDIDX[s.id];
+      if (e && e.points > bestN) { bestN = e.points; best = i; }
+    });
+    if (best >= 0 && best !== S.scene) {
+      S.scene = best; pcFrameIdx = 0; pcSync();
+      notice('已切到点云最密的场景：' + MAN.scenes[best].title + '（' + bestN + ' 点）');
+    }
+  }
+  function ensureCloud(sc) {
+    var id = sc.id;
+    if (CLOUD[id] || CLOUD_PEND[id]) return;
+    CLOUD_PEND[id] = true;
+    var st = $('pcState');
+    if (st) { st.textContent = '点云加载中…'; st.className = 'tag warn'; }
+    fetch('data/cloud/' + encodeURIComponent(id) + '.json')
+      .then(function (r) { if (!r.ok) throw new Error('cloud ' + r.status); return r.json(); })
+      .then(function (d) {
+        CLOUD[id] = d; CLOUD_PEND[id] = false;
+        var s2 = $('pcState');
+        if (s2) { s2.textContent = '点云已载入'; s2.className = 'tag ok'; }
+        if (CURRENT === 'lidar') { pcSync(); resizePC(); }
+      })
+      .catch(function () {
+        CLOUD_PEND[id] = false;
+        var s3 = $('pcState');
+        if (s3) { s3.textContent = '点云不可用'; s3.className = 'tag bad'; }
+        drawPC();
+      });
+  }
   function pcCloud() {
     var sc = curScene();
     var f = sc.frames[Math.min(pcFrameIdx, sc.frames.length - 1)];
-    return f && f.cloud ? f.cloud : null;
+    if (!f) return null;
+    if (f.cloud) return f.cloud;
+    var c = CLOUD[sc.id];
+    if (c && c[String(f.i)] !== undefined) return c[String(f.i)];
+    // Do not fetch 50-150 KB of point cloud just because boot() paints every
+    // tab once; wait until the visitor is actually looking at this one.
+    if (!c && CURRENT === 'lidar') ensureCloud(sc);
+    return null;
   }
   function resizePC() {
     var c = $('pcCanvas'), host = $('pcViewer');
@@ -544,66 +636,114 @@
     var g = c.getContext('2d');
     var W = c.width, H = c.height;
     g.fillStyle = '#05070a'; g.fillRect(0, 0, W, H);
+    var dp = Math.min(window.devicePixelRatio || 1, 2);
     var cl = pcCloud();
+    var pend = CLOUD_PEND[curScene() && curScene().id];
     if (!cl || !cl.x.length) {
-      $('pcTL').textContent = '无点云数据';
-      var dp = Math.min(window.devicePixelRatio || 1, 2);
-      g.fillStyle = 'rgba(150,180,210,0.5)';
+      $('pcTL').textContent = pend ? '正在载入点云…' : '无点云数据';
+      g.fillStyle = 'rgba(150,180,210,0.55)';
       g.font = Math.round(13 * dp) + 'px monospace';
-      g.fillText('该场景未导出点云（PLY），只导出了图像模态', 16 * dp, H / 2);
+      g.fillText(pend ? '点云按场景按需加载，稍等片刻'
+                      : '该场景未导出点云（PLY），只导出了图像模态', 18 * dp, H / 2);
       return;
     }
 
+    // Orthographic camera that fits itself to the cloud. The old version
+    // divided by a fixed centimetre constant, so a 40 m rover and a 900 m UAV
+    // did not both land inside the canvas -- the 3D view was blank for most
+    // scenes. Everything below is in metres, centred on the cloud centroid.
     var ctr = cloudCenter(cl);
     var cy = Math.cos(PC.yaw), sy = Math.sin(PC.yaw);
     var cp = Math.cos(PC.pitch), sp = Math.sin(PC.pitch);
-    var zsc = Math.min(W, H) * 0.42 * PC.zoom;
-
     var n = cl.x.length;
-    var px = new Float32Array(n), py = new Float32Array(n), pz = new Float32Array(n);
-    for (var i = 0; i < n; i++) {
-      var x = cl.x[i] / 100 - ctr[0] / 100;
-      var y = cl.y[i] / 100 - ctr[1] / 100;
-      var z = cl.z[i] / 100 - ctr[2] / 100;
+    var xs = new Float32Array(n), ys = new Float32Array(n), ds = new Float32Array(n);
+    var radius = 1e-3, i;
+    for (i = 0; i < n; i++) {
+      var x = (cl.x[i] - ctr[0]) / 100;
+      var y = (cl.y[i] - ctr[1]) / 100;
+      var z = (cl.z[i] - ctr[2]) / 100;
+      radius = Math.max(radius, Math.sqrt(x * x + y * y + z * z));
       var x1 = x * cy - y * sy;
       var y1 = x * sy + y * cy;
-      var y2 = y1 * cp - z * sp;
-      var z2 = y1 * sp + z * cp;
-      px[i] = W / 2 + x1 * zsc * 0.06;
-      py[i] = H / 2 - z2 * zsc * 0.06;
-      pz[i] = y2;
+      xs[i] = x1;
+      ys[i] = y1 * sp + z * cp;
+      ds[i] = y1 * cp - z * sp;
     }
+    // Fit to the 85th percentile radius, not the maximum: one stray far-field
+    // return (a fence at 2.6 km next to a 3 m rover) would otherwise shrink the
+    // target to a handful of pixels in the middle of a huge empty box.
+    var dists = new Float32Array(n);
+    for (i = 0; i < n; i++) dists[i] = Math.sqrt(xs[i] * xs[i] + ys[i] * ys[i] + ds[i] * ds[i]);
+    var sorted = Array.prototype.slice.call(dists).sort(function (a, b) { return a - b; });
+    var r85 = sorted[Math.min(n - 1, Math.floor(n * 0.85))] || radius;
+    var scale = Math.min(W, H) * 0.42 * PC.zoom / Math.max(r85, radius * 0.18, 1e-3);
+    var px = new Float32Array(n), py = new Float32Array(n);
+    for (i = 0; i < n; i++) {
+      px[i] = W / 2 + xs[i] * scale;
+      py[i] = H / 2 - ys[i] * scale;
+    }
+
+    // Bounding box in world space -> the same transform. Gives the eye a
+    // depth cue that a bare point cloud does not have.
+    var mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+    for (i = 0; i < n; i++) {
+      var wx = (cl.x[i] - ctr[0]) / 100, wy = (cl.y[i] - ctr[1]) / 100, wz = (cl.z[i] - ctr[2]) / 100;
+      mn[0] = Math.min(mn[0], wx); mx[0] = Math.max(mx[0], wx);
+      mn[1] = Math.min(mn[1], wy); mx[1] = Math.max(mx[1], wy);
+      mn[2] = Math.min(mn[2], wz); mx[2] = Math.max(mx[2], wz);
+    }
+    function proj(wx, wy, wz) {
+      var a1 = wx * cy - wy * sy;
+      var b1 = wx * sy + wy * cy;
+      return [W / 2 + a1 * scale, H / 2 - (b1 * sp + wz * cp) * scale];
+    }
+    var corners = [];
+    for (var ci = 0; ci < 8; ci++) {
+      corners.push(proj(ci & 1 ? mx[0] : mn[0], ci & 2 ? mx[1] : mn[1], ci & 4 ? mx[2] : mn[2]));
+    }
+    g.strokeStyle = 'rgba(56,189,248,0.18)';
+    g.lineWidth = Math.max(1, dp * 0.8);
+    [[0,1],[1,3],[3,2],[2,0],[4,5],[5,7],[7,6],[6,4],[0,4],[1,5],[2,6],[3,7]].forEach(function (e) {
+      g.beginPath();
+      g.moveTo(corners[e[0]][0], corners[e[0]][1]);
+      g.lineTo(corners[e[1]][0], corners[e[1]][1]);
+      g.stroke();
+    });
+
     var order = new Array(n);
     for (i = 0; i < n; i++) order[i] = i;
-    order.sort(function (a, b) { return pz[a] - pz[b]; });
+    order.sort(function (a, b) { return ds[a] - ds[b]; });
 
-    var OCOL = ['#37c2ff', '#ffb454', '#43d98a', '#ff5d6c', '#c792ea', '#8fbcbb'];
-    var rad = Math.max(c.width / 900, 1.1);
+    var OCOL = ['#38bdf8', '#fbbf24', '#4ade80', '#fb7185', '#a78bfa', '#67e8f9'];
+    var rad = Math.max(Math.min(W, H) / 620, 1.2) * dp;
     for (var k = 0; k < n; k++) {
       var j = order[k];
+      var depth = 0.55 + 0.45 * Math.max(0, Math.min(1, (ds[j] - ds[order[0]]) / (Math.abs(ds[order[n - 1]] - ds[order[0]]) || 1)));
       if (PC.color === 'intensity') {
         var v = 0.25 + 0.75 * (cl.i[j] / 255);
-        g.fillStyle = 'rgba(' + Math.round(90 * v + 30) + ',' +
-          Math.round(200 * v + 20) + ',' + Math.round(255 * v) + ',0.9)';
+        g.fillStyle = 'rgba(' + Math.round((90 * v + 30) * depth) + ',' +
+          Math.round((200 * v + 20) * depth) + ',' + Math.round(255 * v * depth) + ',0.92)';
       } else if (PC.color === 'object') {
         g.fillStyle = OCOL[((cl.o[j] % 6) + 6) % 6];
       } else {
         var w2 = Math.max(0, Math.min(1, cl.i[j] / 255));
         g.fillStyle = 'rgba(' + Math.round(255 * w2) + ',' + Math.round(140 + 90 * w2) + ',' +
-          Math.round(60 * (1 - w2)) + ',0.9)';
+          Math.round(60 * (1 - w2)) + ',0.92)';
       }
       g.beginPath();
       g.arc(px[j], py[j], rad, 0, 6.2832);
       g.fill();
     }
 
-    $('pcTL').textContent = '点云 ' + cl.n + ' 点（绘制 ' + cl.shown + '）\n命中率 ' +
-      f1((cl.hit || 0) * 100) + '% · 量程 ' + f0(cl.maxr || 0) + ' m';
-    $('pcBR').textContent = '拖动旋转 · 滚轮缩放';
+    var span = Math.round(Math.max(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]));
+    $('pcTL').textContent = '点云 ' + cl.n + ' 点（绘制 ' + cl.shown + '）\n点云跨度 ' +
+      span + ' m · 命中率 ' + f1((cl.hit || 0) * 100) + '% · 量程 ' + f0(cl.maxr || 0) + ' m';
+    $('pcBR').textContent = '拖动旋转 · 滚轮缩放 · 双击复位';
   }
   function pcSync() {
     var sc = curScene();
     seg($('pcScene'), sceneList(), String(S.scene), function (id) {
+      PC.picked = true;
       S.scene = parseInt(id, 10); S.frame = 0; pcFrameIdx = 0; pcSync(); galSync();
     });
     seg($('pcColor'), [
@@ -696,6 +836,78 @@
     ctx.fillText('最强回波 ' + f1(pk.db) + ' dB', x + 18, y - 16);
   }
 
+  // The range/angle map is 95% noise floor: raw amplitude sits in 0..103 with a
+  // mean of 4, so at fit-to-width it is indistinguishable from a black square.
+  // Percentile stretch is display-only -- the exported pixels never change, and
+  // the numeric dB values still come from the manifest, not from this canvas.
+  var RDC = { canvas: null };
+  // Scope-ish ramp: the low end stays near black so noise does not turn the
+  // panel into TV static, and only the top decades carry warm colour.
+  var RDSTOPS = [[0.00, 5, 7, 10], [0.16, 11, 42, 91], [0.34, 14, 116, 144],
+                 [0.52, 22, 163, 74], [0.70, 234, 179, 8], [0.86, 249, 115, 22],
+                 [1.00, 255, 255, 255]];
+  function RDLUT(lo, hi) {
+    var lut = new Uint8Array(256 * 3), k, c;
+    for (k = 0; k < 256; k++) {
+      var t = Math.max(0, Math.min(1, (k - lo) / (hi - lo)));
+      var j = 0;
+      while (j < RDSTOPS.length - 2 && t > RDSTOPS[j + 1][0]) j++;
+      var a = RDSTOPS[j], b = RDSTOPS[j + 1];
+      var f = (t - a[0]) / Math.max(1e-6, b[0] - a[0]);
+      for (c = 1; c <= 3; c++) lut[k * 3 + c - 1] = Math.round(a[c] + (b[c] - a[c]) * f);
+    }
+    return function (v) { return [lut[v * 3], lut[v * 3 + 1], lut[v * 3 + 2]]; };
+  }
+  function stretchInto(img) {
+    var off = RDC.canvas || (RDC.canvas = document.createElement('canvas'));
+    var w = img.naturalWidth, h = img.naturalHeight;
+    off.width = w; off.height = h;
+    var c = off.getContext('2d');
+    c.drawImage(img, 0, 0, w, h);
+    var d = c.getImageData(0, 0, w, h);          // throws on file:// (tainted)
+    var px = d.data, hist = new Uint32Array(256), i;
+    for (i = 0; i < px.length; i += 4) hist[px[i]]++;
+    var total = w * h, acc = 0, lo = 0, hi = 255;
+    // The window is the operator's choice, not the data's: the noise plateau
+    // sits under p90, so anchoring the low end there keeps the floor dark while
+    // everything above p99.9 clips to white. Without this the map is either a
+    // black rectangle or a field of TV static.
+    for (i = 0; i < 256; i++) { acc += hist[i]; if (acc >= total * 0.90) { lo = i; break; } }
+    acc = 0;
+    for (i = 255; i >= 0; i--) { acc += hist[i]; if (acc >= total * 0.001) { hi = i; break; } }
+    if (hi - lo < 6) hi = Math.min(255, lo + 6);
+    var lut = RDLUT(lo, hi);
+    for (i = 0; i < px.length; i += 4) {
+      var s = lut(px[i]);
+      px[i] = s[0]; px[i + 1] = s[1]; px[i + 2] = s[2];
+    }
+    c.putImageData(d, 0, 0);
+    return off;
+  }
+  function drawRdStretch() {
+    var cv = $('rdStretchCv'), img = $('rdImg');
+    if (!cv || !img) return;
+    var on = !$('rdStretch') || $('rdStretch').checked;
+    if (!on || !img.naturalWidth || !img.src) {
+      cv.style.display = 'none';
+      img.style.opacity = '';
+      return;
+    }
+    var box = cv.parentNode.getBoundingClientRect();
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = Math.max(1, Math.round(box.width * dpr));
+    cv.height = Math.max(1, Math.round(box.height * dpr));
+    var off;
+    try { off = stretchInto(img); } catch (e) { cv.style.display = 'none'; img.style.opacity = ''; return; }
+    var g = cv.getContext('2d');
+    g.clearRect(0, 0, cv.width, cv.height);
+    var s = Math.min(cv.width / img.naturalWidth, cv.height / img.naturalHeight);
+    var dw = img.naturalWidth * s, dh = img.naturalHeight * s;
+    g.drawImage(off, (cv.width - dw) / 2, (cv.height - dh) / 2, dw, dh);
+    cv.style.display = 'block';
+    img.style.opacity = '0';
+  }
+
   function rdSync() {
     var sc = curScene(), fr = curFrame();
     if (!sc || !fr) return;
@@ -707,8 +919,10 @@
     if (e) {
       $('rdImg').src = imgURL(e);
       aspectStyle($('rdViewer'), e.w, e.h);
+      drawRdStretch();
     } else {
       $('rdImg').removeAttribute('src');
+      $('rdStretchCv').style.display = 'none';
     }
     $('rdRange').max = String(sc.frames.length - 1);
     $('rdRange').value = String(fr.i);
@@ -1688,6 +1902,395 @@
     });
   }
 
+  // ---------- home ----------
+  // One showcase clip drives both the hero crossfade and the modality wall: the
+  // scene that ships the most modalities per frame (today the low-altitude
+  // air-to-ground clip: optical + both IR + both wide views + radar + lidar + SAR).
+  var HOME = { scene: 0, frame: 0, mod: 0, wallFrame: 0, timer: null };
+  var WALL_MODS = ['optical', 'mwir', 'lwir', 'radar_ra', 'sar', 'lidar_range', 'lidar_intensity'];
+
+  function showcaseScene() {
+    var best = 0, n = -1;
+    MAN.scenes.forEach(function (s, i) {
+      var m = 0;
+      s.frames.forEach(function (fr) { m = Math.max(m, Object.keys(fr.mods || {}).length); });
+      if (m > n) { n = m; best = i; }
+    });
+    return best;
+  }
+  function wallList(fr) {
+    var has = {};
+    Object.keys((fr && fr.mods) || {}).forEach(function (k) { has[k] = 1; });
+    var l = WALL_MODS.filter(function (k) { return has[k]; });
+    // never leave a hole: fall back to whatever this frame actually has
+    if (!l.length) l = Object.keys((fr && fr.mods) || {});
+    return l.slice(0, 6);
+  }
+  function modNote(sc, fr, k) {
+    var e = (fr.mods || {})[k];
+    if (!e) return '';
+    if (k === 'radar_ra') return (sc.band || 'mmW') + ' 频段';
+    if (k === 'sar') return fr.sar ? f2(fr.sar.res_range_m) + ' × ' + f2(fr.sar.res_az_m) + ' m' : 'RD 聚焦';
+    if (k === 'lidar_range' || k === 'lidar_intensity') return '905 nm';
+    return e.w + '×' + e.h;
+  }
+  function buildHeroStats() {
+    var host = $('heroStats');
+    if (!host) return;
+    var nFrames = 0, nImgs = 0, mods = {};
+    MAN.scenes.forEach(function (s) {
+      s.frames.forEach(function (fr) {
+        nFrames++;
+        Object.keys(fr.mods || {}).forEach(function (k) { mods[k] = 1; nImgs++; });
+      });
+    });
+    var rows = [
+      [MAN.scenes.length, '场景', ''],
+      [nFrames, '帧', ''],
+      [Object.keys(mods).length, '模态', ''],
+      [nImgs, '成像', '']
+    ];
+    host.innerHTML = '';
+    rows.forEach(function (r) {
+      var d = el('div');
+      d.appendChild(el('dt', '', r[1]));
+      var dd = el('dd', '', String(r[0]));
+      d.appendChild(dd);
+      host.appendChild(d);
+    });
+  }
+  // High-resolution hero pack rendered at 1440x1080 by the same kernel
+  // (scenes/hero_*.json, out/hero/). Falls back to the manifest frames the site
+  // already ships if assets/hero/ is absent -- the page degrades, never breaks.
+  var HERO_SHOTS = [];
+  function initHeroShots() {
+    fetch('assets/hero/index.json', { cache: 'no-cache' })
+      .then(function (r) { if (!r.ok) throw new Error('hero ' + r.status); return r.json(); })
+      .then(function (list) {
+        HERO_SHOTS = (list || []).filter(function (s) { return s && s.file && s.group !== 'wx'; });
+        if (!HERO_SHOTS.length) { HERO_SHOTS = []; return; }
+        renderWeatherBand(list.filter(function (s) { return s && s.group === 'wx'; }));
+        // The manifest may not have arrived yet; heroRender() needs it for the
+        // scene title, so only redraw once MAN exists. boot() re-renders anyway.
+        if (MAN) { HOME.mod = 0; heroRender(); }
+      })
+      .catch(function () { HERO_SHOTS = []; });
+  }
+  function renderWeatherBand(list) {
+    var host = $('wxGrid');
+    if (!host) return;
+    var band = $('wxBand');
+    if (!list.length) { if (band) band.hidden = true; return; }
+    if (band) band.hidden = false;
+    host.innerHTML = '';
+    list.forEach(function (s) {
+      var card = el('div', 'figcard');
+      card.style.cursor = 'default';
+      var im = el('img');
+      im.src = 'assets/hero/' + s.file;
+      im.alt = s.label || '';
+      im.loading = 'lazy';
+      card.appendChild(im);
+      var c = el('div', 'fc');
+      c.appendChild(el('b', '', s.label || s.file));
+      c.appendChild(el('span', '', s.w + '×' + s.h + ' · 同一场景，换光照与天气参数'));
+      card.appendChild(c);
+      host.appendChild(card);
+    });
+  }
+  function heroRender() {
+    var sc = MAN.scenes[HOME.scene];
+    if (!sc) return;
+    var img = $('heroImg');
+    // --- case 1: the high-resolution pack ---
+    if (HERO_SHOTS.length) {
+      HOME.mod = ((HOME.mod % HERO_SHOTS.length) + HERO_SHOTS.length) % HERO_SHOTS.length;
+      var shot = HERO_SHOTS[HOME.mod];
+      img.src = 'assets/hero/' + shot.file;
+      img.style.opacity = '';
+      aspectStyle($('heroViewer'), shot.w, shot.h);
+      $('heroSvg').innerHTML = '';
+      $('heroTL').textContent = shot.label || '';
+      $('heroBadge').textContent = shot.group === 'ir' ? 'LWIR 8-bit' : 'RGB 8-bit';
+      $('heroCap').textContent = shot.w + '×' + shot.h +
+        ' · 同一套内核渲染（scenes/hero_*.json）';
+      var chips1 = $('heroMods');
+      chips1.innerHTML = '';
+      HERO_SHOTS.forEach(function (s, i) {
+        var b = el('button', i === HOME.mod ? 'on' : '');
+        b.type = 'button';
+        b.appendChild(el('span', 'dotmod'));
+        b.appendChild(document.createTextNode((s.label || '').replace(' · ', ' ')));
+        b.addEventListener('click', function () { HOME.mod = i; heroRender(); heroStop(); });
+        chips1.appendChild(b);
+      });
+      return;
+    }
+    // --- case 2: fall back to the manifest frames ---
+    var fr = sc.frames[Math.min(HOME.frame, sc.frames.length - 1)];
+    var list = WALL_MODS.filter(function (k) { return (fr.mods || {})[k]; });
+    if (!list.length) return;
+    HOME.mod = ((HOME.mod % list.length) + list.length) % list.length;
+    var k = list[HOME.mod], e = fr.mods[k];
+    img.src = imgURL(e);
+    aspectStyle($('heroViewer'), e.w, e.h);
+    drawBoxes($('heroSvg'), e.boxes, e.w, e.h, {});
+    $('heroTL').textContent = sc.title;
+    $('heroBadge').textContent = modLabel(k);
+    $('heroCap').textContent = '帧 ' + (fr.i + 1) + ' / ' + sc.frames.length + ' · ' +
+      weatherText(fr) + ' · ' + (e.w + '×' + e.h);
+    var chips = $('heroMods');
+    chips.innerHTML = '';
+    list.forEach(function (key, i) {
+      var b = el('button', i === HOME.mod ? 'on' : '');
+      b.type = 'button';
+      b.appendChild(el('span', 'dotmod'));
+      b.appendChild(document.createTextNode(modLabel(key)));
+      b.addEventListener('click', function () { HOME.mod = i; heroRender(); heroStop(); });
+      chips.appendChild(b);
+    });
+  }
+  function heroPlay() {
+    heroStop();
+    HOME.timer = setInterval(function () {
+      if (document.hidden || CURRENT !== 'home') return;
+      HOME.mod++;
+      heroRender();
+    }, 5200);
+  }
+  function heroStop() { if (HOME.timer) { clearInterval(HOME.timer); HOME.timer = null; } }
+
+  // Data panels (radar, SAR, lidar strips) are statistical images with a huge
+  // dynamic range; at their native scale they read as black rectangles next to
+  // a photographic RGB panel. Draw them through the same display stretch the
+  // radar tab uses, into a canvas laid exactly where object-fit would put them.
+  var STRETCH_KEYS = { radar_ra: 1, sar: 1, lidar_range: 1, lidar_intensity: 1, radar: 1 };
+  function paintStretched(box, img) {
+    var cv = document.createElement('canvas');
+    cv.className = 'ovl-canvas';
+    box.appendChild(cv);
+    img.style.visibility = 'hidden';
+    var draw = function () {
+      if (!img.naturalWidth) return;
+      var r = box.getBoundingClientRect();
+      if (!r.width) return;
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      cv.width = Math.round(r.width * dpr);
+      cv.height = Math.round(r.height * dpr);
+      var off;
+      try { off = stretchInto(img); } catch (e) { img.style.visibility = ''; cv.remove(); return; }
+      var g = cv.getContext('2d');
+      g.clearRect(0, 0, cv.width, cv.height);
+      var s = Math.min(cv.width / img.naturalWidth, cv.height / img.naturalHeight);
+      g.drawImage(off, (cv.width - img.naturalWidth * s) / 2,
+        (cv.height - img.naturalHeight * s) / 2,
+        img.naturalWidth * s, img.naturalHeight * s);
+    };
+    if (img.complete && img.naturalWidth) draw(); else img.addEventListener('load', draw);
+  }
+
+  function wallRender() {
+    var host = $('mwGrid');
+    if (!host) return;
+    var sc = MAN.scenes[HOME.scene];
+    var fr = sc.frames[Math.min(HOME.wallFrame, sc.frames.length - 1)];
+    var list = wallList(fr);
+    host.innerHTML = '';
+    list.forEach(function (k) {
+      var e = fr.mods[k];
+      var card = el('div', 'wcard' + (e.w / e.h > 1.6 ? ' wide' : ''));
+      var box = el('div', 'wimg');
+      var im = el('img');
+      im.src = thumbURL(e);
+      im.alt = sc.title + ' ' + modLabel(k);
+      im.loading = 'lazy';
+      im.decoding = 'async';
+      box.appendChild(im);
+      if (STRETCH_KEYS[k]) paintStretched(box, im);
+      card.appendChild(box);
+      var meta = el('div', 'wmeta');
+      meta.appendChild(el('b', '', modLabel(k)));
+      meta.appendChild(el('span', '', modNote(sc, fr, k)));
+      card.appendChild(meta);
+      card.addEventListener('click', function () {
+        S.scene = HOME.scene; S.frame = fr.i;
+        if (fr.mods[k]) S.mod = k;
+        showTab('gallery');
+        setTimeout(galSync, 40);
+      });
+      host.appendChild(card);
+    });
+    $('mwCount').textContent = '帧 ' + (fr.i + 1) + ' / ' + sc.frames.length +
+      ' · ' + (fr.weather ? (WNAME[fr.weather.name] || '') : '');
+  }
+
+  function homeSync() {
+    if (!MAN) return;
+    if (!HOME.init) {
+      HOME.init = true;
+      HOME.scene = showcaseScene();
+      HOME.frame = 0;
+      buildHeroStats();
+      $('mwPrev').addEventListener('click', function () {
+        var n = MAN.scenes[HOME.scene].frames.length;
+        HOME.wallFrame = (HOME.wallFrame - 1 + n) % n;
+        HOME.frame = HOME.wallFrame;
+        wallRender(); heroRender();
+      });
+      $('mwNext').addEventListener('click', function () {
+        var n = MAN.scenes[HOME.scene].frames.length;
+        HOME.wallFrame = (HOME.wallFrame + 1) % n;
+        HOME.frame = HOME.wallFrame;
+        wallRender(); heroRender();
+      });
+      var hv = $('heroViewer');
+      if (hv) {
+        hv.addEventListener('pointerenter', heroStop);
+        hv.addEventListener('pointerleave', function () { if (CURRENT === 'home') heroPlay(); });
+      }
+    }
+    // pick the frame with the most modalities, then the middle of the clip
+    var sc = MAN.scenes[HOME.scene];
+    var bestI = 0, bestN = -1;
+    sc.frames.forEach(function (fr, i) {
+      var n = Object.keys(fr.mods || {}).length;
+      if (n > bestN) { bestN = n; bestI = i; }
+    });
+    if (!HOME.started) {
+      HOME.started = true;
+      HOME.frame = Math.min(bestI, sc.frames.length - 1);
+      HOME.wallFrame = HOME.frame;
+      HOME.mod = 0;
+      heroRender();
+      wallRender();
+      heroPlay();
+    }
+  }
+
+  // ---------- figures ----------
+  var FIGS = [], FIG_TAG = '全部', FIG_AT = 0;
+
+  function figURL(f) { return 'assets/figures/' + f.file; }
+  // Cards are ~420 px wide, the lightbox is not: ship both sizes.
+  function figThumb(f) { return 'assets/figures/' + (f.thumb || f.file); }
+
+  function renderFigPreview() {
+    var host = $('figPreview');
+    if (!host) return;
+    host.innerHTML = '';
+    FIGS.slice(0, 3).forEach(function (f) {
+      var a = el('a', 'figcard');
+      a.href = '#/figures';
+      var im = el('img');
+      im.src = figThumb(f);
+      im.alt = f.title || '';
+      im.loading = 'lazy';
+      im.decoding = 'async';
+      a.appendChild(im);
+      var c = el('div', 'fc');
+      c.appendChild(el('b', '', f.title || f.file));
+      c.appendChild(el('span', '', f.subtitle || ''));
+      a.appendChild(c);
+      a.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        showTab('figures');
+        setTimeout(function () { figOpen(FIGS.indexOf(f)); }, 60);
+      });
+      host.appendChild(a);
+    });
+  }
+
+  function renderFigs() {
+    var grid = $('figGrid');
+    if (!grid) return;
+    var tags = ['全部'];
+    FIGS.forEach(function (f) {
+      if (f.tag && tags.indexOf(f.tag) < 0) tags.push(f.tag);
+    });
+    seg($('figTags'), tags.map(function (t, i) { return { id: String(i), label: t }; }),
+      String(tags.indexOf(FIG_TAG)),
+      function (id) { FIG_TAG = tags[parseInt(id, 10)] || '全部'; renderFigs(); });
+
+    var list = FIGS.filter(function (f) { return FIG_TAG === '全部' || f.tag === FIG_TAG; });
+    $('figCount').textContent = list.length + ' / ' + FIGS.length + ' 张';
+    grid.innerHTML = '';
+    list.forEach(function (f) {
+      var item = el('div', 'fgitem');
+      item.tabIndex = 0;
+      var box = el('div', 'fgi');
+      var im = el('img');
+      im.src = figThumb(f);
+      im.alt = f.title || '';
+      im.loading = 'lazy';
+      im.decoding = 'async';
+      box.appendChild(im);
+      box.appendChild(el('div', 'fgn', '图 ' + (f.id || '')));
+      item.appendChild(box);
+      var t = el('div', 'fgt');
+      t.appendChild(el('b', '', f.title || f.file));
+      t.appendChild(el('span', '', f.desc || f.subtitle || ''));
+      item.appendChild(t);
+      item.addEventListener('click', function () { figOpen(FIGS.indexOf(f)); });
+      item.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') figOpen(FIGS.indexOf(f));
+      });
+      grid.appendChild(item);
+    });
+  }
+
+  function figOpen(i) {
+    if (!FIGS.length) return;
+    FIG_AT = (i + FIGS.length) % FIGS.length;
+    var f = FIGS[FIG_AT];
+    $('figBig').src = figURL(f);
+    $('figBig').alt = f.title || '';
+    $('figTitle').textContent = '图 ' + (f.id || '') + ' · ' + (f.title || f.file);
+    $('figSub').textContent = f.subtitle || '';
+    $('figDesc').textContent = f.desc || '';
+    $('figSource').textContent = f.source ? '数据来源 ' + f.source : '';
+    $('figBox').hidden = false;
+    document.body.classList.add('locked');
+  }
+  function figClose() {
+    $('figBox').hidden = true;
+    document.body.classList.remove('locked');
+  }
+  function figStep(d) { figOpen(FIG_AT + d); }
+
+  function initFigures() {
+    ['figClose'].forEach(function (id) {
+      var b = $(id);
+      if (b) b.addEventListener('click', figClose);
+    });
+    $('figPrev').addEventListener('click', function () { figStep(-1); });
+    $('figNext').addEventListener('click', function () { figStep(1); });
+    $('figBox').addEventListener('click', function (ev) {
+      if (ev.target === $('figBox')) figClose();
+    });
+    document.addEventListener('keydown', function (ev) {
+      if ($('figBox').hidden) return;
+      if (ev.key === 'Escape') figClose();
+      if (ev.key === 'ArrowLeft') figStep(-1);
+      if (ev.key === 'ArrowRight') figStep(1);
+    });
+    fetch('assets/figures/index.json', { cache: 'no-cache' })
+      .then(function (r) { if (!r.ok) throw new Error('figures ' + r.status); return r.json(); })
+      .then(function (list) {
+        FIGS = (list || []).filter(function (f) { return f && f.file; });
+        if (!FIGS.length) throw new Error('empty');
+        renderFigPreview();
+        renderFigs();
+      })
+      .catch(function () {
+        var g = $('figGrid');
+        if (g) g.innerHTML = '<div class="card empty-card"><h3>图鉴还没有导出</h3>' +
+          '<p>先在仓库里运行 <code>env\\Scripts\\python.exe tools\\make_figures.py</code> ' +
+          '生成 assets/figures/；用 file:// 直接打开页面时浏览器也不允许读取 index.json。</p></div>';
+        var p = $('figPreview');
+        if (p) p.parentNode.style.display = 'none';
+      });
+  }
+
   // ---------- boot ----------
   function boot() {
     var have = {};
@@ -1722,11 +2325,31 @@
       }
     }
 
-    galSync(); pcSync(); rdSync(); renderCompare(); sarSync(); skSync();
+    // Only the home tab is painted at boot. Every other tab syncs on first
+    // show (see showTab), which keeps the first paint from downloading a
+    // gallery frame, a radar map and two seeker views nobody asked for.
+    homeSync();
     if (BANDS) exploreUpdate();
   }
 
   document.addEventListener('DOMContentLoaded', function () {
+    // open whatever the URL asked for before any data arrives, so a deep link
+    // never flashes the home tab first
+    showTab(hashTab(), { syncHash: false, instant: true });
+    initHeroShots();
+    initFigures();
+    document.addEventListener('keydown', function (ev) {
+      var tag = (ev.target && ev.target.tagName) || '';
+      if (/INPUT|TEXTAREA|SELECT/.test(tag)) return;
+      if (CURRENT === 'gallery') {
+        if (ev.key === 'ArrowLeft') galStep(-1);
+        if (ev.key === 'ArrowRight') galStep(1);
+      } else if (CURRENT === 'seeker') {
+        if (ev.key === 'ArrowLeft') skStep(-1);
+        if (ev.key === 'ArrowRight') skStep(1);
+      }
+    });
+    if ($('galLazy')) $('galLazy').addEventListener('change', function () { if (MAN) galSync(); });
     if ($('galPrev')) $('galPrev').addEventListener('click', function () { galStep(-1); });
     $('galNext').addEventListener('click', function () { galStep(1); });
     $('galPlay').addEventListener('click', galPlay);
@@ -1808,7 +2431,8 @@
       skMag('seeker');
       skMag('wide');
     });
-    $('rdImg').addEventListener('load', function () { drawRdMark(curFrame()); });
+    $('rdImg').addEventListener('load', function () { drawRdMark(curFrame()); drawRdStretch(); });
+    if ($('rdStretch')) $('rdStretch').addEventListener('change', drawRdStretch);
     var sarI = $('sarImg');
     if (sarI) sarI.addEventListener('load', function () { sarLayout(); });
 
@@ -1829,7 +2453,15 @@
       fetch('data/radar_bands.json', { cache: 'no-cache' })
         .then(function (r) { if (!r.ok) throw new Error('bands ' + r.status); return r.json(); })
     ]);
-    loadData.then(function (res) { MAN = res[0]; BANDS = res[1]; boot(); exploreUpdate(); })
+    loadData.then(function (res) {
+      MAN = res[0]; BANDS = res[1];
+      boot();
+      exploreUpdate();
+      // The URL decides which tab is open; boot() already warmed every view, so
+      // this only re-runs the side effects that depend on layout (canvas sizes).
+      loadCloudIndex();
+      showTab(hashTab(), { syncHash: false, instant: true, keepScroll: true });
+    })
       .catch(function (e) {
         // A bad ?manifest= (typo, file moved, server down) used to leave a blank
         // page even though data/boot.js was sitting right there. Rescue it.
