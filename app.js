@@ -757,10 +757,14 @@
     $('pcRange').value = String(pcFrameIdx);
     $('pcCount').textContent = (pcFrameIdx + 1) + ' / ' + sc.frames.length;
 
+    // Read through pcCloud(), not fr.cloud: since the clouds moved to
+    // data/cloud/, the frame object no longer carries them and this panel used
+    // to sit at "—" while the canvas was already drawing points.
+    var cl = pcCloud();
     kvInto($('pcInfo'), [
-      ['点数', fr && fr.cloud ? fr.cloud.n : '—'],
-      ['命中率', fr && fr.cloud ? f1((fr.cloud.hit || 0) * 100) + '%' : '—'],
-      ['量程', fr && fr.cloud ? f0(fr.cloud.maxr || 0) + ' m' : '—'],
+      ['点数', cl ? cl.n : (CLOUD_PEND[sc.id] ? '载入中…' : '—')],
+      ['命中率', cl ? f1((cl.hit || 0) * 100) + '%' : '—'],
+      ['量程', cl ? f0(cl.maxr || 0) + ' m' : '—'],
       ['帧序', (pcFrameIdx + 1) + ' / ' + sc.frames.length]
     ]);
 
