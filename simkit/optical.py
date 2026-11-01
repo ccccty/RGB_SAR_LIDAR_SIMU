@@ -3,8 +3,18 @@ import json
 import os
 import shutil
 import subprocess
+import time
 
 import numpy as np
+
+
+def camera_clip_end(camera_pos, world_corners):
+    """Far plane from actual world geometry, including translation and motion."""
+    corners = np.asarray(world_corners, float).reshape(-1, 3)
+    if not len(corners):
+        return 100.0
+    reach = float(np.max(np.linalg.norm(corners-np.asarray(camera_pos, float), axis=1)))
+    return max(100.0, reach*1.25+10.0)
 
 
 def find_blender(cfg=None):
@@ -54,10 +64,14 @@ def render_frames(cfg, cfg_path, out_dir, manifest_path, script_path, quiet=Fals
     cmd += ["-P", script_path, "--", cfg_path, out_dir, manifest_path, root]
     if not quiet:
         print("  blender:", " ".join(cmd[:6]), "...")
+    started_at = time.time_ns()
     p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if p.returncode != 0:
         tail = (p.stdout or "")[-3000:] + "\n" + (p.stderr or "")[-3000:]
         raise RuntimeError("blender failed (rc=%d)\n%s" % (p.returncode, tail))
+    if "Traceback (most recent call last)" in (p.stdout or "")+(p.stderr or ""):
+        raise RuntimeError("Blender script failed despite a zero process exit code:\n"+
+                           ((p.stdout or "")+(p.stderr or ""))[-3000:])
     if not quiet:
         for line in (p.stdout or "").splitlines():
             if line.startswith("[simkit]"):
@@ -72,9 +86,9 @@ def render_frames(cfg, cfg_path, out_dir, manifest_path, script_path, quiet=Fals
         for i in _frame_ids(manifest_path):
             img = os.path.join(out_dir, "images", "optical" + tag, "%06d.png" % i)
             lab = os.path.join(out_dir, "labels", "optical" + tag, "%06d.json" % i)
-            if not os.path.exists(img):
+            if not os.path.exists(img) or os.stat(img).st_mtime_ns < started_at:
                 missing.append(img)
-            if not os.path.exists(lab):
+            if not os.path.exists(lab) or os.stat(lab).st_mtime_ns < started_at:
                 missing.append(lab)
     if missing:
         out_lines = (p.stdout or "").splitlines()[-12:]

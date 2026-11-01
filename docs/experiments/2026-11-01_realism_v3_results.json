@@ -1,0 +1,1721 @@
+{
+  "date": "2026-11-01",
+  "timezone": "Asia/Shanghai",
+  "git_base": "9b29d87dce16d5309d3c28cb6ecee53d7f87d944",
+  "command": "python tools/build_aviation.py --out out/aviation_realism_v3 -n 4 --dt 0.2 --realism",
+  "finalization_command": "python tools/finalize_realism.py out/aviation_realism_v3",
+  "results": {
+    "airliner_crossing": {
+      "frames": 4,
+      "range_m": [
+        22547.517241909412,
+        22648.768394201972
+      ],
+      "radar_detected_frames": 4,
+      "max_calibration_projection_error_px": 6.821210263296962e-13,
+      "image_content_registration": "measured_geometry_consistency",
+      "real_sensor_validation": "none",
+      "classification_training_ready": false,
+      "classification_training_reason": "two model instances only; uncalibrated sensors/materials; QA sequences",
+      "errors": [],
+      "passed": true,
+      "radar_unassociated_detections": 12,
+      "registration": {
+        "thresholds": {
+          "min_pixels": 8,
+          "max_centroid_delta_px": 3.0,
+          "min_bbox_iou": 0.1,
+          "max_median_depth_delta_m": 5.0,
+          "relative_depth_tolerance": 0.002
+        },
+        "geometry_required": true,
+        "status_counts": {
+          "measured_within_tolerance": 8
+        },
+        "pairs": [
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 216,
+            "other_pixels": 239,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.09250125539014514,
+            "bbox_iou": 0.978260869565217,
+            "mask_iou": 0.9037656903765691,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 216,
+            "median_depth_delta_m": 0.12109375,
+            "p95_depth_delta_m": 1.41357421875,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.289296875,
+            "frame": 0,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 216,
+            "other_pixels": 239,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.09250125539014514,
+            "bbox_iou": 0.978260869565217,
+            "mask_iou": 0.9037656903765691,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 216,
+            "median_depth_delta_m": 0.12109375,
+            "p95_depth_delta_m": 1.41357421875,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.289296875,
+            "frame": 0,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 216,
+            "other_pixels": 238,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.18400471427544463,
+            "bbox_iou": 0.978260869565217,
+            "mask_iou": 0.907563025210084,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 216,
+            "median_depth_delta_m": 0.107421875,
+            "p95_depth_delta_m": 1.27734375,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.22150390625,
+            "frame": 1,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 216,
+            "other_pixels": 238,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.18400471427544463,
+            "bbox_iou": 0.978260869565217,
+            "mask_iou": 0.907563025210084,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 216,
+            "median_depth_delta_m": 0.107421875,
+            "p95_depth_delta_m": 1.27734375,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.22150390625,
+            "frame": 1,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 215,
+            "other_pixels": 240,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.07585526063943582,
+            "bbox_iou": 0.9030100334448161,
+            "mask_iou": 0.8958333333333334,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 215,
+            "median_depth_delta_m": 0.109375,
+            "p95_depth_delta_m": 1.9763672351837158,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.1540078125,
+            "frame": 2,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 215,
+            "other_pixels": 240,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.07585526063943582,
+            "bbox_iou": 0.9030100334448161,
+            "mask_iou": 0.8958333333333334,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 215,
+            "median_depth_delta_m": 0.109375,
+            "p95_depth_delta_m": 1.9763672351837158,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.1540078125,
+            "frame": 2,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 216,
+            "other_pixels": 243,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.03917578758158961,
+            "bbox_iou": 0.8837970540098198,
+            "mask_iou": 0.8888888888888888,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 216,
+            "median_depth_delta_m": 0.115234375,
+            "p95_depth_delta_m": 1.2373046875,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.08695703125,
+            "frame": 3,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 216,
+            "other_pixels": 243,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.03917578758158961,
+            "bbox_iou": 0.8837970540098198,
+            "mask_iou": 0.8888888888888888,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 216,
+            "median_depth_delta_m": 0.115234375,
+            "p95_depth_delta_m": 1.2373046875,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.08695703125,
+            "frame": 3,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_lwir"
+          }
+        ],
+        "scope": "independent instance/depth passes; not radiometric detectability or real-sensor validation"
+      }
+    },
+    "airliner_opposite": {
+      "frames": 4,
+      "range_m": [
+        22404.06690255593,
+        22648.76839420197
+      ],
+      "radar_detected_frames": 3,
+      "max_calibration_projection_error_px": 6.821210263296962e-13,
+      "image_content_registration": "measured_geometry_consistency",
+      "real_sensor_validation": "none",
+      "classification_training_ready": false,
+      "classification_training_reason": "two model instances only; uncalibrated sensors/materials; QA sequences",
+      "errors": [],
+      "passed": true,
+      "radar_unassociated_detections": 12,
+      "registration": {
+        "thresholds": {
+          "min_pixels": 8,
+          "max_centroid_delta_px": 3.0,
+          "min_bbox_iou": 0.1,
+          "max_median_depth_delta_m": 5.0,
+          "relative_depth_tolerance": 0.002
+        },
+        "geometry_required": true,
+        "status_counts": {
+          "measured_within_tolerance": 8
+        },
+        "pairs": [
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 91,
+            "other_pixels": 123,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.17535163766544332,
+            "bbox_iou": 0.820846905537458,
+            "mask_iou": 0.6850393700787402,
+            "overlap_over_smaller_mask": 0.9560439560439561,
+            "common_depth_pixels": 87,
+            "median_depth_delta_m": 1.32421875,
+            "p95_depth_delta_m": 3.1771483421325684,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.2820625,
+            "frame": 0,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 91,
+            "other_pixels": 123,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.17535163766544332,
+            "bbox_iou": 0.820846905537458,
+            "mask_iou": 0.6850393700787402,
+            "overlap_over_smaller_mask": 0.9560439560439561,
+            "common_depth_pixels": 87,
+            "median_depth_delta_m": 1.32421875,
+            "p95_depth_delta_m": 3.1771483421325684,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.2820625,
+            "frame": 0,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 91,
+            "other_pixels": 123,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.21210574634170584,
+            "bbox_iou": 0.820846905537458,
+            "mask_iou": 0.6850393700787402,
+            "overlap_over_smaller_mask": 0.9560439560439561,
+            "common_depth_pixels": 87,
+            "median_depth_delta_m": 1.32421875,
+            "p95_depth_delta_m": 3.47265625,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.1188515625,
+            "frame": 1,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 91,
+            "other_pixels": 123,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.21210574634170584,
+            "bbox_iou": 0.820846905537458,
+            "mask_iou": 0.6850393700787402,
+            "overlap_over_smaller_mask": 0.9560439560439561,
+            "common_depth_pixels": 87,
+            "median_depth_delta_m": 1.32421875,
+            "p95_depth_delta_m": 3.47265625,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.1188515625,
+            "frame": 1,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 90,
+            "other_pixels": 122,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.2742785358594294,
+            "bbox_iou": 0.6766666666666652,
+            "mask_iou": 0.696,
+            "overlap_over_smaller_mask": 0.9666666666666667,
+            "common_depth_pixels": 87,
+            "median_depth_delta_m": 1.298828125,
+            "p95_depth_delta_m": 3.3609375953674316,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 44.9557734375,
+            "frame": 2,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 90,
+            "other_pixels": 122,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.2742785358594294,
+            "bbox_iou": 0.6766666666666652,
+            "mask_iou": 0.696,
+            "overlap_over_smaller_mask": 0.9666666666666667,
+            "common_depth_pixels": 87,
+            "median_depth_delta_m": 1.298828125,
+            "p95_depth_delta_m": 3.3609375953674316,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 44.9557734375,
+            "frame": 2,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 91,
+            "other_pixels": 127,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.23587740903405835,
+            "bbox_iou": 0.6829268292682913,
+            "mask_iou": 0.689922480620155,
+            "overlap_over_smaller_mask": 0.978021978021978,
+            "common_depth_pixels": 89,
+            "median_depth_delta_m": 1.29296875,
+            "p95_depth_delta_m": 3.3343749046325684,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 44.79296875,
+            "frame": 3,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 91,
+            "other_pixels": 127,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.23587740903405835,
+            "bbox_iou": 0.6829268292682913,
+            "mask_iou": 0.689922480620155,
+            "overlap_over_smaller_mask": 0.978021978021978,
+            "common_depth_pixels": 89,
+            "median_depth_delta_m": 1.29296875,
+            "p95_depth_delta_m": 3.3343749046325684,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 44.79296875,
+            "frame": 3,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_lwir"
+          }
+        ],
+        "scope": "independent instance/depth passes; not radiometric detectability or real-sensor validation"
+      }
+    },
+    "airliner_parallel": {
+      "frames": 4,
+      "range_m": [
+        22637.112310853652,
+        22648.76839420197
+      ],
+      "radar_detected_frames": 4,
+      "max_calibration_projection_error_px": 8.526512829121202e-13,
+      "image_content_registration": "measured_geometry_consistency",
+      "real_sensor_validation": "none",
+      "classification_training_ready": false,
+      "classification_training_reason": "two model instances only; uncalibrated sensors/materials; QA sequences",
+      "errors": [],
+      "passed": true,
+      "radar_unassociated_detections": 12,
+      "registration": {
+        "thresholds": {
+          "min_pixels": 8,
+          "max_centroid_delta_px": 3.0,
+          "min_bbox_iou": 0.1,
+          "max_median_depth_delta_m": 5.0,
+          "relative_depth_tolerance": 0.002
+        },
+        "geometry_required": true,
+        "status_counts": {
+          "measured_within_tolerance": 8
+        },
+        "pairs": [
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 82,
+            "other_pixels": 107,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.320354853234038,
+            "bbox_iou": 0.5849999999999989,
+            "mask_iou": 0.7339449541284404,
+            "overlap_over_smaller_mask": 0.975609756097561,
+            "common_depth_pixels": 80,
+            "median_depth_delta_m": 1.8974609375,
+            "p95_depth_delta_m": 9.757616996765137,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.287617187500004,
+            "frame": 0,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 82,
+            "other_pixels": 107,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.320354853234038,
+            "bbox_iou": 0.5849999999999989,
+            "mask_iou": 0.7339449541284404,
+            "overlap_over_smaller_mask": 0.975609756097561,
+            "common_depth_pixels": 80,
+            "median_depth_delta_m": 1.8974609375,
+            "p95_depth_delta_m": 9.757616996765137,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.287617187500004,
+            "frame": 0,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 82,
+            "other_pixels": 107,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.320354853234038,
+            "bbox_iou": 0.5849999999999989,
+            "mask_iou": 0.7339449541284404,
+            "overlap_over_smaller_mask": 0.975609756097561,
+            "common_depth_pixels": 80,
+            "median_depth_delta_m": 1.9072265625,
+            "p95_depth_delta_m": 9.761327743530273,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.27984375,
+            "frame": 1,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 82,
+            "other_pixels": 107,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.320354853234038,
+            "bbox_iou": 0.5849999999999989,
+            "mask_iou": 0.7339449541284404,
+            "overlap_over_smaller_mask": 0.975609756097561,
+            "common_depth_pixels": 80,
+            "median_depth_delta_m": 1.9072265625,
+            "p95_depth_delta_m": 9.761327743530273,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.27984375,
+            "frame": 1,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 82,
+            "other_pixels": 107,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.320354853234038,
+            "bbox_iou": 0.5849999999999989,
+            "mask_iou": 0.7339449541284404,
+            "overlap_over_smaller_mask": 0.975609756097561,
+            "common_depth_pixels": 80,
+            "median_depth_delta_m": 1.892578125,
+            "p95_depth_delta_m": 9.763476371765137,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.272046875,
+            "frame": 2,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 82,
+            "other_pixels": 107,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.320354853234038,
+            "bbox_iou": 0.5849999999999989,
+            "mask_iou": 0.7339449541284404,
+            "overlap_over_smaller_mask": 0.975609756097561,
+            "common_depth_pixels": 80,
+            "median_depth_delta_m": 1.892578125,
+            "p95_depth_delta_m": 9.763476371765137,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.272046875,
+            "frame": 2,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 82,
+            "other_pixels": 107,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.320354853234038,
+            "bbox_iou": 0.5849999999999989,
+            "mask_iou": 0.7339449541284404,
+            "overlap_over_smaller_mask": 0.975609756097561,
+            "common_depth_pixels": 80,
+            "median_depth_delta_m": 1.88671875,
+            "p95_depth_delta_m": 9.769628524780273,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.26426171875,
+            "frame": 3,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "measured_within_tolerance",
+            "rgb_pixels": 82,
+            "other_pixels": 107,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.320354853234038,
+            "bbox_iou": 0.5849999999999989,
+            "mask_iou": 0.7339449541284404,
+            "overlap_over_smaller_mask": 0.975609756097561,
+            "common_depth_pixels": 80,
+            "median_depth_delta_m": 1.88671875,
+            "p95_depth_delta_m": 9.769628524780273,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "depth_tolerance_m": 45.26426171875,
+            "frame": 3,
+            "track_id": "airliner_01",
+            "pair": "optical/ir_lwir"
+          }
+        ],
+        "scope": "independent instance/depth passes; not radiometric detectability or real-sensor validation"
+      }
+    },
+    "uav_crossing": {
+      "frames": 4,
+      "range_m": [
+        22526.582488644704,
+        22649.435282534403
+      ],
+      "radar_detected_frames": 0,
+      "max_calibration_projection_error_px": 3.126388037344441e-13,
+      "image_content_registration": "insufficient_support",
+      "real_sensor_validation": "none",
+      "classification_training_ready": false,
+      "classification_training_reason": "two model instances only; uncalibrated sensors/materials; QA sequences",
+      "errors": [],
+      "passed": true,
+      "radar_unassociated_detections": 12,
+      "registration": {
+        "thresholds": {
+          "min_pixels": 8,
+          "max_centroid_delta_px": 3.0,
+          "min_bbox_iou": 0.1,
+          "max_median_depth_delta_m": 5.0,
+          "relative_depth_tolerance": 0.002
+        },
+        "geometry_required": true,
+        "status_counts": {
+          "insufficient_support": 8
+        },
+        "pairs": [
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 2,
+            "other_pixels": 3,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.5000000000000071,
+            "bbox_iou": 0.6666666666666745,
+            "mask_iou": 0.6666666666666666,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 2,
+            "median_depth_delta_m": 0.314453125,
+            "p95_depth_delta_m": 0.46562498807907104,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "reason": "too few original mask pixels for a stable estimate",
+            "frame": 0,
+            "track_id": "uav_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 2,
+            "other_pixels": 3,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.5000000000000071,
+            "bbox_iou": 0.6666666666666745,
+            "mask_iou": 0.6666666666666666,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 2,
+            "median_depth_delta_m": 0.314453125,
+            "p95_depth_delta_m": 0.46562498807907104,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "reason": "too few original mask pixels for a stable estimate",
+            "frame": 0,
+            "track_id": "uav_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 2,
+            "other_pixels": 3,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.5000000000000071,
+            "bbox_iou": 0.6666666666666745,
+            "mask_iou": 0.6666666666666666,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 2,
+            "median_depth_delta_m": 0.2890625,
+            "p95_depth_delta_m": 0.44023436307907104,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "reason": "too few original mask pixels for a stable estimate",
+            "frame": 1,
+            "track_id": "uav_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 2,
+            "other_pixels": 3,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.5000000000000071,
+            "bbox_iou": 0.6666666666666745,
+            "mask_iou": 0.6666666666666666,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 2,
+            "median_depth_delta_m": 0.2890625,
+            "p95_depth_delta_m": 0.44023436307907104,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "reason": "too few original mask pixels for a stable estimate",
+            "frame": 1,
+            "track_id": "uav_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 2,
+            "other_pixels": 3,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.5000000000000071,
+            "bbox_iou": 0.6666666666666745,
+            "mask_iou": 0.6666666666666666,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 2,
+            "median_depth_delta_m": 0.259765625,
+            "p95_depth_delta_m": 0.4091796875,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "reason": "too few original mask pixels for a stable estimate",
+            "frame": 2,
+            "track_id": "uav_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 2,
+            "other_pixels": 3,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.5000000000000071,
+            "bbox_iou": 0.6666666666666745,
+            "mask_iou": 0.6666666666666666,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 2,
+            "median_depth_delta_m": 0.259765625,
+            "p95_depth_delta_m": 0.4091796875,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "reason": "too few original mask pixels for a stable estimate",
+            "frame": 2,
+            "track_id": "uav_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 2,
+            "other_pixels": 3,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.5000000000000071,
+            "bbox_iou": 0.6666666666666745,
+            "mask_iou": 0.6666666666666666,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 2,
+            "median_depth_delta_m": 0.2333984375,
+            "p95_depth_delta_m": 0.38017576932907104,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "reason": "too few original mask pixels for a stable estimate",
+            "frame": 3,
+            "track_id": "uav_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 2,
+            "other_pixels": 3,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": 0.5000000000000071,
+            "bbox_iou": 0.6666666666666745,
+            "mask_iou": 0.6666666666666666,
+            "overlap_over_smaller_mask": 1.0,
+            "common_depth_pixels": 2,
+            "median_depth_delta_m": 0.2333984375,
+            "p95_depth_delta_m": 0.38017576932907104,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "edge_clipped": false,
+            "reason": "too few original mask pixels for a stable estimate",
+            "frame": 3,
+            "track_id": "uav_01",
+            "pair": "optical/ir_lwir"
+          }
+        ],
+        "scope": "independent instance/depth passes; not radiometric detectability or real-sensor validation"
+      }
+    },
+    "uav_opposite": {
+      "frames": 4,
+      "range_m": [
+        22497.938897101532,
+        22649.4352825344
+      ],
+      "radar_detected_frames": 0,
+      "max_calibration_projection_error_px": 6.821210263296962e-13,
+      "image_content_registration": "insufficient_support",
+      "real_sensor_validation": "none",
+      "classification_training_ready": false,
+      "classification_training_reason": "two model instances only; uncalibrated sensors/materials; QA sequences",
+      "errors": [],
+      "passed": true,
+      "radar_unassociated_detections": 12,
+      "registration": {
+        "thresholds": {
+          "min_pixels": 8,
+          "max_centroid_delta_px": 3.0,
+          "min_bbox_iou": 0.1,
+          "max_median_depth_delta_m": 5.0,
+          "relative_depth_tolerance": 0.002
+        },
+        "geometry_required": true,
+        "status_counts": {
+          "insufficient_support": 8
+        },
+        "pairs": [
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 0,
+            "other_pixels": 4,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 0,
+            "track_id": "uav_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 0,
+            "other_pixels": 4,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 0,
+            "track_id": "uav_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 0,
+            "other_pixels": 4,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 1,
+            "track_id": "uav_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 0,
+            "other_pixels": 4,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 1,
+            "track_id": "uav_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 0,
+            "other_pixels": 4,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 2,
+            "track_id": "uav_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 0,
+            "other_pixels": 4,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 2,
+            "track_id": "uav_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 0,
+            "other_pixels": 4,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 3,
+            "track_id": "uav_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 0,
+            "other_pixels": 4,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 3,
+            "track_id": "uav_01",
+            "pair": "optical/ir_lwir"
+          }
+        ],
+        "scope": "independent instance/depth passes; not radiometric detectability or real-sensor validation"
+      }
+    },
+    "uav_parallel": {
+      "frames": 4,
+      "range_m": [
+        22544.546627016352,
+        22649.435282534407
+      ],
+      "radar_detected_frames": 0,
+      "max_calibration_projection_error_px": 6.821210263296962e-13,
+      "image_content_registration": "insufficient_support",
+      "real_sensor_validation": "none",
+      "classification_training_ready": false,
+      "classification_training_reason": "two model instances only; uncalibrated sensors/materials; QA sequences",
+      "errors": [],
+      "passed": true,
+      "radar_unassociated_detections": 12,
+      "registration": {
+        "thresholds": {
+          "min_pixels": 8,
+          "max_centroid_delta_px": 3.0,
+          "min_bbox_iou": 0.1,
+          "max_median_depth_delta_m": 5.0,
+          "relative_depth_tolerance": 0.002
+        },
+        "geometry_required": true,
+        "status_counts": {
+          "insufficient_support": 8
+        },
+        "pairs": [
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 1,
+            "other_pixels": 0,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 0,
+            "track_id": "uav_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 1,
+            "other_pixels": 0,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 0,
+            "track_id": "uav_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 1,
+            "other_pixels": 0,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 1,
+            "track_id": "uav_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 1,
+            "other_pixels": 0,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 1,
+            "track_id": "uav_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 1,
+            "other_pixels": 0,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 2,
+            "track_id": "uav_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 1,
+            "other_pixels": 0,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 2,
+            "track_id": "uav_01",
+            "pair": "optical/ir_lwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 1,
+            "other_pixels": 0,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 3,
+            "track_id": "uav_01",
+            "pair": "optical/ir_mwir"
+          },
+          {
+            "status": "insufficient_support",
+            "rgb_pixels": 1,
+            "other_pixels": 0,
+            "rgb_shape": [
+              480,
+              640
+            ],
+            "other_shape": [
+              480,
+              640
+            ],
+            "centroid_delta_px": null,
+            "bbox_iou": null,
+            "mask_iou": null,
+            "overlap_over_smaller_mask": null,
+            "common_depth_pixels": 0,
+            "median_depth_delta_m": null,
+            "p95_depth_delta_m": null,
+            "errors": [],
+            "interpretation": "instance/depth geometry; not radiometric detectability",
+            "reason": "target absent from at least one sampled instance pass",
+            "frame": 3,
+            "track_id": "uav_01",
+            "pair": "optical/ir_lwir"
+          }
+        ],
+        "scope": "independent instance/depth passes; not radiometric detectability or real-sensor validation"
+      }
+    }
+  },
+  "aggregate_metrics": {
+    "centroid_delta_px": {
+      "min": 0.03917578758158961,
+      "max": 0.320354853234038
+    },
+    "mask_iou": {
+      "min": 0.6850393700787402,
+      "max": 0.907563025210084
+    },
+    "bbox_iou": {
+      "min": 0.5849999999999989,
+      "max": 0.978260869565217
+    },
+    "median_depth_delta_m": {
+      "min": 0.107421875,
+      "max": 1.9072265625
+    },
+    "p95_depth_delta_m": {
+      "min": 1.2373046875,
+      "max": 9.769628524780273
+    }
+  },
+  "geometry_pair_count": 24,
+  "insufficient_pair_count": 24,
+  "tests": {
+    "unit_passed": 55,
+    "unit_failed": 0,
+    "physics_selftest": "ALL PASS",
+    "blender_material_probe": "PASS",
+    "blender_sensor_probe": {
+      "depth_convention": "camera_forward_z_m",
+      "flat_plane_depth_m": 10,
+      "motion_blur_width_px": 42,
+      "static_width_px": 18,
+      "passed": true
+    },
+    "visibility_pipeline": "actual label pixels equal raw instance pass; COCO positive retained"
+  },
+  "raw_source_sha256": {
+    "simkit/atmosphere.py": "f67c4a0b42067a687b90a31a8c639e5ce3caef8c26aec90f5d4b25080d89d4cd",
+    "simkit/bvh.py": "4eec9313c2cf4b52c8a094ec45998bef2029b0ac755cdf4f8a2613caff5487e1",
+    "simkit/cli.py": "488d63b65394168e601aaa1635b3d002866e65cdf5272b8d0fef88084be9cb8c",
+    "simkit/dataset.py": "bf2bf393dcbd70c839c32c5c24f1f46c5371197fbb53b92c78414d85c3e2d208",
+    "simkit/external.py": "66f9ac1654306f13c0a3bd8c548d86824ec950a055d84b4a31f2b4c2cd903ac8",
+    "simkit/ir.py": "01d61e550a43a37be6c16ac00996bb577feeea0e0ff1aac773638acaabaaf5d0",
+    "simkit/labels.py": "bb9f8e42a877d7360627748678dcc3d1159e1405618ff0bfd3b8ddb7e4322ff4",
+    "simkit/lidar.py": "8a04802d2fc1995a36dfff81363b43939ec21550b50c2654724a6f4c28d0c4df",
+    "simkit/materials.py": "e337e4cfe9a3fb6ad93dfa2445a8aca39d17f6d42de4db38622bdb11a7cb24da",
+    "simkit/mesh.py": "92a51dc623ccaa61188d72f1f109c6522bb60dca320d7df20386c4a758e237d5",
+    "simkit/motion.py": "c7098705b1ba66200374acf28382ce84b011fdb9a6565c33cbaf1afa01eec7a0",
+    "simkit/observations.py": "c3038bf06428bb9954aa161d793f31838fdcc1b94abf5b668794b3368db82878",
+    "simkit/optical.py": "f42ceb8ee2477869be8a42321e11e9d4c25adc653e9b4240926a9fed50217a2b",
+    "simkit/optical_sensor.py": "a13fa8974b5d3e13ff82d7bb88e240fbe70461f122b07f48c53b1b770d1560c6",
+    "simkit/plan.py": "5bf63a410c922c126a077bc4b75f535c7d0a579392f983e9eaf4cec833b0bbab",
+    "simkit/png.py": "f2d3f3ba7b85e7fca5d90d35ebd96b549b618b0ca5a53f0114f9818d049d93ca",
+    "simkit/radar.py": "e69bfe6e8e825123639f52665c3991e25775f894eb8b1325c5188d65f349bb98",
+    "simkit/sar.py": "75936b670d1352dc332e7ff8a5fca68489c21bc95b017043225edd9a0df9c16b",
+    "simkit/scene.py": "3acb487387a6cd0bc82d4c03b87898aae6c31d876750c668453b0909a03ed2d4",
+    "simkit/selftest.py": "d37a1506282e2f8fd2386a3f4ced17791d354464d6fca8ccbed2111f673a023f",
+    "simkit/spectra.py": "0a5b287ce0c2aba8ed59472f07424749d04694f8f22504849017ffb864daacf8",
+    "simkit/studio.py": "063db0be4ddb9bca146c752177c9c1e8c7b8f16b8a72a85d546322fb1dccf854",
+    "simkit/thermal.py": "7c98dd09449516f9b9bea5b89d36d72c5e1a93c470d31f9ae455f64f26c12d85",
+    "simkit/vega.py": "ba4c5a3ac30161884c3659b8e3bcfacf64507f131ed3375bfa7a14aa10fe26e0",
+    "simkit/weather.py": "45f70943c2ccc2a30475327a5be233850d950d72206a7f08a668a596dbe9eb67",
+    "simkit/__init__.py": "583d65d2e6e6c2545e12943f1f5041851db336d0b4b79c5ba4b2155babd38c5b",
+    "simkit/__main__.py": "6d8b7d7846a845059d7a3107143f11131f63c5511d669b44085b15ec5e3d2279",
+    "blender/material_helpers.py": "3feae8abfe684fa4420bf6b0c2425ccf992086e05ca767b54a1d8b46624bd5e3",
+    "blender/render_optical.py": "9d9ea06e56ce78db605ce1961f91c47d3cffb31e329373496cc739a7f1e23357",
+    "blender/sensor_helpers.py": "5bd0aab600cd3d0ee01adf090d286bab7fce0eb7b5d21af76efd58aeadc31ae4",
+    "tests/blender_material_probe.py": "6c2d778306ff1d58bd0c49e789b533d4ceb57783e7d04e52109c177ad5686fed",
+    "tests/blender_sensor_probe.py": "0778672d067879e30827441e2c0392c0c98bc559435eca1c262b855b62a1e12d",
+    "tests/test_aviation.py": "b72d5f50c7f7f1c37f27bb7c1cdc7d223bb8fc9d1b874a76a49355dd7acea82a",
+    "tests/test_infrared_realism.py": "c08c7e2bbb37e19b3a153149a94dcd48b08946519cde85aaaa8ff0ed846cae47",
+    "tests/test_materials.py": "3d571a50298887dddf55355b13065950e4a165fd5c0da43bbcc9b4ab1d0f501e",
+    "tests/test_optical_realism.py": "231ca601a06b06af0813699a6a3d6e99dfa44c6bd26e83c521e558abf18393ef",
+    "tests/test_quality.py": "093a13423566ba8ab97f3db8b6c3fc8db1931123e793900191e643ead083ec29",
+    "tests/test_radar_realism.py": "cdd4ae433100df97ef2bedea848594c77f599f0cc36a506728ccd546d8571fb5",
+    "requirements.txt": "52107d6a39ead20c18f98de53bc1d4e390f0cf617a0d94a9a55b512c5803a7d6",
+    "tools/build_aviation.py": "619476351a53123c9c00f7211ff639c06a95318ec28a2ec3337133d737b82a22",
+    "tools/check_aviation.py": "7d60e6077b5ad69b537653a52f9da7f9018aae3af4e664e56beb700497e0c74d",
+    "tools/prepare_aviation_models.py": "63f4d373637034b1ccfbfadd73dcb88c8cef65df095a26cb2153ef4ae9c53ef1",
+    "tools/fetch_aviation_models.py": "798107b46800371953d044ce96e4b4a1bbd5a0930598e337e50b36458ab9f7d5"
+  },
+  "final_source_sha256": {
+    "simkit/atmosphere.py": "f67c4a0b42067a687b90a31a8c639e5ce3caef8c26aec90f5d4b25080d89d4cd",
+    "simkit/bvh.py": "4eec9313c2cf4b52c8a094ec45998bef2029b0ac755cdf4f8a2613caff5487e1",
+    "simkit/cli.py": "488d63b65394168e601aaa1635b3d002866e65cdf5272b8d0fef88084be9cb8c",
+    "simkit/dataset.py": "c075f5e9d18064951a3cb31ac14b2f938b9e386b87ffbba0a622a012a9765e99",
+    "simkit/external.py": "66f9ac1654306f13c0a3bd8c548d86824ec950a055d84b4a31f2b4c2cd903ac8",
+    "simkit/ir.py": "01d61e550a43a37be6c16ac00996bb577feeea0e0ff1aac773638acaabaaf5d0",
+    "simkit/labels.py": "558b6ea5e1939de28d962381851f827f8ef1fa269202d780834ac7ce92388468",
+    "simkit/lidar.py": "8a04802d2fc1995a36dfff81363b43939ec21550b50c2654724a6f4c28d0c4df",
+    "simkit/materials.py": "e337e4cfe9a3fb6ad93dfa2445a8aca39d17f6d42de4db38622bdb11a7cb24da",
+    "simkit/mesh.py": "92a51dc623ccaa61188d72f1f109c6522bb60dca320d7df20386c4a758e237d5",
+    "simkit/motion.py": "c7098705b1ba66200374acf28382ce84b011fdb9a6565c33cbaf1afa01eec7a0",
+    "simkit/observations.py": "c3038bf06428bb9954aa161d793f31838fdcc1b94abf5b668794b3368db82878",
+    "simkit/optical.py": "f42ceb8ee2477869be8a42321e11e9d4c25adc653e9b4240926a9fed50217a2b",
+    "simkit/optical_sensor.py": "a13fa8974b5d3e13ff82d7bb88e240fbe70461f122b07f48c53b1b770d1560c6",
+    "simkit/plan.py": "5bf63a410c922c126a077bc4b75f535c7d0a579392f983e9eaf4cec833b0bbab",
+    "simkit/png.py": "f2d3f3ba7b85e7fca5d90d35ebd96b549b618b0ca5a53f0114f9818d049d93ca",
+    "simkit/radar.py": "e69bfe6e8e825123639f52665c3991e25775f894eb8b1325c5188d65f349bb98",
+    "simkit/sar.py": "75936b670d1352dc332e7ff8a5fca68489c21bc95b017043225edd9a0df9c16b",
+    "simkit/scene.py": "3acb487387a6cd0bc82d4c03b87898aae6c31d876750c668453b0909a03ed2d4",
+    "simkit/selftest.py": "d37a1506282e2f8fd2386a3f4ced17791d354464d6fca8ccbed2111f673a023f",
+    "simkit/spectra.py": "0a5b287ce0c2aba8ed59472f07424749d04694f8f22504849017ffb864daacf8",
+    "simkit/studio.py": "063db0be4ddb9bca146c752177c9c1e8c7b8f16b8a72a85d546322fb1dccf854",
+    "simkit/thermal.py": "7c98dd09449516f9b9bea5b89d36d72c5e1a93c470d31f9ae455f64f26c12d85",
+    "simkit/vega.py": "ba4c5a3ac30161884c3659b8e3bcfacf64507f131ed3375bfa7a14aa10fe26e0",
+    "simkit/weather.py": "45f70943c2ccc2a30475327a5be233850d950d72206a7f08a668a596dbe9eb67",
+    "simkit/__init__.py": "583d65d2e6e6c2545e12943f1f5041851db336d0b4b79c5ba4b2155babd38c5b",
+    "simkit/__main__.py": "6d8b7d7846a845059d7a3107143f11131f63c5511d669b44085b15ec5e3d2279",
+    "blender/material_helpers.py": "3feae8abfe684fa4420bf6b0c2425ccf992086e05ca767b54a1d8b46624bd5e3",
+    "blender/render_optical.py": "9d9ea06e56ce78db605ce1961f91c47d3cffb31e329373496cc739a7f1e23357",
+    "blender/sensor_helpers.py": "b8a0068cf261f670fddb3f4e6be64f449fb70c2f6dcc303bfa227f971a7faaff",
+    "tests/blender_material_probe.py": "6c2d778306ff1d58bd0c49e789b533d4ceb57783e7d04e52109c177ad5686fed",
+    "tests/blender_sensor_probe.py": "0778672d067879e30827441e2c0392c0c98bc559435eca1c262b855b62a1e12d",
+    "tests/test_aviation.py": "b72d5f50c7f7f1c37f27bb7c1cdc7d223bb8fc9d1b874a76a49355dd7acea82a",
+    "tests/test_infrared_realism.py": "c08c7e2bbb37e19b3a153149a94dcd48b08946519cde85aaaa8ff0ed846cae47",
+    "tests/test_materials.py": "3d571a50298887dddf55355b13065950e4a165fd5c0da43bbcc9b4ab1d0f501e",
+    "tests/test_optical_realism.py": "231ca601a06b06af0813699a6a3d6e99dfa44c6bd26e83c521e558abf18393ef",
+    "tests/test_quality.py": "093a13423566ba8ab97f3db8b6c3fc8db1931123e793900191e643ead083ec29",
+    "tests/test_radar_realism.py": "cdd4ae433100df97ef2bedea848594c77f599f0cc36a506728ccd546d8571fb5",
+    "tests/test_visibility.py": "2b28c8f6892f5e4994cb07c0bb416b0cc86480aff57af23f18145f87bdb62955",
+    "tools/aviation_preview.py": "b0b35fee99715ca714ba13768f5563fdfebfd1defec2713fa91967946d888348",
+    "tools/build_aviation.py": "619476351a53123c9c00f7211ff639c06a95318ec28a2ec3337133d737b82a22",
+    "tools/check_aviation.py": "7d60e6077b5ad69b537653a52f9da7f9018aae3af4e664e56beb700497e0c74d",
+    "tools/fetch_aviation_models.py": "798107b46800371953d044ce96e4b4a1bbd5a0930598e337e50b36458ab9f7d5",
+    "tools/prepare_aviation_models.py": "63f4d373637034b1ccfbfadd73dcb88c8cef65df095a26cb2153ef4ae9c53ef1",
+    "tools\\finalize_realism.py": "12a648c063be944db9fde7325100e6e67905876f088c0a6881fa14762047c87d"
+  },
+  "postprocess_source_sha256": "12a648c063be944db9fde7325100e6e67905876f088c0a6881fa14762047c87d",
+  "data_manifest_sha256": "72ba4f85dda48e6518de7690cffa9d9cc2a9fba077742ff4c22174544ae60fd4",
+  "original_render_snapshot_verified": true,
+  "assets": [
+    {
+      "role": "airliner",
+      "model": "B777_LARC",
+      "url": "https://airbornescience.nasa.gov/3d-models/models/B777_LARC_AIR_1026.glb",
+      "source_page": "https://airbornescience.nasa.gov/3d-models/?id=B777_LARC",
+      "sha256": "3e6bc7b5cb9140be72b588a035ebb85ccc118d6d295cee8a25f3df5d835fd035",
+      "bytes": 30499688,
+      "verified_on": "2026-11-01",
+      "terms": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "usage": "Academic graphical simulation; credit NASA Airborne Science Program. NASA identifiers/trademarks remain protected; no endorsement implied."
+    },
+    {
+      "role": "uav",
+      "model": "SIERRA_ARC",
+      "url": "https://airbornescience.nasa.gov/3d-models/models/SIERRA_ARC_AIR_1026.glb",
+      "source_page": "https://airbornescience.nasa.gov/3d-models/?id=SIERRA_ARC",
+      "sha256": "594fd04140612231d0f7b6776dc7ed322eb06b767f53760742fdc8836154f95b",
+      "bytes": 10626596,
+      "verified_on": "2026-11-01",
+      "terms": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "usage": "Academic graphical simulation; credit NASA Airborne Science Program. NASA identifiers/trademarks remain protected; no endorsement implied."
+    }
+  ],
+  "geometry": [
+    {
+      "role": "airliner",
+      "source_dimensions": [
+        0.6098291277885437,
+        0.6371986865997314,
+        0.17179155349731445
+      ],
+      "scale": 99.86403932663066,
+      "dimensions_m": [
+        63.633235931396484,
+        60.899993896484375,
+        17.155797004699707
+      ],
+      "wingspan_m": 60.9,
+      "obj_sha256": "21909638e55d70c90e02444f2f9dc34f53592d783fedb2e367e4fc88067d9e7b",
+      "blender_version": "4.5.9 LTS",
+      "forward_axis": "+X nose; verified plan-view silhouette",
+      "normalization": "declared research scale; verify variant and axis before production",
+      "source_meshes": 1,
+      "materials": [
+        "GlassM",
+        "GlassPM",
+        "MetalM",
+        "MetalPM",
+        "PaintM",
+        "PaintPM",
+        "PlasticM"
+      ]
+    },
+    {
+      "role": "uav",
+      "source_dimensions": [
+        0.061618007719516754,
+        0.0389934703707695,
+        0.015912886708974838
+      ],
+      "scale": 98.99703391526401,
+      "dimensions_m": [
+        3.860237956047058,
+        6.099999904632568,
+        1.5753286480903625
+      ],
+      "wingspan_m": 6.1,
+      "obj_sha256": "db797c22bc227b75841b6fc39e2389a79c598e64fc13ff5a0dbf9f8850a465b2",
+      "blender_version": "4.5.9 LTS",
+      "forward_axis": "+X nose; verified plan-view silhouette",
+      "normalization": "declared research scale; verify variant and axis before production",
+      "source_meshes": 1,
+      "materials": [
+        "GlassM",
+        "GlassPM",
+        "MetalM",
+        "MetalPM",
+        "PaintM",
+        "PaintPM",
+        "PlasticM",
+        "PlasticPM",
+        "RubberPM"
+      ]
+    }
+  ],
+  "limits": [
+    "No real-sensor calibration",
+    "QA sequences only",
+    "RGB automatic exposure not bit-exact across independent chunks",
+    "IR exposure and radar CPI motion not integrated",
+    "Source-labelled research thermal regions, not measured engines"
+  ],
+  "finalization_reports": {
+    "visibility_finalization.json": "ff72178bf232177671472e6d5e8102b992fbf0107d26dbba2cf1042690fe5f24",
+    "visibility_finalization_0f016ee2767e.json": "0f016ee2767e379fbbe03948ea42c7ae3a4d6b454e7b215e26385ad70ba4f6a8"
+  },
+  "final_source_differences_from_render_snapshot": {
+    "simkit/dataset.py": {
+      "render": "bf2bf393dcbd70c839c32c5c24f1f46c5371197fbb53b92c78414d85c3e2d208",
+      "final": "c075f5e9d18064951a3cb31ac14b2f938b9e386b87ffbba0a622a012a9765e99"
+    },
+    "simkit/labels.py": {
+      "render": "bb9f8e42a877d7360627748678dcc3d1159e1405618ff0bfd3b8ddb7e4322ff4",
+      "final": "558b6ea5e1939de28d962381851f827f8ef1fa269202d780834ac7ce92388468"
+    }
+  }
+}

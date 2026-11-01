@@ -1,0 +1,62 @@
+[
+  {
+    "role": "airliner",
+    "source_dimensions": [
+      0.6098291277885437,
+      0.6371986865997314,
+      0.17179155349731445
+    ],
+    "scale": 99.86403932663066,
+    "dimensions_m": [
+      63.633235931396484,
+      60.899993896484375,
+      17.155797004699707
+    ],
+    "wingspan_m": 60.9,
+    "obj_sha256": "21909638e55d70c90e02444f2f9dc34f53592d783fedb2e367e4fc88067d9e7b",
+    "blender_version": "4.5.9 LTS",
+    "forward_axis": "+X nose; verified plan-view silhouette",
+    "normalization": "declared research scale; verify variant and axis before production",
+    "source_meshes": 1,
+    "materials": [
+      "GlassM",
+      "GlassPM",
+      "MetalM",
+      "MetalPM",
+      "PaintM",
+      "PaintPM",
+      "PlasticM"
+    ]
+  },
+  {
+    "role": "uav",
+    "source_dimensions": [
+      0.061618007719516754,
+      0.0389934703707695,
+      0.015912886708974838
+    ],
+    "scale": 98.99703391526401,
+    "dimensions_m": [
+      3.860237956047058,
+      6.099999904632568,
+      1.5753286480903625
+    ],
+    "wingspan_m": 6.1,
+    "obj_sha256": "db797c22bc227b75841b6fc39e2389a79c598e64fc13ff5a0dbf9f8850a465b2",
+    "blender_version": "4.5.9 LTS",
+    "forward_axis": "+X nose; verified plan-view silhouette",
+    "normalization": "declared research scale; verify variant and axis before production",
+    "source_meshes": 1,
+    "materials": [
+      "GlassM",
+      "GlassPM",
+      "MetalM",
+      "MetalPM",
+      "PaintM",
+      "PaintPM",
+      "PlasticM",
+      "PlasticPM",
+      "RubberPM"
+    ]
+  }
+]

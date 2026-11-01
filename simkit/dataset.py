@@ -177,6 +177,9 @@ def _render_config(cfg, views, out_dir, part=None):
         m = spec.get("model")
         if m and not os.path.isabs(m):
             spec["model"] = os.path.abspath(os.path.join(base, m))
+        material_source = spec.get("optical_material_source")
+        if material_source and not os.path.isabs(material_source):
+            spec["optical_material_source"] = os.path.abspath(os.path.join(base, material_source))
     rc["_base_dir"] = os.path.abspath(base)
     rc.setdefault("optical", {})["views"] = [
         dict(name=v["name"], tag=v["tag"], fov_deg=v.get("fov_deg"),
@@ -185,6 +188,19 @@ def _render_config(cfg, views, out_dir, part=None):
     path = os.path.join(out_dir, name)
     labels.write_json(path, rc)
     return rc, os.path.abspath(path)
+
+
+def _preserve_renderer_visibility(world, boxes_by_id, renderer_boxes):
+    """Transfer measured visibility by object name, never integer-ID lookup."""
+    names = {obj["id"]: obj["name"] for obj in world.objs}
+    for oid, box in boxes_by_id.items():
+        source = renderer_boxes.get(names[oid], {})
+        if source.get("pixels") is not None:
+            box["pixels"] = int(source["pixels"])
+        if "visibility_source" in source:
+            box["visibility_source"] = source["visibility_source"]
+        box["visible"] = bool(source.get("visible", box.get("visible", True)))
+    return boxes_by_id
 
 
 def _sensors_on_disk(out_dir):
@@ -316,31 +332,6 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
         else:
             external.run(cfg, out_dir, manifest, backend, quiet=quiet)
 
-    # Platform velocity per frame, from the camera track itself. Radar and lidar
-    # are strapped to that gimbal, and their Doppler is relative to it: without
-    # this the closing rate of a diving seeker (200 m/s) is missing entirely.
-    vp_track = []
-    for _s in states:
-        try:
-            vp_track.append(_view_pose(_s, views[0], cfg))
-        except Exception:
-            vp_track.append(None)
-    plat_vel = []
-    for _i, _vp in enumerate(vp_track):
-        if _vp is None:
-            plat_vel.append([0.0, 0.0, 0.0])
-            continue
-        _a = vp_track[max(_i - 1, 0)]
-        _b = vp_track[min(_i + 1, len(vp_track) - 1)]
-        _ta = float(states[max(_i - 1, 0)].get("t") or 0.0)
-        _tb = float(states[min(_i + 1, len(states) - 1)].get("t") or 0.0)
-        _dt = _tb - _ta
-        if abs(_dt) < 1e-9 or _a is None or _b is None:
-            plat_vel.append([0.0, 0.0, 0.0])
-        else:
-            plat_vel.append([(float(_b["pos"][k]) - float(_a["pos"][k])) / _dt
-                             for k in range(3)])
-
     for si, s in enumerate(states):
         # plan_frames already applied frame_offset, so f is the global frame id
         # and the file numbers below stay unique across chunks.
@@ -368,7 +359,12 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                 blk = fr_cfg.setdefault("sensors", {}).setdefault(_sen, {})
                 blk["pos"] = [float(x) for x in vp0["pos"]]
                 blk["look_at"] = [float(x) for x in vp0["look_at"]]
-                blk["vel"] = [float(x) for x in plat_vel[si]]
+                blk["vel"] = list(s["sensor_velocity_mps"])
+
+        if cfg.get("research_baseline"):
+            from .observations import describe
+            labels.write_json(os.path.join(out_dir, "observations", "%06d.json" % f),
+                              describe(s, w))
 
         if "ir" in sensors:
             T = thermal.solve(w, fr_cfg, shadow=cfg.get("ir", {}).get("shadow", True))
@@ -384,6 +380,15 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                     H, W = out["counts_u16"].shape
                     name = "%06d.png" % f
                     vt = v["tag"]
+                    if cfg.get("research_baseline"):
+                        raw_dir = os.path.join(out_dir, "raw", "ir"+bt+vt)
+                        os.makedirs(raw_dir, exist_ok=True)
+                        np.savez_compressed(os.path.join(raw_dir, "%06d.npz" % f),
+                                            depth_z_m=out["depth"].astype(np.float32),
+                                            instance_id=out["obj_id"].astype(np.int32),
+                                            radiance=out["radiance"].astype(np.float32),
+                                            **{"coverage_%d" % oid: coverage.astype(np.float32)
+                                               for oid, coverage in (out.get("instance_coverage") or {}).items()})
                     png.write_gray16(os.path.join(out_dir, dirs["ir" + bt + vt], name),
                                      out["counts_u16"])
                     png.write_gray8(os.path.join(out_dir, dirs["ir_preview" + bt + vt], name),
@@ -401,6 +406,7 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                                            target_px=(s.get("view_px") or {}).get(v["name"],
                                                                                   s.get("target_px")),
                                            weather=dict(fr_cfg.get("weather", {})),
+                                           sampling=out.get("sampling"),
                                            image=name, width=W, height=H,
                                            boxes={o["name"]: boxes[o["id"]] for o in w.objs
                                                   if o["id"] in boxes},
@@ -410,6 +416,13 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
 
         if "radar" in sensors:
             out = radar.simulate(w, fr_cfg)
+            if cfg.get("research_baseline"):
+                raw_dir = os.path.join(out_dir, "raw", "radar")
+                os.makedirs(raw_dir, exist_ok=True)
+                np.savez_compressed(os.path.join(raw_dir, "%06d.npz" % f),
+                                    power=out["rd_map"].T,
+                                    range_m=out["range_axis"],
+                                    closing_speed_mps=out["doppler_axis"])
             name = "%06d.png" % f
             # Both maps are noise-dominated: the median IS the noise floor. The
             # display window is anchored on that median with a fixed 45 dB
@@ -473,9 +486,15 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                                    db=round(float(ra_db.max()), 1),
                                    w=int(ra_img.shape[1]), h=int(ra_img.shape[0]))
             rlab["boxes_rd"] = boxes_rd
+            rlab["processing"] = out.get("processing")
+            rlab["unassociated_detections"] = [d for d in out["detections"] if d["obj"] < 0]
+            rlab["axes"] = dict(range_m=out["range_axis"].tolist(),
+                                 closing_speed_mps=out["doppler_axis"].tolist(),
+                                 velocity_convention="positive closing; single-PRF aliased")
             rlab["width"], rlab["height"] = int(rd_w), int(rd_h)
             labels.write_json(os.path.join(out_dir, dirs["label_radar"], "%06d.json" % f), rlab)
             radar_frames.append(dict(
+                frame=int(f),
                 n=int(rlab.get("num_points", 0)),
                 clutter=int(rlab.get("clutter_count", 0)),
                 boxes=rlab.get("boxes_3d") or [],
@@ -580,14 +599,10 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                 # extent every other modality uses, so a fused pair carries one
                 # label, not two conventions (see _boxes_for).
                 vp = _view_pose(s, v, cfg)
-                uid = _boxes_for(w, None, vp, int(lb["width"]), int(lb["height"]),
-                                 seen=[k for k in (lb.get("boxes") or {})])
                 prev = lb.get("boxes") or {}
-                for nm, b in list(uid.items()):
-                    src = prev.get(nm) or {}
-                    if "pixels" in src:
-                        b["pixels"] = int(src["pixels"])
-                    b["visible"] = bool(src.get("visible", b.get("visible", True)))
+                uid = _boxes_for(w, None, vp, int(lb["width"]), int(lb["height"]),
+                                 seen=[name for name, box in prev.items() if box.get("visible", True)])
+                uid = _preserve_renderer_visibility(w, uid, prev)
                 # _boxes_for keys by object id; the label file keys by name, which
                 # is what every consumer (COCO, YOLO, the site) needs to know the
                 # class. Losing it here silently turned into "images with no boxes".
@@ -597,6 +612,8 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                 labels.write_json(lp, lb)
                 anns = []
                 for aid, (nm, b) in enumerate(lb["boxes"].items()):
+                    if not b.get("visible", True):
+                        continue  # geometry truth remains in JSON; not a detector positive
                     spec = next((o for o in cfg["objects"] if o.get("name") == nm), None)
                     if spec is None or not spec.get("label", True):
                         continue
@@ -644,6 +661,7 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
     idx_rows = [dict(frame=int(s["frame"]), t=round(float(s["t"]), 4), clip=s.get("clip"),
                      range_m=s.get("range_m"), target_px=s.get("target_px"),
                      view_px=s.get("view_px"),
+                     sensor_velocity_mps=s.get("sensor_velocity_mps"),
                      view_roll={k: round(float(v.get("roll_deg", 0.0) or 0.0), 3)
                                 for k, v in (s.get("views") or {}).items()},
                      weather=dict(s.get("weather") or {}))

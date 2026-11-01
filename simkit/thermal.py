@@ -36,6 +36,55 @@ def face_centers(world):
     return world.verts[world.faces].mean(axis=1)
 
 
+def region_overrides(world):
+    """Explicit object-local regions; later matching regions win.
+
+    Selectors are intersected. Temperatures are absolute overrides, fluxes
+    replace the material's internal heat flux before solving the balance.
+    Geometry/material metadata is supplied by scene.build_world.
+    """
+    count = len(world.faces)
+    temperature = np.full(count, np.nan)
+    flux = np.full(count, np.nan)
+    local = getattr(world, "face_local_centers", None)
+    source = getattr(world, "face_source_material", None)
+    group = getattr(world, "face_group", None)
+    for obj in world.objs:
+        for region in obj.get("thermal_regions", []):
+            mask = world.face_obj == obj["id"]
+            selected = False
+            for key, values in (("material_names", source), ("group_names", group)):
+                if key in region:
+                    if values is None:
+                        raise ValueError("thermal region requires World " + key)
+                    choices = region[key]
+                    if not isinstance(choices, list) or not choices:
+                        raise ValueError("thermal region " + key + " must be a non-empty list")
+                    mask &= np.isin(values, choices)
+                    selected = True
+            if "bounds_local_m" in region:
+                bounds = np.asarray(region["bounds_local_m"], float)
+                if local is None or bounds.shape != (2, 3) or not np.isfinite(bounds).all() or (bounds[1]<bounds[0]).any():
+                    raise ValueError("thermal region needs valid local bounds [[min],[max]]")
+                mask &= ((local >= bounds[0]) & (local <= bounds[1])).all(axis=1)
+                selected = True
+            if not selected:
+                raise ValueError("thermal region requires an explicit material, group or local-bounds selector")
+            if not any(key in region for key in ("temp_c", "heat_flux_w_m2")):
+                raise ValueError("thermal region requires temp_c or heat_flux_w_m2")
+            if "temp_c" in region:
+                value = float(region["temp_c"])+273.15
+                if not np.isfinite(value) or not 150 <= value <= 2000:
+                    raise ValueError("thermal region temperature outside 150..2000 K")
+                temperature[mask] = value
+            if "heat_flux_w_m2" in region:
+                value = float(region["heat_flux_w_m2"])
+                if not np.isfinite(value) or value < 0:
+                    raise ValueError("thermal region heat flux must be finite and non-negative")
+                flux[mask] = value
+    return temperature, flux
+
+
 def solve(world, cfg, shadow=True):
     """Return per-face temperature in Kelvin."""
     mat_names = sorted(matlib.MATERIALS)
@@ -69,8 +118,14 @@ def solve(world, cfg, shadow=True):
     alpha = props[world.face_mat, 1]
     q_int = props[world.face_mat, 2]
 
+    region_temperature, region_flux = region_overrides(world)
+    q_int = np.where(np.isfinite(region_flux), region_flux, q_int)
+
     nrm = face_normals(world)
     cent = face_centers(world)
+    from . import atmosphere
+    if atmosphere.enabled(cfg):
+        T_air = atmosphere.temperature_k(cent[:, 2], cfg)
 
     cos_inc = np.clip(nrm @ sdir, 0.0, None)
     shade = np.ones(len(cent))
@@ -90,6 +145,11 @@ def solve(world, cfg, shadow=True):
     vf_gnd = 1.0 - vf_sky
 
     T_sky = float(w["t_sky_k"]) if w else sky_temp(T_air, rh)
+    if atmosphere.enabled(cfg):
+        # Retain the declared grey-sky emissivity, but use local air temperature
+        # rather than applying a sea-level temperature to a high aircraft.
+        eps_sky = float(w["eps_sky"]) if w else 0.8
+        T_sky = eps_sky**0.25*T_air
     wet = float(w["wetness"]) if w else 0.0
     h = 5.7 + 3.8 * wind
     h = np.full(len(cent), h)
@@ -123,4 +183,6 @@ def solve(world, cfg, shadow=True):
     for o in world.objs:
         if o.get("temp_c") is not None:
             T[world.face_obj == o["id"]] = float(o["temp_c"]) + 273.15
+    mask = np.isfinite(region_temperature)
+    T[mask] = region_temperature[mask]
     return T

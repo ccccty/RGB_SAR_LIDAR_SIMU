@@ -1,5 +1,15 @@
 # 素材来源
 
+## 2026-11-01 民航基线模型
+
+新增 B777 - LaRC、SIERRA - ARC，来自
+[NASA Airborne Science Program 三维模型库](https://airbornescience.nasa.gov/3d-models/)。
+源文件/哈希见 [`aviation/sources.json`](aviation/sources.json)，尺度与转换记录见
+[`aviation/geometry.json`](aviation/geometry.json)。下载和转换脚本随仓库提供，大模型不纳入 Git。
+
+使用遵循 [NASA 媒体使用指南](https://www.nasa.gov/nasa-brand-center/images-and-media/)，
+不将这批资产声明为 CC0；NASA 标识/商标和第三方权利例外仍适用，不暗示 NASA 背书。
+
 ## 3D 模型
 
 | 文件 | 来源 | 许可 | 原始三角面 |

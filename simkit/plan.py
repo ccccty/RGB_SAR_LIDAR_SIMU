@@ -128,7 +128,19 @@ class ClipPlan:
             self.fov = float(first["fov_deg"])
             self.width = int(first["width"])
 
-        if seeker:
+        observer = spec.get("observer_trajectory")
+        if observer:
+            if seeker:
+                raise ValueError("observer_trajectory and seeker are mutually exclusive")
+            if len(self.targets) != 1:
+                raise ValueError("independent-flight baseline requires one labelled target per scene")
+            self.mode = "independent_flight"
+            self.path = motion.make_path(spec.get("trajectory") or self._trajectory_from_objects())
+            self.observer_path = motion.make_path(observer)
+            self.gimbal_lag = float((spec.get("rig") or {}).get("lag_s", 0.0))
+            if self.gimbal_lag < 0:
+                raise ValueError("lag_s must be non-negative")
+        elif seeker:
             if str(dict(seeker).get("mode", "")).lower() == "platform":
                 self.mode = "platform"
                 self._plan_platform(seeker)
@@ -413,7 +425,18 @@ class ClipPlan:
         """Line-of-sight origin. Static in the legacy modes, the track in flight."""
         if self.mode == "platform":
             return self.path.pos(float(t))
+        if self.mode == "independent_flight":
+            return self.observer_path.pos(float(t))
         return self.cam_pos
+
+    def camera_velocity(self, t, h=1e-3):
+        """Derivative of this clip's mount pose, never adjacent batch frames.
+
+        In particular a singleton chunk and a clip boundary have the same
+        velocity as the unsplit run. Smooth mount vibration is included.
+        """
+        return (np.asarray(self.camera(t + h)[0]) -
+                np.asarray(self.camera(t - h)[0])) / (2.0 * h)
 
     def range_for_time(self, t):
         return float(np.linalg.norm(self.target_pos(t) - self.cam_pos_at(t)))
@@ -424,6 +447,18 @@ class ClipPlan:
 
     # ---- camera ---------------------------------------------------------
     def camera(self, t):
+        if self.mode == "independent_flight":
+            jit, dyaw = self.rig.jitter(t)
+            pos = self.observer_path.pos(t) + jit
+            # Ground-truth-assisted pointing is an explicit simulation
+            # assumption, not a tracker. Extend the analytic path before t=0
+            # for a continuous initial delayed look direction.
+            aim = self.path.pos(t - self.gimbal_lag)
+            d = aim - pos
+            a = np.radians(dyaw)
+            ca, sa = np.cos(a), np.sin(a)
+            aim = pos + np.array([ca*d[0] - sa*d[1], sa*d[0] + ca*d[1], d[2]])
+            return pos, aim
         if self.mode == "seeker":
             lag = float((self.spec.get("seeker") or {}).get("lag_s", 0.12))
             pos, _dyaw = self.rig.jitter(t)
@@ -505,6 +540,7 @@ class ClipPlan:
         fr_cfg["_frame_seed"] = self.base_seed * 100003 + int(frame)
 
         pos, aim = self.camera(t)
+        sensor_velocity = self.camera_velocity(t)
         delta = np.asarray(pos, float) - self.cam_pos
         for skey, sc in (fr_cfg.get("sensors") or {}).items():
             if not isinstance(sc, dict) or "pos" not in sc:
@@ -514,6 +550,7 @@ class ClipPlan:
             sc["pos"] = [float(v) for v in (base + delta)]
             # every sensor on the turret is co-boresighted with the primary
             sc["look_at"] = [float(v) for v in aim]
+            sc["vel"] = [float(v) for v in sensor_velocity]
 
         # Per-view state. Same mount position for every view; only the optics
         # (fov / resolution) and the aim (search scan) differ.
@@ -552,13 +589,38 @@ class ClipPlan:
                                    float(P[2] - base[2])],
                              dyaw=float(yaw - float(spec.get("rot", 0.0))),
                              vel=[float(V[0]), float(V[1]), float(V[2])])
-            poses[name] = dict(pos=[round(float(v), 4) for v in P], yaw=round(float(yaw), 3))
-        return dict(frame=int(frame), t=t, jitter=jit, cfg=fr_cfg, weather=dict(wst),
+            poses[name] = dict(pos=[round(float(v), 4) for v in P], yaw=round(float(yaw), 3),
+                               velocity_mps=[float(v) for v in V])
+        state = dict(frame=int(frame), t=t, jitter=jit, cfg=fr_cfg, weather=dict(wst),
                     poses=poses, clip=self.clip,
                     range_m=round(rng_m, 2),
                     target_px=round(self.px_for_time(t), 1),
                     views=views, view_px=view_px,
+                    sensor_velocity_mps=[float(v) for v in sensor_velocity],
                     view_range_m=round(rng_m, 2))
+        if (self.cfg.get("optical") or {}).get("motion_blur"):
+            exposure = float((self.cfg.get("acquisition") or {}).get("rgb_exposure_s", 0.001))
+            if not np.isfinite(exposure) or not 0 < exposure <= self.dt:
+                raise ValueError("RGB exposure must be positive and <= frame interval")
+            samples = []
+            for offset in (-exposure/2, exposure/2):
+                tt = t+offset
+                pp, aa = self.camera(tt)
+                sample_views = {}
+                for name, view in self.views.items():
+                    sample_views[name] = dict(pos=pp.tolist(),
+                        look_at=self._view_look(pp, aa, view, tt).tolist(), roll_deg=self.roll_deg(tt))
+                sample_poses = {}
+                for obj in self.cfg.get("objects", []):
+                    if obj.get("label", True):
+                        P, yaw = self.target_pos(tt), self.target_yaw(tt)
+                    else:
+                        P = np.array(obj.get("pos", [0, 0, 0]))+np.array(obj.get("vel", [0, 0, 0]))*tt
+                        yaw = obj.get("rot", 0.0)
+                    sample_poses[obj["name"]] = dict(pos=P.tolist(), yaw=float(yaw))
+                samples.append(dict(offset_s=offset, views=sample_views, poses=sample_poses))
+            state["shutter_samples"] = samples
+        return state
 
 
 def clip_of(frame, fpc):
@@ -608,6 +670,11 @@ def summary(cfg, n_frames, base_seed, dt):
                                     / max(cp.dt, 1e-6)))
             rs = [cp.roll_deg(t) for t in ts]
             roll = [round(min(rs), 2), round(max(rs), 2)]
+        elif cp.mode == "independent_flight":
+            pv = np.array([cp.camera_velocity(t) for t in ts])
+            psp = np.linalg.norm(pv, axis=1)
+            pacc = (float(np.max(np.linalg.norm(np.diff(pv, axis=0), axis=1) / cp.dt))
+                    if len(ts) > 1 else 0.0)
         size = float(getattr(cp, "size_used", cp.size_m))
         plat = None
         meta = getattr(cp, "plat_meta", None)
@@ -628,7 +695,8 @@ def summary(cfg, n_frames, base_seed, dt):
             accel_mps2=round(pacc, 2),
             target_speed_mps=round(float(np.median(sp)), 2),
             target_accel_mps2=round(acc, 2),
-            platform_speed_mps=round(float(np.median(psp)), 2) if cp.mode == "platform" else None,
+            platform_speed_mps=round(float(np.median(psp)), 2)
+                if cp.mode in ("platform", "independent_flight") else None,
             platform=plat,
             roll_deg=roll,
             views=views,

@@ -1,0 +1,8 @@
+# Rebuild from official sources using tools/fetch_aviation_models.py.
+*.glb
+*.obj
+*.mtl
+*.png
+*.jpg
+*.jpeg
+*.bin

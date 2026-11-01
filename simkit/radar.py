@@ -7,8 +7,9 @@ a detection (point cloud) list and per-detection object labels.
 
 Approximations are deliberate: incoherent multi-bounce, no shadowing between
 bounces, flat-facet PO (no edge diffraction / creeping waves), no MIMO virtual
-array, no range migration. Sufficient for detector training data; not for RCS
-certification.
+array, no range migration. Detection can use the legacy analytic gate or an
+opt-in measured RD peak detector with window/noise calibration. Neither mode
+has been validated against a real instrument or provides RCS certification.
 """
 import os
 
@@ -32,6 +33,7 @@ DEFAULTS = dict(
     pfa=None, swerling="I",
     specular_scale_db=-20.0, diffuse_gamma=0.06, ground_clutter_db=-30.0,
     beamwidth_az_deg=2.0, beamwidth_el_deg=12.0,
+    detector="analytic", max_detections=256,
 )
 
 
@@ -43,8 +45,8 @@ def cfg_get(cfg, key):
 def beam_grid(cam, n_az, n_el, az_span, el_span):
     p, r, u, f = sensor_basis(cam["pos"], cam["look_at"], cam.get("up", (0, 0, 1)),
                               cam.get("roll_deg", 0.0))
-    az = np.linspace(-az_span / 2, az_span / 2, n_az)
-    el = np.linspace(-el_span / 2, el_span / 2, n_el)
+    az = np.linspace(-az_span / 2, az_span / 2, n_az) if n_az > 1 else np.zeros(1)
+    el = np.linspace(-el_span / 2, el_span / 2, n_el) if n_el > 1 else np.zeros(1)
     dirs, angles = [], []
     for e in el:
         for a in az:
@@ -71,6 +73,61 @@ def facet_sigma(areas, cos_inc, rho, rough_m, lam, footprint=None,
     return spec * spec_scale + diff
 
 
+def fft_noise_statistics(pn, range_window, doppler_window, n_beams, pfa):
+    """Unnormalised FFT noise and threshold of independent-beam maximum.
+
+    Each complex input sample has E[|n|^2]=pn. A windowed FFT cell has mean
+    noise power pn*sum(wr^2)*sum(wd^2), with an exponential distribution.
+    For B independent simulated receiver beams, P(max<=x)=(1-exp(-x/mu))^B.
+    Pfa is per RD cell BEFORE peak selection, not a whole-image false-alarm
+    probability. Windowing correlates neighbouring cells, not this marginal.
+    """
+    if not (0.0 < float(pfa) < 1.0):
+        raise ValueError("RD detector pfa must be strictly between 0 and 1")
+    wr, wd = np.asarray(range_window, float), np.asarray(doppler_window, float)
+    energy = float(np.sum(wr**2)*np.sum(wd**2))
+    coherent = float(np.sum(wr)**2*np.sum(wd)**2)
+    if energy <= 0.0 or pn <= 0.0 or int(n_beams) < 1:
+        raise ValueError("RD detector requires positive noise/window energy and beam count")
+    # expm1/log1p preserve Pfa=1e-6 with hundreds of beams.
+    factor = -np.log(-np.expm1(np.log1p(-float(pfa))/int(n_beams)))
+    return dict(single_beam_fft_noise_power=pn*energy,
+                window_energy=energy, coherent_power_gain=coherent,
+                window_processing_gain_db=10.0*np.log10(coherent/energy),
+                independent_noise_beams=int(n_beams), pfa_per_cell=float(pfa),
+                threshold_noise_ratio=float(factor), threshold_power=float(pn*energy*factor),
+                detector="rd_threshold", statistic="maximum of independent beam powers",
+                limitations=["known thermal noise, not adaptive CFAR",
+                             "correlated/signal-dependent clutter is not covered by thermal-noise Pfa",
+                             "frozen CPI geometry, no range migration or FMCW range-Doppler coupling"])
+
+
+def rd_peak_cells(power, threshold, max_detections=256):
+    """Return measured local maxima as (range_bin, Doppler_bin).
+
+    Doppler neighbours wrap at Nyquist; range neighbours do not. No object
+    positions are consulted by the detector.
+    """
+    power = np.asarray(power, float)
+    if power.ndim != 2 or not np.isfinite(power).all():
+        raise ValueError("RD detector requires finite 2D power")
+    keep = power > float(threshold)
+    _nr, nd = power.shape
+    for dr in (-1, 0, 1):
+        for dd in (-1, 0, 1):
+            if dr == dd == 0:
+                continue
+            neighbour = np.roll(power, dd, axis=1)
+            if dr == -1:
+                neighbour = np.vstack([neighbour[1:], np.full((1, nd), -np.inf)])
+            elif dr == 1:
+                neighbour = np.vstack([np.full((1, nd), -np.inf), neighbour[:-1]])
+            keep &= power >= neighbour
+    rr, vv = np.where(keep)
+    order = np.argsort(power[rr, vv], kind="stable")[::-1][:max(0, int(max_detections))]
+    return [(int(rr[i]), int(vv[i])) for i in order]
+
+
 def simulate(world, cfg):
     rc = dict(DEFAULTS)
     user_rc = cfg.get("sensors", {}).get("radar", {})
@@ -82,9 +139,14 @@ def simulate(world, cfg):
                 rc[k] = RADAR_BANDS[band][k]
         rc["band"] = band
     rc.update(user_rc)
+    measured_detector = str(rc.get("detector", "analytic")).lower() == "rd_threshold"
+    if str(rc.get("detector", "analytic")).lower() not in ("analytic", "rd_threshold"):
+        raise ValueError("radar detector must be analytic or rd_threshold")
     cam = rc
     p, dirs, angles = beam_grid(cam, int(rc["n_az"]), int(rc["n_el"]),
                                 float(rc["az_span_deg"]), float(rc["el_span_deg"]))
+    _p, right, up, forward = sensor_basis(cam["pos"], cam["look_at"],
+                                         cam.get("up", (0, 0, 1)), cam.get("roll_deg", 0.0))
     lam = C_LIGHT / (float(rc["fc_ghz"]) * 1e9)
 
     bvh = world.bvh
@@ -149,6 +211,7 @@ def simulate(world, cfg):
 
     dist = hit["t"].copy()
     dist[~ok] = np.inf
+    return_dirs = dirs.copy()
 
     # A target can be smaller than the beam raster. At 9.6 km an 11 m aircraft
     # subtends 0.07 deg in azimuth but only 0.011 deg in elevation -- under the
@@ -166,6 +229,17 @@ def simulate(world, cfg):
         if R < 1e-6:
             continue
         dvec = v / R
+        front = float(dvec @ forward)
+        if front <= 0.0:
+            continue
+        azimuth = np.degrees(np.arctan2(float(dvec @ right), front))
+        elevation = np.degrees(np.arctan2(float(dvec @ up), front))
+        # A fallback ray must not see targets outside the scanned beam support.
+        # Otherwise even an aircraft behind the sensor was injected into the
+        # nearest beam, despite never entering the sensor field of regard.
+        if (abs(azimuth) > float(rc["az_span_deg"])/2.0 + np.degrees(bw_az0)/2.0 or
+                abs(elevation) > float(rc["el_span_deg"])/2.0 + np.degrees(bw_el0)/2.0):
+            continue
         # A single centre ray is too strict: in the cluttered scene a 2 m fence
         # post can cross the boresight while the rest of the rover is in plain
         # view, and one blocked ray then erased 17 of 20 frames. Probe the
@@ -196,11 +270,15 @@ def simulate(world, cfg):
         if not np.isfinite(s_obj) or s_obj <= 0.0:
             continue
         b = int(np.argmax(dirs @ dvec))
-        sig[b] += s_obj
-        obj_of_beam[b] = o["id"]
         if R < dist[b]:
+            # The single-return model cannot attribute a farther ground
+            # scatterer's power to a nearer aircraft. Replace the return;
+            # adding sigma while changing its object ID created huge false RCS.
+            sig[b] = s_obj
+            obj_of_beam[b] = o["id"]
             dist[b] = R
             pts[b] = c
+            return_dirs[b] = dvec
 
     # explicit per-object RCS override (dBsm) wins over the geometric estimate
     for o in world.objs:
@@ -274,12 +352,12 @@ def simulate(world, cfg):
     # at 1.4 m/s -- right on the zero-Doppler clutter ridge and inside the MTI
     # notch, i.e. an RD map whose velocity axis means nothing.
     v_rad = np.asarray(rc.get("vel", [0.0, 0.0, 0.0]), float)
-    vr = np.zeros(len(dirs))
+    vr = return_dirs @ v_rad  # stationary world clutter still moves relative to mount
     for o in world.objs:
         m = obj_of_beam == o["id"]
         if not m.any():
             continue
-        u = dirs[m]
+        u = return_dirs[m]
         vr[m] = -(u @ (np.asarray(o.get("vel", [0, 0, 0]), float) - v_rad))
     # A single PRF measures Doppler modulo the pulse repetition rate: fd = 2v/lam
     # is only resolved inside +-PRF/2, i.e. +-lam/(4*pri) = +-64.9 m/s at 77 GHz
@@ -319,25 +397,28 @@ def simulate(world, cfg):
     mti_v = float(rc.get("mti_min_vr_mps", 0.0))
     det = []
     echoes = []          # (beam, beat_freq, doppler_freq, amplitude)
+    source_echoes = {}
     # `idx` is the geometry-hit set; a sub-beam target injected above never
     # produced a hit, yet it is exactly the echo a seeker cares about.
     det_idx = np.where(ok | (obj_of_beam >= 0))[0]
     for i in det_idx:
-        if snr_db[i] < float(rc["det_snr_db"]):
-            continue
         if mti_v > 0.0 and abs(float(vr_true[i])) < mti_v:
             continue
         r = float(dist[i])
-        if r < 0.5 or r > r_max:
+        if r < 0.5 or r >= r_max:
             continue
         fb = 2.0 * b * r / (C_LIGHT * t_chirp)
-        fb = min(fb, fs / 2.0 * 0.99)
         fd = 2.0 * float(vr[i]) / lam
         amp = np.sqrt(float(pr[i])) * np.exp(1j * rng.uniform(0, 2 * np.pi))
         echoes.append((int(i), fb, fd, amp))
+        source_echoes[int(i)] = (fb, fd)
+        # A below-threshold target still contributes a physical echo. Gating
+        # synthesis with the detector erased weak returns from training images.
+        if snr_db[i] < float(rc["det_snr_db"]):
+            continue
         det.append(dict(x=float(pts[i, 0]), y=float(pts[i, 1]), z=float(pts[i, 2]),
                         range=r, az=float(angles[i, 0]), el=float(angles[i, 1]),
-                        v_r=float(vr[i]), snr_db=float(snr_db[i]),
+                        v_r=float(vr[i]), v_r_true=float(vr_true[i]), snr_db=float(snr_db[i]),
                         obj=int(obj_of_beam[i])))
 
     # clutter: sparse random false alarms, uniform in range
@@ -391,6 +472,7 @@ def simulate(world, cfg):
     cube = np.zeros((n_beams, n_s, n_c), cplx) if keep_cube else None
 
     rd_map = np.zeros((n_s, n_c))
+    rd_winning_beam = np.zeros((n_s, n_c), np.int32)
     ra_map = np.zeros((n_beams, n_s))
     win = (win_r * win_d).astype(real)
     for a in range(0, n_beams, chunk):
@@ -401,8 +483,17 @@ def simulate(world, cfg):
         # that is what ran three parallel workers out of memory.
         m = bb - a
         blk = np.empty((m, n_s, n_c), cplx)
-        blk.real = rng.standard_normal((m, n_s, n_c), dtype=np.float32)
-        blk.imag = rng.standard_normal((m, n_s, n_c), dtype=np.float32)
+        if measured_detector:
+            # Separate streams make numerical results independent of the
+            # memory chunk size and of whether the raw cube is retained.
+            for j, beam in enumerate(range(a, bb)):
+                seed = (int(cfg.get("_frame_seed", 0))*1000003 + beam*7907 + 20001) % (2**63)
+                noise_rng = np.random.default_rng(seed)
+                blk.real[j] = noise_rng.standard_normal((n_s, n_c), dtype=np.float32)
+                blk.imag[j] = noise_rng.standard_normal((n_s, n_c), dtype=np.float32)
+        else:
+            blk.real = rng.standard_normal((m, n_s, n_c), dtype=np.float32)
+            blk.imag = rng.standard_normal((m, n_s, n_c), dtype=np.float32)
         blk *= real(np.sqrt(pn / 2.0))
         for i in range(a, bb):
             for fb, fd, amp in by_beam.get(i, ()):
@@ -420,23 +511,86 @@ def simulate(world, cfg):
         # and its RD box landed on a black cell, while the ground clutter that
         # fills every beam took the bright cells. Take the per-cell maximum over
         # beams instead -- the same statistic ra_map already uses along Doppler.
-        np.maximum(rd_map, power.max(axis=0), out=rd_map)
+        chunk_peak = power.max(axis=0)
+        better = chunk_peak > rd_map
+        rd_winning_beam[better] = (power.argmax(axis=0)+a)[better]
+        np.maximum(rd_map, chunk_peak, out=rd_map)
         ra_map[a:bb] = power.max(axis=2)
 
     axis_r = np.fft.fftfreq(n_s, 1.0 / fs) * C_LIGHT * t_chirp / (2.0 * b)
-    # A real beat signal has a conjugate-symmetric spectrum, so the second half of
-    # the range axis is a mirror, not new information. Keeping it drew every echo
-    # twice (once at +R, once at -R) and left the range axis non-monotonic.
+    # Export the positive-frequency band used by this real-ADC-range convention.
+    # Internally the synthetic noise/tone buffer is complex; its negative bins
+    # are not a literal conjugate mirror. No claim of a full IQ receiver is made.
     _half = max(1, n_s // 2)
     rd_map = rd_map[:_half]
+    rd_winning_beam = rd_winning_beam[:_half]
     axis_r = axis_r[:_half]
     axis_d = np.fft.fftshift(np.fft.fftfreq(n_c, pri)) * lam / 2.0
+
+    processing = dict(detector="analytic", detection_basis="expected radar equation SNR",
+                      noise_power_input=pn,
+                      limitations=["analytic gate, not an observed-RD detector",
+                                   "frozen CPI geometry; no range migration or FMCW range-Doppler coupling"])
+    if measured_detector:
+        processing = fft_noise_statistics(pn, win_r.ravel(), win_d.ravel(), n_beams,
+                                          float(rc.get("pfa") if rc.get("pfa") is not None else 1e-6))
+        processing["noise_power_input"] = pn
+        processing["expected_snr_basis"] = "on-bin tone with actual Hann coherent/window-noise gains"
+        snr_db = (10.0*np.log10(np.maximum(pr, 1e-30)/pn) +
+                  processing["window_processing_gain_db"])
+        processing["association_rule"] = (
+            "post-detection: winning beam, within two truth bins, expected target power > half measured power")
+        processing["max_detections"] = int(rc["max_detections"])
+        cells = rd_peak_cells(rd_map, processing["threshold_power"], rc["max_detections"])
+        det = []
+        w_r, w_d = win_r.ravel(), win_d.ravel()
+        for ir, iv in cells:
+            beam = int(rd_winning_beam[ir, iv])
+            measured_range, measured_v = float(axis_r[ir]), float(axis_d[iv])
+            observed_power = float(rd_map[ir, iv])
+            oid = -1
+            signal_power = 0.0
+            # Detection above is entirely image-based. Associate afterwards;
+            # a noise peak in a beam that happens to point at a weak target
+            # must not automatically acquire its object ID.
+            if beam in source_echoes and obj_of_beam[beam] >= 0:
+                fb, fd = source_echoes[beam]
+                i_truth = int(np.argmin(np.abs(axis_r-dist[beam])))
+                j_truth = int(np.argmin(np.abs(axis_d-vr[beam])))
+                dj = abs(iv-j_truth)
+                dj = min(dj, n_c-dj)
+                if abs(ir-i_truth) <= 2 and dj <= 2:
+                    ar = np.sum(w_r*np.exp(2j*np.pi*(fb/fs-ir/n_s)*np.arange(n_s)))
+                    ad = np.sum(w_d*np.exp(2j*np.pi*(fd*pri-(iv-n_c//2)/n_c)*np.arange(n_c)))
+                    signal_power = float(pr[beam]*abs(ar)**2*abs(ad)**2)
+                    if signal_power > 0.5*observed_power:
+                        oid = int(obj_of_beam[beam])
+            associated = oid >= 0
+            xyz = pts[beam] if associated else p + dirs[beam]*measured_range
+            item = dict(x=float(xyz[0]), y=float(xyz[1]), z=float(xyz[2]),
+                        range=measured_range, v_r=measured_v,
+                        range_bin=ir, doppler_bin=iv, beam_index=beam,
+                        az=float(angles[beam, 0]), el=float(angles[beam, 1]),
+                        snr_db=float(10.0*np.log10(observed_power/processing["single_beam_fft_noise_power"])),
+                        power=observed_power, expected_target_power=signal_power,
+                        obj=oid, detection_basis="measured_rd_peak",
+                        associated_to_truth=associated)
+            if associated:
+                item["range_true"] = float(dist[beam])
+                item["v_r_true"] = float(vr_true[beam])
+                item["xyz_basis"] = "associated_truth_surface"
+            else:
+                item["xyz_basis"] = "measured_range_and_beam_direction"
+            det.append(item)
+        processing["threshold_crossing_peak_count"] = len(cells)
+        processing["unassociated_peak_count"] = sum(d["obj"] < 0 for d in det)
+        processing["pfa_scope"] = "per RD cell before local-maximum selection, independent thermal noise only"
 
     return dict(
         cube=cube, rd_map=rd_map, range_angle=ra_map,
         range_axis=axis_r, doppler_axis=axis_d,
         detections=det, sigma=sig, snr_db=snr_db, beams=angles,
-        radar_cfg=rc, pn=pn, cube_chunked=(cube is None),
+        radar_cfg=rc, pn=pn, cube_chunked=(cube is None), processing=processing,
     )
 
 

@@ -79,7 +79,7 @@ def cmd_plan(args):
 
 def cmd_selftest(args):
     from .selftest import run
-    run()
+    return 0 if run() else 1
 
 
 def cmd_vega(args):

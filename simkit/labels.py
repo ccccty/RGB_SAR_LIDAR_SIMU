@@ -59,6 +59,8 @@ def boxes_from_corners(world, cam, width, height, min_frac=1e-4):
 def to_coco(boxes, world, image_id, file_name, width, height):
     anns = []
     for aid, (oid, b) in enumerate(sorted(boxes.items())):
+        if not b.get("visible", True):
+            continue
         o = next((x for x in world.objs if x["id"] == oid), None)
         if o is None or not o.get("label", True):
             continue
@@ -85,11 +87,17 @@ def radar_labels(world, detections, frame_id):
                           yaw=round(float(o["yaw"]), 2)))
     pts = [d for d in detections if d["obj"] >= 0]
     clutter = [d for d in detections if d["obj"] < 0]
+    def measurement(d):
+        point = dict(xyz=[round(d["x"], 3), round(d["y"], 3), round(d["z"], 3)],
+                     range=round(d["range"], 3), az=round(d["az"], 3), el=round(d["el"], 3),
+                     v_r=round(d["v_r"], 3), snr_db=round(d["snr_db"], 2), obj=d["obj"])
+        for key in ("v_r_true", "range_true", "range_bin", "doppler_bin", "beam_index", "power",
+                    "expected_target_power", "associated_to_truth", "detection_basis", "xyz_basis"):
+            if key in d:
+                point[key] = d[key]
+        return point
     return dict(frame=frame_id, boxes_3d=boxes,
-                points=[dict(xyz=[round(d["x"], 3), round(d["y"], 3), round(d["z"], 3)],
-                             range=round(d["range"], 3), az=round(d["az"], 3),
-                             el=round(d["el"], 3), v_r=round(d["v_r"], 3),
-                             snr_db=round(d["snr_db"], 2), obj=d["obj"]) for d in pts],
+                points=[measurement(d) for d in pts],
                 clutter_count=len(clutter),
                 num_points=len(pts))
 

@@ -1,0 +1,225 @@
+{
+  "date": "2026-11-01",
+  "timezone": "Asia/Shanghai",
+  "git_base": "9b29d87dce16d5309d3c28cb6ecee53d7f87d944",
+  "experiment": "aviation_baseline_v2",
+  "command": "python tools/build_aviation.py --out out/aviation_baseline_v2 -n 4 --dt 0.5",
+  "source_sha256": {
+    "simkit/bvh.py": "4eec9313c2cf4b52c8a094ec45998bef2029b0ac755cdf4f8a2613caff5487e1",
+    "simkit/cli.py": "c141fcaca1aca0635d15956db218db48a44ce315428c76c4592cf2db143183bb",
+    "simkit/dataset.py": "a2331dd56c39988303367deb983e192357adcfe35dfdd2227f5f4eefb5e36489",
+    "simkit/external.py": "d97b0ed7a6d27e35b0589edc8741c7285b91520e7cd1b359a43d4c0e20123cdc",
+    "simkit/ir.py": "1bb9b935d1f9ecf868a8532ade930d35004420c60e5d9b834bbd5d0e760454d6",
+    "simkit/labels.py": "8bf0878ab5fc8e3dab1a160b9f6be2bdc25448e8b5c275db215fdc56b91b71f9",
+    "simkit/lidar.py": "8a04802d2fc1995a36dfff81363b43939ec21550b50c2654724a6f4c28d0c4df",
+    "simkit/materials.py": "272fcf4ce131318911a32ae2325c1512db8183349affa4bc98153f7a1ca31695",
+    "simkit/mesh.py": "d6bce4d60573e87f3702a20d64b6efa5d0aea7c7e1425938e4e7ec1eda4cbead",
+    "simkit/motion.py": "c7098705b1ba66200374acf28382ce84b011fdb9a6565c33cbaf1afa01eec7a0",
+    "simkit/observations.py": "8cdcfacc855b04abd35da83672633dfe953d1d8f96ff223ad5f49ccf4a13cb4e",
+    "simkit/optical.py": "519d14c8a621b7af85ecc5cc42cfd499abfea36221469979203ac9f74086a93b",
+    "simkit/plan.py": "be2715ab1ea8025cf5d016b3bba31aadb60bead547a2ff9d05e5a772c9cd865e",
+    "simkit/png.py": "f2d3f3ba7b85e7fca5d90d35ebd96b549b618b0ca5a53f0114f9818d049d93ca",
+    "simkit/radar.py": "700a31094b24f6795b1ac1f1f7762acda2341bc071fe675b9c1178023968f0b6",
+    "simkit/sar.py": "75936b670d1352dc332e7ff8a5fca68489c21bc95b017043225edd9a0df9c16b",
+    "simkit/scene.py": "9fab6598a3d5a61250aeceab3aa38af1be34e03a31c03564a50a9481d53e7df9",
+    "simkit/selftest.py": "d37a1506282e2f8fd2386a3f4ced17791d354464d6fca8ccbed2111f673a023f",
+    "simkit/spectra.py": "0a5b287ce0c2aba8ed59472f07424749d04694f8f22504849017ffb864daacf8",
+    "simkit/studio.py": "063db0be4ddb9bca146c752177c9c1e8c7b8f16b8a72a85d546322fb1dccf854",
+    "simkit/thermal.py": "9310f33ebf40b35dee6afe6983c78a14daa1106415eae409f8fdd59f991ebe23",
+    "simkit/vega.py": "ba4c5a3ac30161884c3659b8e3bcfacf64507f131ed3375bfa7a14aa10fe26e0",
+    "simkit/weather.py": "45f70943c2ccc2a30475327a5be233850d950d72206a7f08a668a596dbe9eb67",
+    "simkit/__init__.py": "583d65d2e6e6c2545e12943f1f5041851db336d0b4b79c5ba4b2155babd38c5b",
+    "simkit/__main__.py": "6d8b7d7846a845059d7a3107143f11131f63c5511d669b44085b15ec5e3d2279",
+    "tools/build_aviation.py": "8ab5e63ba1e912ff1e5e334bfc21df4597fb6e146efd3f7318fe368c9cde6a31",
+    "blender/render_optical.py": "c5439c984eeb668345bef6caffce40fc5b4dc439c403799b814cf6e0d35480d8",
+    "tools/check_aviation.py": "44a065c6909b1524e3fced3607f7afb145dacae6f4a9620e7dd4859384c2a062",
+    "tools/prepare_aviation_models.py": "5adf3fa190d07313975d34fe90b8f90060e011516d39e04532628ca759cbd5d4",
+    "tools/fetch_aviation_models.py": "798107b46800371953d044ce96e4b4a1bbd5a0930598e337e50b36458ab9f7d5"
+  },
+  "assets": [
+    {
+      "role": "airliner",
+      "model": "B777_LARC",
+      "url": "https://airbornescience.nasa.gov/3d-models/models/B777_LARC_AIR_1026.glb",
+      "source_page": "https://airbornescience.nasa.gov/3d-models/?id=B777_LARC",
+      "sha256": "3e6bc7b5cb9140be72b588a035ebb85ccc118d6d295cee8a25f3df5d835fd035",
+      "bytes": 30499688,
+      "verified_on": "2026-11-01",
+      "terms": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "usage": "Academic graphical simulation; credit NASA Airborne Science Program. NASA identifiers/trademarks remain protected; no endorsement implied."
+    },
+    {
+      "role": "uav",
+      "model": "SIERRA_ARC",
+      "url": "https://airbornescience.nasa.gov/3d-models/models/SIERRA_ARC_AIR_1026.glb",
+      "source_page": "https://airbornescience.nasa.gov/3d-models/?id=SIERRA_ARC",
+      "sha256": "594fd04140612231d0f7b6776dc7ed322eb06b767f53760742fdc8836154f95b",
+      "bytes": 10626596,
+      "verified_on": "2026-11-01",
+      "terms": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "usage": "Academic graphical simulation; credit NASA Airborne Science Program. NASA identifiers/trademarks remain protected; no endorsement implied."
+    }
+  ],
+  "geometry": [
+    {
+      "role": "airliner",
+      "source_dimensions": [
+        0.6098291277885437,
+        0.6371986865997314,
+        0.17179155349731445
+      ],
+      "scale": 99.86403932663066,
+      "dimensions_m": [
+        63.63324546813965,
+        60.90000534057617,
+        17.155797004699707
+      ],
+      "wingspan_m": 60.9,
+      "obj_sha256": "b71eceeae823d53d055c748e30eae1f77152f0862440b964c1697b6958706bca",
+      "blender_version": "4.5.9 LTS",
+      "normalization": "declared research scale; verify variant and axis before production",
+      "source_meshes": 1,
+      "materials": [
+        "GlassM",
+        "GlassPM",
+        "MetalM",
+        "MetalPM",
+        "PaintM",
+        "PaintPM",
+        "PlasticM"
+      ]
+    },
+    {
+      "role": "uav",
+      "source_dimensions": [
+        0.061618007719516754,
+        0.0389934703707695,
+        0.015912886708974838
+      ],
+      "scale": 98.99703391526401,
+      "dimensions_m": [
+        3.860237956047058,
+        6.099999904632568,
+        1.5753286480903625
+      ],
+      "wingspan_m": 6.1,
+      "obj_sha256": "caecd36a0d4ee8cf09b0d87a9eca9f7d866b3c8b68939137196cd888aa0100f4",
+      "blender_version": "4.5.9 LTS",
+      "normalization": "declared research scale; verify variant and axis before production",
+      "source_meshes": 1,
+      "materials": [
+        "GlassM",
+        "GlassPM",
+        "MetalM",
+        "MetalPM",
+        "PaintM",
+        "PaintPM",
+        "PlasticM",
+        "PlasticPM",
+        "RubberPM"
+      ]
+    }
+  ],
+  "python": "3.13.14 (main, Jun 11 2026, 04:04:46) [MSC v.1944 64 bit (AMD64)]",
+  "numpy": "2.5.4",
+  "results": {
+    "airliner_crossing": {
+      "frames": 4,
+      "range_m": [
+        22397.44603676147,
+        22648.767934915184
+      ],
+      "radar_detected_frames": 4,
+      "max_calibration_projection_error_px": 6.821210263296962e-13,
+      "image_content_registration": "not yet independently validated",
+      "real_sensor_validation": "none",
+      "classification_training_ready": false,
+      "classification_training_reason": "two model instances only; uncalibrated sensors/materials; QA sequences",
+      "errors": [],
+      "passed": true
+    },
+    "airliner_opposite": {
+      "frames": 4,
+      "range_m": [
+        22037.322636147117,
+        22648.767934915184
+      ],
+      "radar_detected_frames": 4,
+      "max_calibration_projection_error_px": 1.0231815394945443e-12,
+      "image_content_registration": "not yet independently validated",
+      "real_sensor_validation": "none",
+      "classification_training_ready": false,
+      "classification_training_reason": "two model instances only; uncalibrated sensors/materials; QA sequences",
+      "errors": [],
+      "passed": true
+    },
+    "airliner_parallel": {
+      "frames": 4,
+      "range_m": [
+        22619.628400343852,
+        22648.767934915184
+      ],
+      "radar_detected_frames": 4,
+      "max_calibration_projection_error_px": 8.242295734817162e-13,
+      "image_content_registration": "not yet independently validated",
+      "real_sensor_validation": "none",
+      "classification_training_ready": false,
+      "classification_training_reason": "two model instances only; uncalibrated sensors/materials; QA sequences",
+      "errors": [],
+      "passed": true
+    },
+    "uav_crossing": {
+      "frames": 4,
+      "range_m": [
+        22342.547272361633,
+        22649.435282534403
+      ],
+      "radar_detected_frames": 0,
+      "max_calibration_projection_error_px": 6.536993168992922e-13,
+      "image_content_registration": "not yet independently validated",
+      "real_sensor_validation": "none",
+      "classification_training_ready": false,
+      "classification_training_reason": "two model instances only; uncalibrated sensors/materials; QA sequences",
+      "errors": [],
+      "passed": true
+    },
+    "uav_opposite": {
+      "frames": 4,
+      "range_m": [
+        22270.81091064522,
+        22649.435282534403
+      ],
+      "radar_detected_frames": 0,
+      "max_calibration_projection_error_px": 4.831690603168681e-13,
+      "image_content_registration": "not yet independently validated",
+      "real_sensor_validation": "none",
+      "classification_training_ready": false,
+      "classification_training_reason": "two model instances only; uncalibrated sensors/materials; QA sequences",
+      "errors": [],
+      "passed": true
+    },
+    "uav_parallel": {
+      "frames": 4,
+      "range_m": [
+        22387.26911924977,
+        22649.435282534403
+      ],
+      "radar_detected_frames": 0,
+      "max_calibration_projection_error_px": 6.821210263296962e-13,
+      "image_content_registration": "not yet independently validated",
+      "real_sensor_validation": "none",
+      "classification_training_ready": false,
+      "classification_training_reason": "two model instances only; uncalibrated sensors/materials; QA sequences",
+      "errors": [],
+      "passed": true
+    }
+  },
+  "selftest": "ALL PASS",
+  "regression_tests": {
+    "passed": 7,
+    "failed": 0
+  },
+  "singleton_pipeline_check": "IR PNG byte-identical, RD arrays identical, observations identical",
+  "source_manifest_check": "all recorded source hashes match generated run",
+  "status": "QA only; image-content registration and real-sensor validation outstanding"
+}

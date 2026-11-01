@@ -36,6 +36,19 @@ MATERIALS = {
     "rubber": dict(rf_rho=0.20, rough_m=0.0080, emissivity=0.93,
                    emissivity_mwir=0.92, emissivity_lwir=0.93,
                    alpha_solar=0.92, albedo=(0.08, 0.08, 0.09), h_int=0.0),
+    # Explicit engineering prior for an opaque, dry, unfilled nonconductive
+    # polymer. It is NOT valid for every plastic (clear/thin/filled/carbon-loaded
+    # polymers require another preset or measurements). RF amplitude follows
+    # normal-incidence Fresnel reflection with assumed real epsilon_r=2.5:
+    # |(sqrt(epsilon_r)-1)/(sqrt(epsilon_r)+1)| ~= 0.225. This is a boundary
+    # coefficient consumed by the existing approximate scatterer, not an RCS.
+    "plastic": dict(rf_rho=0.225, rough_m=0.0010, emissivity=0.93,
+                    emissivity_mwir=0.90, emissivity_lwir=0.94,
+                    alpha_solar=0.50, albedo=(0.65, 0.65, 0.65), h_int=0.0,
+                    relative_permittivity_assumed=2.5,
+                    assumption="Declared engineering prior, not measured material data: opaque dry "
+                               "unfilled polymer; epsilon_r=2.5 Fresnel RF amplitude; thermal/optical "
+                               "values are configurable baseline assumptions, not absolute RCS or spectral measurements."),
     "clothing": dict(rf_rho=0.15, rough_m=0.0200, emissivity=0.96,
                      emissivity_mwir=0.90, emissivity_lwir=0.96,
                      alpha_solar=0.75, albedo=(0.30, 0.32, 0.38), h_int=0.0),
@@ -67,3 +80,36 @@ def get(name):
     if name not in MATERIALS:
         raise KeyError("unknown material: %s (have: %s)" % (name, ", ".join(sorted(MATERIALS))))
     return MATERIALS[name]
+
+
+def physical_face_materials(mesh, spec):
+    """Explicit source-name -> physical-library mapping, never inferred from RGB.
+
+    OBJ material names and MTL colours do not establish emissivity or radar
+    reflectivity. Unmapped names retain the object's declared fallback and are
+    recorded so the assumption is reviewable in dataset provenance.
+    """
+    import numpy as np
+
+    fallback = spec.get("mat", "painted_metal")
+    get(fallback)
+    mapping = spec.get("material_map", {})
+    if not isinstance(mapping, dict):
+        raise ValueError("material_map must map source material names to physical material names")
+    for source, target in mapping.items():
+        if not isinstance(source, str) or not isinstance(target, str):
+            raise ValueError("material_map keys and values must be strings")
+        get(target)
+    names = np.asarray(getattr(mesh, "face_source_material", [""]*len(mesh.f)), dtype=object)
+    physical = np.array([mapping.get(name, fallback) for name in names], dtype=object)
+    used = sorted(set(str(v) for v in names if v))
+    report = dict(fallback=fallback, source_names=used,
+                  mapped={name: mapping[name] for name in used if name in mapping},
+                  unmapped=[name for name in used if name not in mapping],
+                  unspecified_faces=int(np.count_nonzero(names == "")),
+                  import_appearance=bool(spec.get("import_materials", False)),
+                  physical_properties="explicit mapping or object fallback; not inferred from MTL colour")
+    report["material_assumptions"] = {
+        name: MATERIALS[name]["assumption"] for name in sorted(set(physical))
+        if MATERIALS[name].get("assumption")}
+    return physical, report

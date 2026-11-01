@@ -119,6 +119,7 @@ def write_manifest(cfg, states, out_dir, part=None):
     # IR/radar/lidar tracked the target, and the boxes would disagree.
     lab.write_json(path, dict(frames=[dict(frame=int(s["frame"]), t=s["t"],
                                             objects=s["poses"],
+                                            shutter_samples=s.get("shutter_samples"),
                                             camera=_cams(s),
                                             views=_views(s),
                                             range_m=s.get("range_m"),

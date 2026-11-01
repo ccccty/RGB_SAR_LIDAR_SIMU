@@ -6,7 +6,7 @@ import numpy as np
 
 from . import materials as matlib
 from .bvh import BVH
-from .mesh import (Mesh, box, cylinder, decimate, load_obj, normalize_to_height,
+from .mesh import (Mesh, box, cylinder, clean_faces, decimate, load_obj, normalize_to_height,
                    plane, rot_z, sea)
 
 SIGMA = 5.670374419e-8
@@ -15,12 +15,19 @@ SIGMA = 5.670374419e-8
 class World:
     """Flattened triangle soup plus bookkeeping for labels."""
 
-    def __init__(self, verts, faces, face_obj, face_mat, objs):
+    def __init__(self, verts, faces, face_obj, face_mat, objs, *, face_source_material=None,
+                 face_group=None, face_local_centers=None):
         self.verts = verts
         self.faces = faces
         self.face_obj = face_obj      # (F,) int, -1 = background
         self.face_mat = face_mat      # (F,) int index into MATERIALS list
         self.objs = objs              # list of dicts
+        self.face_source_material = (np.full(len(faces), "", dtype=object) if face_source_material is None
+                                     else np.asarray(face_source_material, dtype=object))
+        self.face_group = (np.full(len(faces), "", dtype=object) if face_group is None
+                           else np.asarray(face_group, dtype=object))
+        self.face_local_centers = (np.asarray(verts)[np.asarray(faces)].mean(axis=1)
+                                   if face_local_centers is None else np.asarray(face_local_centers, float))
         self._bvh = None
 
     @property
@@ -63,13 +70,14 @@ def prepare_mesh(spec, base_dir):
     if "scale" in spec:
         s = spec["scale"]
         s = [float(s)] * 3 if isinstance(s, (int, float)) else [float(v) for v in s]
-        m = Mesh(m.v * np.array(s), m.f, m.name, m.mat)
+        m = m.with_geometry(verts=m.v * np.array(s))
     if "height" in spec:
         m = normalize_to_height(m, float(spec["height"]))
     lo, hi = m.bbox
     c_local = (lo + hi) / 2.0
     shift = np.array([c_local[0], c_local[1], lo[2]])
-    m = Mesh(m.v - shift, m.f, m.name, m.mat)
+    m = m.with_geometry(verts=m.v - shift)
+    m = clean_faces(m)
     return m, (lo - shift), (hi - shift)
 
 
@@ -79,18 +87,24 @@ def build_world(cfg, t=0.0, jitter=None):
     mat_index = {n: i for i, n in enumerate(mat_names)}
 
     verts_all, faces_all, fobj, fmat = [], [], [], []
+    source_mats, source_groups, local_centers = [], [], []
     objs = []
     voff = 0
     fo = 0
 
-    def add(mesh, obj_id, mat_name):
+    def add(mesh, obj_id, mat_name, spec=None, local=None):
         nonlocal voff, fo
         verts_all.append(mesh.v)
         faces_all.append(mesh.f + voff)
         fobj.append(np.full(len(mesh.f), obj_id, np.int32))
-        fmat.append(np.full(len(mesh.f), mat_index[mat_name], np.int32))
+        physical, report = matlib.physical_face_materials(mesh, spec or {"mat": mat_name})
+        fmat.append(np.array([mat_index[name] for name in physical], np.int32))
+        source_mats.append(mesh.face_source_material)
+        source_groups.append(mesh.face_group)
+        local_centers.append(mesh.centers if local is None else local)
         voff += len(mesh.v)
         fo += len(mesh.f)
+        return report
 
     # ground / sea (optional: air scenes may disable it or push it far below)
     g = cfg.get("ground", {})
@@ -126,9 +140,11 @@ def build_world(cfg, t=0.0, jitter=None):
                 vel = np.array(j["vel"], float)
 
         R = rot_z(yaw)
-        wm = Mesh(m.v @ R.T + pos, m.f, spec.get("name", "obj%d" % i),
-                  spec.get("mat", "painted_metal"))
-        add(wm, i, spec.get("mat", "painted_metal"))
+        wm = m.transformed(R=R, t=pos)
+        wm.name = spec.get("name", "obj%d" % i)
+        wm.mat = spec.get("mat", "painted_metal")
+        material_report = add(wm, i, wm.mat, spec=spec, local=m.centers)
+        material_report["geometry_cleanup"] = m.cleanup_report
 
         corners = np.array([[x, y, z] for x in (lo[0], hi[0])
                             for y in (lo[1], hi[1]) for z in (lo[2], hi[2])])
@@ -142,11 +158,16 @@ def build_world(cfg, t=0.0, jitter=None):
             # scenery objects are geometry only: they cast shadows, occlude and
             # return radar energy, but never appear in a label or a dataset class
             label=bool(spec.get("label", True)),
+            thermal_regions=spec.get("thermal_regions", []),
+            source_material_report=material_report,
         ))
 
     verts = np.vstack(verts_all)
     faces = np.vstack(faces_all)
-    return World(verts, faces, np.concatenate(fobj), np.concatenate(fmat), objs)
+    return World(verts, faces, np.concatenate(fobj), np.concatenate(fmat), objs,
+                 face_source_material=np.concatenate(source_mats),
+                 face_group=np.concatenate(source_groups),
+                 face_local_centers=np.vstack(local_centers))
 
 
 def load_config(path):

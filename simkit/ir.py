@@ -3,7 +3,7 @@ import numpy as np
 
 from . import materials as matlib
 from . import spectra as speclib
-from . import thermal
+from . import thermal, atmosphere
 from .scene import sensor_basis
 from .weather import IR_BANDS, band_name_of
 
@@ -14,6 +14,8 @@ K_BOLTZ = 1.380649e-23
 
 def planck_band(T, lam1_um, lam2_um, n=48):
     """In-band spectral radiance W/(m^2 sr) for temperature(s) T in Kelvin."""
+    if n < 2 or not 0 < lam1_um < lam2_um:
+        raise ValueError("Planck integration needs >=2 samples and 0 < lambda1 < lambda2")
     lam = np.linspace(lam1_um, lam2_um, n)[None, :] * 1e-6
     c1 = 2.0 * H_PLANCK * C_LIGHT ** 2
     c2 = H_PLANCK * C_LIGHT / K_BOLTZ
@@ -21,15 +23,33 @@ def planck_band(T, lam1_um, lam2_um, n=48):
     with np.errstate(over="ignore", invalid="ignore"):
         B = c1 / lam ** 5 / (np.expm1(c2 / (lam * T)))
     B = np.nan_to_num(B, nan=0.0, posinf=0.0)
-    lam_step = (lam2_um - lam1_um) / (n - 1) * 1e-6
-    return B.sum(axis=1) * lam_step
+    # Endpoint rectangles over-counted the band radiance by about 2% at the
+    # default 48 samples. A trapezoidal spectral integral has the right limits.
+    return np.trapezoid(B, lam[0], axis=1)
 
 
 def transmittance(range_m, tau_per_km):
     return np.exp(-tau_per_km * np.asarray(range_m, float) / 1000.0)
 
 
-def rasterize(world, cam, face_value, background=0.0):
+def _clip_near_triangle(vertices, near=0.05):
+    """Clip a camera-space triangle to Z>=near, retaining its surface geometry."""
+    polygon = []
+    previous = vertices[-1]
+    previous_inside = previous[2] >= near
+    for current in vertices:
+        current_inside = current[2] >= near
+        if current_inside != previous_inside:
+            fraction = (near-previous[2])/(current[2]-previous[2])
+            polygon.append(previous+(current-previous)*fraction)
+        if current_inside:
+            polygon.append(current)
+        previous, previous_inside = current, current_inside
+    return [np.array([polygon[0], polygon[index], polygon[index+1]])
+            for index in range(1, len(polygon)-1)]
+
+
+def rasterize(world, cam, face_value, background=0.0, subpixel_mode="legacy"):
     """Z-buffer flat shading of per-face scalar values."""
     W, H = int(cam["width"]), int(cam["height"])
     p, r, u, f = sensor_basis(cam["pos"], cam["look_at"], cam.get("up", (0, 0, 1)),
@@ -50,13 +70,21 @@ def rasterize(world, cam, face_value, background=0.0):
     pid = np.full((H, W), -1, np.int32)
     tri = world.faces
     zt = zc[tri]
-    ok = (zt > 0.05).all(axis=1)
 
-    order = np.where(ok)[0]
+    def projected_triangles():
+        for i in np.where((zt >= 0.05).any(axis=1))[0]:
+            if (zt[i] >= 0.05).all():
+                yield i, su[tri[i]], sv[tri[i]], zt[i]
+            else:
+                # Previously throwing away the whole face left holes in the
+                # ground whenever a triangle straddled the camera plane.
+                vertices = np.column_stack([xc[tri[i]], yc[tri[i]], zc[tri[i]]])
+                for piece in _clip_near_triangle(vertices):
+                    yield (i, W/2+fx*piece[:, 0]/piece[:, 2],
+                           H/2-fy*piece[:, 1]/piece[:, 2], piece[:, 2])
+
     # draw far faces first is irrelevant (z-test), iterate all
-    for i in order:
-        uu = su[tri[i]]
-        vv = sv[tri[i]]
+    for i, uu, vv, zi in projected_triangles():
         x0 = max(int(np.floor(uu.min())), 0)
         x1 = min(int(np.ceil(uu.max())) + 1, W)
         y0 = max(int(np.floor(vv.min())), 0)
@@ -75,7 +103,7 @@ def rasterize(world, cam, face_value, background=0.0):
         inside = (l0 >= -1e-6) & (l1 >= -1e-6) & (l2 >= -1e-6)
         if not inside.any():
             continue
-        invz = l0 / zt[i, 0] + l1 / zt[i, 1] + l2 / zt[i, 2]
+        invz = l0 / zi[0] + l1 / zi[1] + l2 / zi[2]
         with np.errstate(divide="ignore", invalid="ignore"):
             zpix = np.where(np.abs(invz) > 1e-12, 1.0 / invz, np.inf)
         sub_d = depth[y0:y1, x0:x1]
@@ -92,8 +120,12 @@ def rasterize(world, cam, face_value, background=0.0):
     # label but no target. A real focal plane still returns one pixel of signal
     # there, so stamp the object's own mean radiance into the pixel its centre
     # projects to (a point-target response at the sampling limit).
+    if subpixel_mode not in ("legacy", "none", "coverage"):
+        raise ValueError("ir.subpixel_mode must be legacy, none or coverage")
     present = set(np.unique(pid).tolist())
     for o in getattr(world, "objs", []):
+        if subpixel_mode != "legacy":
+            break
         if not o.get("label", True) or o["id"] in present:
             continue
         rel = np.asarray(o["corners"], float).mean(axis=0) - p
@@ -114,6 +146,84 @@ def rasterize(world, cam, face_value, background=0.0):
 
     img = np.where(np.isnan(img), background, img)
     return img, depth, pid
+
+
+def surface_temperature_texture(world, cfg):
+    """Smooth object-local variation, invariant to frame time, pose and noise.
+
+    Detector temporal noise belongs later in the sensor chain. Independent
+    per-face/per-frame temperatures invented flickering heat sources and made
+    the same triangle differ between MWIR and LWIR.
+    """
+    import zlib
+    spec = cfg.get("ir") or {}
+    amplitude = float(spec.get("texture_sigma_c", 0.6))
+    if amplitude <= 0:
+        return np.zeros(len(world.faces))
+    if spec.get("texture_mode", "surface") == "legacy_per_frame":
+        rng = np.random.default_rng(int(cfg.get("_frame_seed", 0))*131+7)
+        return rng.normal(0.0, amplitude, len(world.faces))
+    if spec.get("texture_mode", "surface") != "surface":
+        raise ValueError("ir.texture_mode must be surface or legacy_per_frame")
+    local = getattr(world, "face_local_centers", None)
+    if local is None:
+        local = thermal.face_centers(world).copy()
+        for obj in world.objs:
+            selected = world.face_obj == obj["id"]
+            theta = np.radians(float(obj["yaw"]))
+            rotation = np.array([[np.cos(theta), -np.sin(theta), 0],
+                                 [np.sin(theta), np.cos(theta), 0], [0, 0, 1]])
+            local[selected] = (local[selected]-obj["pos"]) @ rotation
+    scale = float(spec.get("texture_scale_m", 1.0))
+    if not np.isfinite(scale) or scale <= 0:
+        raise ValueError("ir.texture_scale_m must be positive")
+    result = np.zeros(len(world.faces))
+    names = {-1: "background", **{obj["id"]: obj["name"] for obj in world.objs}}
+    for identifier in np.unique(world.face_obj):
+        selected = world.face_obj == identifier
+        seed = int(spec.get("texture_seed", cfg.get("seed", 0)))
+        seed = (seed+zlib.crc32(names.get(int(identifier), str(identifier)).encode("utf-8"))) % (2**32)
+        rng = np.random.default_rng(seed)
+        directions = rng.normal(size=(8, 3))
+        directions /= np.linalg.norm(directions, axis=1, keepdims=True)
+        phases = rng.uniform(0, 2*np.pi, 8)
+        wavelength = float(spec.get("ground_texture_scale_m", 100.0)) if identifier < 0 else scale
+        variation = np.sin(local[selected] @ directions.T * (2*np.pi/wavelength) + phases)
+        result[selected] = amplitude*np.sqrt(2/8)*variation.sum(axis=1)
+    return result
+
+
+def _pixel_atmosphere(source, depth, cam, cfg, band, bname, legacy_tau, background):
+    """Propagate radiance per pixel, preserving depth's forward-camera-Z units."""
+    H, W = source.shape
+    p, right, up, forward = sensor_basis(cam["pos"], cam["look_at"],
+                                         cam.get("up", (0, 0, 1)), cam.get("roll_deg", 0))
+    fx = W/(2*np.tan(np.radians(cam.get("fov_deg", 30))/2))
+    x = (np.arange(W)+0.5-W/2)/fx
+    y = -(np.arange(H)+0.5-H/2)/fx
+    directions = forward + x[None, :, None]*right + y[:, None, None]*up
+    hit = np.isfinite(depth)
+    if not atmosphere.enabled(cfg):
+        distance = np.where(hit, depth, 0)*np.linalg.norm(directions, axis=2)
+        tau = transmittance(distance, legacy_tau)
+        env = float(cfg.get("air", {}).get("temp_c", 20))+273.15
+        path = (1-tau)*planck_band([env], *band)[0]
+        return np.where(hit, source*tau+path, background)
+    flat_d = directions.reshape(-1, 3)
+    flat_depth = depth.ravel()
+    flat_source = source.ravel()
+    output = np.empty_like(flat_source)
+    for start in range(0, len(flat_d), 32768):
+        stop = min(start+32768, len(flat_d))
+        d = flat_d[start:stop]
+        z = flat_depth[start:stop]
+        valid = np.isfinite(z)
+        endpoints = atmosphere.sky_endpoints(p, d, cfg)
+        endpoints[valid] = p+d[valid]*z[valid, None]
+        tau = atmosphere.path_transmittance(p, endpoints, cfg, bname or "lwir")
+        path = atmosphere.path_emission(p, endpoints, cfg, band, bname or "lwir")
+        output[start:stop] = np.where(valid, flat_source[start:stop]*tau, 0.0)+path
+    return output.reshape(H, W)
 
 
 def gaussian_blur(img, sigma):
@@ -187,11 +297,8 @@ def render(world, cfg, temps_k, cam=None):
     cent = world.verts[world.faces].mean(axis=1)
     rng = np.linalg.norm(cent - p, axis=1)
 
-    # per-face temperature texture: real surfaces are never perfectly uniform
-    tex = float(ircfg.get("texture_sigma_c", 0.6))
-    if tex > 0:
-        rng_tex = np.random.default_rng(int(cfg.get("_frame_seed", 0)) * 131 + 7)
-        temps_k = temps_k + rng_tex.normal(0.0, tex, temps_k.shape)
+    # Stable surface variation is shared by both IR bands and across frames.
+    temps_k = temps_k + surface_temperature_texture(world, cfg)
     w = cfg.get("_weather")
     t_env = cfg.get("air", {}).get("temp_c", 20.0) + 273.15
     b_air = planck_band(np.array([t_env]), band[0], band[1])[0]
@@ -222,11 +329,31 @@ def render(world, cfg, temps_k, cam=None):
     # Isothermal path: the atmosphere both attenuates the target and adds its
     # own emission. Omitting the second term biases every scene cold by an
     # amount that grows with range, which teaches a detector "far = cold".
-    tau_f = transmittance(rng, tau)
-    L = tau_f * (L_self + (1.0 - eps_face) * L_env) + (1.0 - tau_f) * b_air
-
-    img, depth, pid = rasterize(world, cam, L, background=L_sky)
-    img = gaussian_blur(img, blur)
+    L = L_self + (1.0-eps_face)*L_env
+    samples = int(ircfg.get("samples_per_axis", 1))
+    if samples not in (1, 2, 3, 4):
+        raise ValueError("ir.samples_per_axis must be 1..4")
+    subpixel_mode = ircfg.get("subpixel_mode", "legacy")
+    if subpixel_mode == "coverage" and samples < 2:
+        raise ValueError("ir coverage mode requires samples_per_axis >= 2")
+    high_cam = dict(cam, width=int(cam["width"])*samples, height=int(cam["height"])*samples)
+    img, depth, pid = rasterize(world, high_cam, L, background=0.0,
+                                subpixel_mode=subpixel_mode if samples == 1 else "none")
+    img = _pixel_atmosphere(img, depth, high_cam, cfg, band, bname, tau, L_sky)
+    img = gaussian_blur(img, blur*samples)
+    instance_coverage = {}
+    if samples > 1:
+        H, W = int(cam["height"]), int(cam["width"])
+        shape = (H, samples, W, samples)
+        img = img.reshape(shape).mean(axis=(1, 3))
+        for obj in world.objs:
+            if obj.get("label", True):
+                instance_coverage[obj["id"]] = (pid == obj["id"]).reshape(shape).mean(axis=(1, 3))
+        ds = depth.reshape(shape).transpose(0, 2, 1, 3).reshape(H, W, -1)
+        ids = pid.reshape(shape).transpose(0, 2, 1, 3).reshape(H, W, -1)
+        nearest = np.argmin(ds, axis=2)
+        depth = np.take_along_axis(ds, nearest[..., None], axis=2)[..., 0]
+        pid = np.take_along_axis(ids, nearest[..., None], axis=2)[..., 0]
 
     # NETD is a temperature noise, so the radiance noise is netd * dL/dT and
     # dL/dT must be taken per pixel: between 250 K and 350 K it changes by 22x in
@@ -298,10 +425,13 @@ def render(world, cfg, temps_k, cam=None):
         prev = np.clip((t_img - tlo) / max(thi - tlo, 1e-6), 0, 1)
     return dict(
         radiance=img,
-        counts_u16=counts.astype(np.uint16),
+        counts_u16=np.clip(counts, 0.0, 65535.0).astype(np.uint16),
         preview=(np.clip(prev, 0, 1) * 255).astype(np.uint8),
         apparent_temp_k=t_img,
         depth=depth,
         obj_id=pid,
         temperature_k=temps_k,
+        instance_coverage=instance_coverage,
+        sampling=dict(samples_per_axis=samples, subpixel_mode=subpixel_mode,
+                      depth_rule="minimum forward-camera-Z among pixel subsamples" if samples > 1 else "pixel-center forward-camera-Z"),
     )

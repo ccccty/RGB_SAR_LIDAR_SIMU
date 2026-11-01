@@ -310,15 +310,19 @@ def build_scene():
 
     # objects
     meshes = {}
-    for spec in cfg.get("objects", []):
+    for object_index, spec in enumerate(cfg.get("objects", [])):
         # prepare_mesh applies decimate/scale/height exactly as the numpy world
         # builder does, and returns the recentred bbox used for projections.
         m, lo, hi = sk_scene.prepare_mesh(spec, cfg.get("_base_dir", "."))
         sizes = hi - lo
         ob = add_mesh_object(spec.get("name", "obj"), m, spec.get("mat", "painted_metal"),
                              spec.get("pos", (0, 0, 0)), spec.get("rot", 0.0))
+        ob.pass_index = object_index+1
+        from blender.material_helpers import apply_source_materials
+        material_report = apply_source_materials(ob, m, spec, cfg.get("_base_dir", "."))
         meshes[spec.get("name", "obj")] = dict(ob=ob, size=sizes, lo=lo, hi=hi,
-                                               label=bool(spec.get("label", True)))
+                                               label=bool(spec.get("label", True)),
+                                               material_report=material_report)
 
     # camera
     cd = bpy.data.cameras.new("cam")
@@ -386,8 +390,16 @@ def aim_camera(sc, cam, pose, view, cam_key):
         roll = float(pose.get("roll_deg", 0.0) or 0.0)
         if roll:
             q = q @ Quaternion((0.0, 0.0, 1.0), math.radians(roll))
-        cam.rotation_euler = q.to_euler()
+        cam.rotation_mode = "QUATERNION"
+        cam.rotation_quaternion = q
     bpy.context.view_layer.update()
+    # Model-local bounds omit object translation. The old far plane could clip
+    # a 22 km aircraft while still exporting its projected label. Recompute
+    # after every world/camera pose update, including the exposure probe.
+    from simkit.optical import camera_clip_end
+    world_corners = [tuple(ob.matrix_world @ Vector(c))
+                     for ob in sc.objects if ob.type == "MESH" for c in ob.bound_box]
+    cam.data.clip_end = camera_clip_end(tuple(cam.location), world_corners)
 
 
 def pose_for(fr, view):
@@ -502,6 +514,11 @@ def main():
             exposures[v["name"]] = auto_exposure(
                 sc, v, opt.get("exposure_bias", 0.0))
     base_exp = opt.get("exposure_bias", 0.0)
+    export_geometry = bool(opt.get("export_geometry") or (opt.get("sensor") or {}).get("enabled"))
+    pass_output = None
+    if export_geometry:
+        from blender.sensor_helpers import setup_passes
+        pass_output = setup_passes(sc, os.path.join(OUT_DIR, "_passes"))
     for v in VIEWS:
         os.makedirs(os.path.join(OUT_DIR, "images", "optical" + v["tag"]), exist_ok=True)
         os.makedirs(os.path.join(OUT_DIR, "labels", "optical" + v["tag"]), exist_ok=True)
@@ -561,6 +578,13 @@ def main():
                     - (0.35 if opt.get("auto_exposure", True) else 0.6) * cl - rain)
             W, H = int(v["width"]), int(v["height"])
             path = os.path.join(OUT_DIR, "images", "optical" + v["tag"], "%06d.png" % fid)
+            from blender.sensor_helpers import configure_exposure
+            configure_exposure(sc, cam, meshes, fr, v,
+                               float(cfg.get("frames", {}).get("dt", 0.2)),
+                               bool(opt.get("motion_blur", False)))
+            if pass_output is not None:
+                from blender.sensor_helpers import pass_paths
+                pass_paths(pass_output, "%06d%s" % (fid, v["tag"]))
             sc.render.filepath = path
             try:
                 bpy.ops.render.render(write_still=True)
@@ -578,6 +602,32 @@ def main():
             if not os.path.exists(path):
                 raise RuntimeError("render did not produce %s (frame_path=%s)"
                                    % (path, sc.render.frame_path()))
+
+            measured_ids, sensor_metadata = None, None
+            if pass_output is not None:
+                from blender.sensor_helpers import read_passes
+                raw = read_passes(pass_output, "%06d%s" % (fid, v["tag"]), W, H)
+                measured_ids = np.rint(raw["instance"]).astype(np.int32)-1
+                depth = raw["depth"]
+                valid_depth = np.isfinite(depth) & (depth > 0) & (depth < 1e9)
+                depth = np.where(valid_depth, depth, np.inf).astype(np.float32)
+                raw_data = dict(linear_scene=raw["linear"], depth_z_m=depth,
+                                instance_id=measured_ids, valid_depth=valid_depth)
+                if (opt.get("sensor") or {}).get("enabled"):
+                    from simkit.optical_sensor import forward
+                    from simkit import png as png_writer
+                    sensor_cfg = dict(cfg, weather=w)
+                    sensor = forward(raw["linear"], depth, pose, sensor_cfg,
+                                     int(cfg.get("seed", 0))*100003+fid,
+                                     exposure_stops=sc.view_settings.exposure)
+                    png_writer.write_rgb8(path, sensor["image_u8"])
+                    raw_data.update(counts_u16=sensor["counts_u16"],
+                                    linear_received=sensor["linear_received"],
+                                    transmittance=sensor["transmittance"])
+                    sensor_metadata = sensor["metadata"]
+                raw_dir = os.path.join(OUT_DIR, "raw", "optical"+v["tag"])
+                os.makedirs(raw_dir, exist_ok=True)
+                np.savez_compressed(os.path.join(raw_dir, "%06d.npz" % fid), **raw_data)
 
             boxes = {}
             for name, info in meshes.items():
@@ -614,12 +664,23 @@ def main():
                 hit, loc, nrm, idx, hob, mat = sc.ray_cast(deps, cam.location,
                                                            d.normalized(), distance=d.length)
                 visible = (not hit) or (hob is not None and hob.name == name)
+                raster_pixels = None
+                if measured_ids is not None:
+                    raster_pixels = int(np.count_nonzero(measured_ids == ob.pass_index-1))
+                    visible = raster_pixels > 0
                 boxes[name] = dict(x0=round(x0, 1), y0=round(y0, 1),
                                    x1=round(x1, 1), y1=round(y1, 1),
-                                   visible=bool(visible), source="corners")
+                                   visible=bool(visible), source="corners",
+                                   pixels=raster_pixels,
+                                   visibility_source="rendered_instance_pass" if measured_ids is not None else "center_ray")
             json.dump(dict(frame=fid, image="%06d.png" % fid, width=W, height=H,
                            view=v["name"], fov_deg=float(v["fov_deg"]),
-                           boxes=boxes, weather=dict(w or {})),
+                           boxes=boxes, weather=dict(w or {}),
+                           sensor_model=sensor_metadata,
+                           motion_blur_simulated=bool(sc.render.use_motion_blur),
+                           material_reports={name: info["material_report"] for name, info in meshes.items()},
+                           geometry_passes=(dict(depth="camera_forward_z_m", instance="non-antialiased reference geometry")
+                                            if measured_ids is not None else None)),
                       open(os.path.join(OUT_DIR, "labels", "optical" + v["tag"],
                                         "%06d.json" % fid), "w", encoding="utf-8"), indent=1)
             done += 1

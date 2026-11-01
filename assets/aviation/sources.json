@@ -1,0 +1,24 @@
+[
+  {
+    "role": "airliner",
+    "model": "B777_LARC",
+    "url": "https://airbornescience.nasa.gov/3d-models/models/B777_LARC_AIR_1026.glb",
+    "source_page": "https://airbornescience.nasa.gov/3d-models/?id=B777_LARC",
+    "sha256": "3e6bc7b5cb9140be72b588a035ebb85ccc118d6d295cee8a25f3df5d835fd035",
+    "bytes": 30499688,
+    "verified_on": "2026-11-01",
+    "terms": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+    "usage": "Academic graphical simulation; credit NASA Airborne Science Program. NASA identifiers/trademarks remain protected; no endorsement implied."
+  },
+  {
+    "role": "uav",
+    "model": "SIERRA_ARC",
+    "url": "https://airbornescience.nasa.gov/3d-models/models/SIERRA_ARC_AIR_1026.glb",
+    "source_page": "https://airbornescience.nasa.gov/3d-models/?id=SIERRA_ARC",
+    "sha256": "594fd04140612231d0f7b6776dc7ed322eb06b767f53760742fdc8836154f95b",
+    "bytes": 10626596,
+    "verified_on": "2026-11-01",
+    "terms": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+    "usage": "Academic graphical simulation; credit NASA Airborne Science Program. NASA identifiers/trademarks remain protected; no endorsement implied."
+  }
+]

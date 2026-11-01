@@ -1,5 +1,8 @@
 """Triangle meshes: OBJ loading, primitives, transforms."""
 import math
+import copy
+import os
+import shlex
 
 import numpy as np
 
@@ -25,11 +28,33 @@ def rot_y(deg):
 class Mesh:
     """Triangle soup. Faces are (F,3) indices into verts."""
 
-    def __init__(self, verts, faces, name="mesh", mat="concrete"):
+    def __init__(self, verts, faces, name="mesh", mat="concrete", *,
+                 face_source_material=None, face_group=None, face_uv=None, source_materials=None):
         self.v = np.asarray(verts, dtype=np.float64).reshape(-1, 3)
         self.f = np.asarray(faces, dtype=np.int32).reshape(-1, 3)
         self.name = name
         self.mat = mat
+        n = len(self.f)
+        self.face_source_material = (np.full(n, "", dtype=object) if face_source_material is None
+                                     else np.asarray(face_source_material, dtype=object))
+        self.face_group = (np.full(n, "", dtype=object) if face_group is None
+                           else np.asarray(face_group, dtype=object))
+        self.face_uv = (np.full((n, 3, 2), np.nan, dtype=np.float32) if face_uv is None
+                        else np.asarray(face_uv, dtype=np.float32))
+        if self.face_source_material.shape != (n,) or self.face_group.shape != (n,) or self.face_uv.shape != (n, 3, 2):
+            raise ValueError("face attributes must match triangle count")
+        self.source_materials = source_materials or {}
+
+    def with_geometry(self, verts=None, faces=None, face_indices=None):
+        """Preserve source material/UV lineage when transforming or simplifying."""
+        take = slice(None) if face_indices is None else face_indices
+        out = Mesh(self.v if verts is None else verts, self.f if faces is None else faces,
+                   self.name, self.mat,
+                   face_source_material=self.face_source_material[take].copy(),
+                   face_group=self.face_group[take].copy(), face_uv=self.face_uv[take].copy(),
+                   source_materials=copy.deepcopy(self.source_materials))
+        out.cleanup_report = copy.deepcopy(getattr(self, "cleanup_report", {}))
+        return out
 
     # ---- geometry ----
     def tri(self):
@@ -59,10 +84,10 @@ class Mesh:
     def transformed(self, R=None, t=None):
         R = np.eye(3) if R is None else np.asarray(R, float)
         t = np.zeros(3) if t is None else np.asarray(t, float)
-        return Mesh(self.v @ R.T + t, self.f, self.name, self.mat)
+        return self.with_geometry(verts=self.v @ R.T + t)
 
     def copy(self):
-        return Mesh(self.v.copy(), self.f.copy(), self.name, self.mat)
+        return self.with_geometry(verts=self.v.copy(), faces=self.f.copy())
 
 
 def box(size, center=(0, 0, 0)):
@@ -180,7 +205,7 @@ def decimate(mesh, target_tris=None, grid=None):
             verts[:, k] = np.bincount(inv, weights=mesh.v[:, k]) / cnt
         f = inv[mesh.f]
         keep = (f[:, 0] != f[:, 1]) & (f[:, 1] != f[:, 2]) & (f[:, 0] != f[:, 2])
-        return verts, f[keep]
+        return verts, f[keep], keep
 
     if grid is None:
         # bisect the cell size so the surviving face count lands near the target
@@ -188,39 +213,154 @@ def decimate(mesh, target_tris=None, grid=None):
         a, b = diag / 400.0, diag / 2.0
         for _ in range(9):
             c = 0.5 * (a + b)
-            _, f = cluster(c)
+            _, f, _ = cluster(c)
             if len(f) > target:
                 a = c
             else:
                 b = c
-        verts, f = cluster(b)
+        verts, f, keep = cluster(b)
     else:
-        verts, f = cluster(max(float(grid), 1e-9))
+        verts, f, keep = cluster(max(float(grid), 1e-9))
     if len(f) == 0:
         return mesh
-    out = Mesh(verts, f, mesh.name, mesh.mat)
+    out = mesh.with_geometry(verts=verts, faces=f, face_indices=keep)
     out.mtl_normals = getattr(mesh, "mtl_normals", None)
     return out
 
 
+def clean_faces(mesh):
+    """Shared cleanup before physics and Blender ingest identical triangles.
+
+    Vertex clustering can turn separate source triangles into the same indexed
+    triangle. Blender Mesh.validate removes these faces; physics must do the
+    same first, with the same retained-face mask applied to UV/material lineage.
+    Winding-reversed duplicates retain the first source face deterministically.
+    Zero-area faces are checked at float32 vertex precision, matching Blender.
+    """
+    faces = np.asarray(mesh.f)
+    vertices = np.asarray(mesh.v, dtype=np.float32).astype(np.float64)
+    finite = np.isfinite(vertices).all(axis=1)
+    in_range = (faces >= 0).all(axis=1) & (faces < len(vertices)).all(axis=1)
+    candidates = np.flatnonzero(in_range)
+    keep = np.zeros(len(faces), dtype=bool)
+    duplicate_count, degenerate_count = 0, int(len(faces)-len(candidates))
+    if len(candidates):
+        f = faces[candidates]
+        tri = vertices[f]
+        valid = (finite[f].all(axis=1) &
+                 (np.linalg.norm(np.cross(tri[:, 1]-tri[:, 0], tri[:, 2]-tri[:, 0]), axis=1) > 0.0))
+        degenerate_count += int(np.count_nonzero(~valid))
+        candidates = candidates[valid]
+        _, first = np.unique(np.sort(faces[candidates], axis=1), axis=0, return_index=True)
+        duplicate_count = len(candidates)-len(first)
+        keep[candidates[np.sort(first)]] = True
+    if not keep.any():
+        raise ValueError("mesh has no nondegenerate unique triangles: " + mesh.name)
+    out = mesh.with_geometry(faces=faces[keep], face_indices=keep)
+    out.cleanup_report = dict(input_faces=len(faces), output_faces=int(keep.sum()),
+                              duplicate_faces_removed=int(duplicate_count),
+                              degenerate_or_invalid_faces_removed=int(degenerate_count),
+                              duplicate_policy="first source face retained; winding-independent indexed triangles")
+    return out
+
+
+def load_mtl(path):
+    """Read MTL appearance only; visible colour is not a thermal/RF measurement."""
+    out, current = {}, None
+    if not os.path.isfile(path):
+        return out
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for raw in fh:
+            line = raw.split("#", 1)[0].strip()
+            key, _, value = line.partition(" ")
+            value = value.strip()
+            if key == "newmtl":
+                current = out.setdefault(value, {"source_mtl": os.path.abspath(path)})
+            elif current is not None and key in ("Kd", "Ks", "Ke"):
+                current[key] = [float(v) for v in value.split()[:3]]
+            elif current is not None and key in ("Ns", "Ni", "d", "Tr", "Pr", "Pm"):
+                current[key] = float(value)
+            elif current is not None and key in ("map_Kd", "map_Pr", "map_Pm", "map_Bump", "bump", "norm"):
+                # MTL options precede the filename. Handle common map options;
+                # keep quoted spaces and avoid treating numeric option values
+                # as filenames. Missing assets are reported by the renderer.
+                parts = shlex.split(value, posix=False)
+                i = 0
+                while i < len(parts) and parts[i].startswith("-"):
+                    option = parts[i]
+                    i += 1
+                    if option in ("-o", "-s", "-t"):
+                        for _ in range(3):
+                            if i >= len(parts):
+                                break
+                            try:
+                                float(parts[i])
+                            except ValueError:
+                                break
+                            i += 1
+                    else:
+                        i += 2 if option == "-mm" else 1
+                filename = " ".join(parts[i:]).strip('"')
+                if filename:
+                    current[key] = os.path.abspath(os.path.join(os.path.dirname(path), filename))
+    return out
+
+
 def load_obj(path, name=None):
-    verts, faces = [], []
+    verts, faces, texcoords = [], [], []
+    face_mats, groups, uvs, libraries = [], [], [], []
+    material, group, object_name = "", "", ""
     with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-        for line in fh:
+        for raw in fh:
+            line = raw.split("#", 1)[0].strip()
             if line.startswith("v "):
                 p = line.split()
                 verts.append([float(p[1]), float(p[2]), float(p[3])])
+            elif line.startswith("vt "):
+                texcoords.append([float(v) for v in line.split()[1:3]])
+            elif line.startswith("usemtl "):
+                material = line[7:].strip()
+            elif line.startswith("g "):
+                group = line[2:].strip()
+            elif line.startswith("o "):
+                object_name = line[2:].strip()
+            elif line.startswith("mtllib "):
+                raw_path = line[7:].strip().strip('"')
+                candidate = os.path.join(os.path.dirname(path), raw_path)
+                libraries.extend([candidate] if os.path.isfile(candidate) else
+                                 [os.path.join(os.path.dirname(path), p.strip('"'))
+                                  for p in shlex.split(line[7:], posix=False)])
             elif line.startswith("f "):
-                idx = []
+                idx, uv_idx = [], []
                 for tok in line.split()[1:]:
-                    i = int(tok.split("/")[0])
-                    idx.append(i - 1 if i > 0 else len(verts) + i)
+                    fields = tok.split("/")
+                    i = int(fields[0])
+                    vi = i - 1 if i > 0 else len(verts) + i
+                    if i == 0 or not 0 <= vi < len(verts):
+                        raise ValueError("invalid OBJ vertex index: " + tok)
+                    idx.append(vi)
+                    ui = None
+                    if len(fields) > 1 and fields[1]:
+                        j = int(fields[1])
+                        ui = j - 1 if j > 0 else len(texcoords) + j
+                        if j == 0 or not 0 <= ui < len(texcoords):
+                            raise ValueError("invalid OBJ UV index: " + tok)
+                    uv_idx.append(ui)
                 for k in range(1, len(idx) - 1):
                     faces.append([idx[0], idx[k], idx[k + 1]])
+                    face_mats.append(material)
+                    groups.append(group or object_name)
+                    corners = [uv_idx[0], uv_idx[k], uv_idx[k+1]]
+                    uvs.append([texcoords[j] if j is not None else [np.nan, np.nan] for j in corners])
     if not verts or not faces:
         raise ValueError("empty or unsupported OBJ: " + str(path))
+    source_materials = {}
+    for lib in libraries:
+        source_materials.update(load_mtl(lib))
     return Mesh(np.array(verts, float), np.array(faces, np.int32),
-                name or path.split("\\")[-1].replace(".obj", ""))
+                name or os.path.basename(path).replace(".obj", ""),
+                face_source_material=face_mats, face_group=groups,
+                face_uv=uvs, source_materials=source_materials)
 
 
 def normalize_to_height(mesh, height, ground_z=0.0):
@@ -234,4 +374,4 @@ def normalize_to_height(mesh, height, ground_z=0.0):
     lo, hi = v.min(axis=0), v.max(axis=0)
     c = (lo + hi) / 2.0
     v = v - np.array([c[0], c[1], lo[2] - ground_z])
-    return Mesh(v, mesh.f, mesh.name, mesh.mat)
+    return mesh.with_geometry(verts=v)
