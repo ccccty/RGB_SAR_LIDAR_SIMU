@@ -52,7 +52,7 @@ def run(args, label):
     print("   ok  %.1fs" % dt)
 
 
-def gen_scene(name, cfg, frames, sensors, jobs, quiet=False):
+def gen_scene(name, cfg, frames, sensors, jobs, quiet=False, dest="out"):
     """Generate one scene, optionally as `jobs` parallel chunks then merged."""
     env = dict(os.environ)
     env["PYTHONPATH"] = ROOT
@@ -60,7 +60,7 @@ def gen_scene(name, cfg, frames, sensors, jobs, quiet=False):
     # them, and N instances then fight over the same cores.
     cores = os.cpu_count() or 4
     env["SIMKIT_BLENDER_THREADS"] = str(max(1, cores // max(jobs, 1)))
-    out = "out/" + name
+    out = dest + "/" + name
     if jobs <= 1:
         rc, _, dt = call([PY, "-m", "simkit", "gen", "-c", cfg, "-o", out,
                           "-n", str(frames), "-s", sensors] + (["-q"] if quiet else []),
@@ -105,6 +105,12 @@ def main():
     ap.add_argument("--only", default="",
                     help="comma-separated scene names to (re)generate, e.g. seeker_air2ground")
     ap.add_argument("-q", "--quiet", action="store_true")
+    ap.add_argument("--dest", default="out",
+                    help="run root (default: out). Point it elsewhere to keep "
+                         "the website data untouched.")
+    ap.add_argument("--no-web", action="store_true",
+                    help="render only: skip the merged COCO, the website export "
+                         "and the contact sheets")
     args = ap.parse_args()
 
     sensors = args.sensors
@@ -120,9 +126,15 @@ def main():
             if not os.path.exists(os.path.join(ROOT, cfg)):
                 print("skip (no scene): " + cfg)
                 continue
-            gen_scene(name, cfg, args.frames or frames, sensors, args.jobs, args.quiet)
+            gen_scene(name, cfg, args.frames or frames, sensors, args.jobs,
+                      args.quiet, args.dest)
 
-    runs = ["out/" + n for n, _, _ in SCENES if os.path.isdir(os.path.join(ROOT, "out", n))]
+    if args.no_web:
+        print("\ndone (render only). runs -> %s" % args.dest)
+        return
+
+    runs = [args.dest + "/" + n for n, _, _ in SCENES
+            if os.path.isdir(os.path.join(ROOT, args.dest, n))]
     if not runs:
         sys.exit("nothing generated: no out/ directories")
 

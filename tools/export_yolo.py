@@ -353,14 +353,6 @@ def main():
         print("composites -> %s" % os.path.join(args.out, "composites"))
         return 0
 
-    if args.only_compose:
-        st = compose_stacks(runs, args.out, cls_of, id_of, args)
-        for nm, v in sorted(st.items()):
-            print("%-14s %5d images %5d boxes  %s"
-                  % (nm, v["images"], v["boxes"], " + ".join(v["panels"])))
-        print("composites -> %s" % os.path.join(args.out, "composites"))
-        return 0
-
     if args.clean and os.path.isdir(args.out):
         shutil.rmtree(args.out)
     os.makedirs(args.out, exist_ok=True)

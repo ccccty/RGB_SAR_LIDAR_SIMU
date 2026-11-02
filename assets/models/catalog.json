@@ -17,7 +17,8 @@
    0.093
   ],
   "tris": 3500,
-  "bytes": 437965
+  "bytes": 437965,
+  "preview": "assets/models/旋翼无人机/四旋翼无人机.png"
  },
  {
   "id": "3Ae_y67lzvd",
@@ -37,7 +38,8 @@
    0.215
   ],
   "tris": 2397,
-  "bytes": 362290
+  "bytes": 362290,
+  "preview": "assets/models/旋翼无人机/四旋翼无人机改型.png"
  },
  {
   "id": "6CUQX98vha4",
@@ -57,7 +59,8 @@
    0.303
   ],
   "tris": 1132,
-  "bytes": 171648
+  "bytes": 171648,
+  "preview": "assets/models/旋翼无人机/多旋翼无人机.png"
  },
  {
   "id": "dJ9mjQQqDQJ",
@@ -77,7 +80,8 @@
    0.071
   ],
   "tris": 2690,
-  "bytes": 383636
+  "bytes": 383636,
+  "preview": "assets/models/旋翼无人机/小型四旋翼.png"
  },
  {
   "id": "dCOUTcu89u6",
@@ -97,7 +101,8 @@
    0.037
   ],
   "tris": 864,
-  "bytes": 96734
+  "bytes": 96734,
+  "preview": "assets/models/旋翼无人机/无人机机体.png"
  },
  {
   "id": "fyB_cRYLcUY",
@@ -117,7 +122,8 @@
    0.211
   ],
   "tris": 1830,
-  "bytes": 295259
+  "bytes": 295259,
+  "preview": "assets/models/旋翼无人机/航拍无人机.png"
  },
  {
   "id": "3Eio09miiAF",
@@ -137,7 +143,8 @@
    2.45
   ],
   "tris": 434,
-  "bytes": 64642
+  "bytes": 64642,
+  "preview": "assets/models/固定翼无人机/中空长航时无人机.png"
  },
  {
   "id": "hG2Qr0A3zR",
@@ -157,7 +164,8 @@
    4.004
   ],
   "tris": 1088,
-  "bytes": 109965
+  "bytes": 109965,
+  "preview": "assets/models/直升机/武装直升机.png"
  },
  {
   "id": "EQJ2MECUbx",
@@ -177,7 +185,8 @@
    3.544
   ],
   "tris": 1094,
-  "bytes": 120649
+  "bytes": 120649,
+  "preview": "assets/models/直升机/轻型直升机.png"
  },
  {
   "id": "eb7b31pjGtQ",
@@ -197,7 +206,8 @@
    6.811
   ],
   "tris": 840,
-  "bytes": 81186
+  "bytes": 81186,
+  "preview": "assets/models/直升机/运输直升机.png"
  },
  {
   "id": "cTzINMr0WdS",
@@ -217,7 +227,8 @@
    4.461
   ],
   "tris": 1041,
-  "bytes": 108267
+  "bytes": 108267,
+  "preview": "assets/models/直升机/通用直升机.png"
  },
  {
   "id": "a3XrQkLNna9",
@@ -237,7 +248,8 @@
    13.056
   ],
   "tris": 3500,
-  "bytes": 327341
+  "bytes": 327341,
+  "preview": "assets/models/民航飞机/双发窄体客机.png"
  },
  {
   "id": "8ciDd9k8wha",
@@ -257,7 +269,8 @@
    25.949
   ],
   "tris": 1772,
-  "bytes": 269400
+  "bytes": 269400,
+  "preview": "assets/models/民航飞机/四发宽体客机.png"
  },
  {
   "id": "8VysVKMXN2J",
@@ -277,7 +290,8 @@
    13.454
   ],
   "tris": 1770,
-  "bytes": 234244
+  "bytes": 234244,
+  "preview": "assets/models/民航飞机/支线客机.png"
  },
  {
   "id": "9Ev6pklkSYp",
@@ -297,7 +311,8 @@
    5.95
   ],
   "tris": 1886,
-  "bytes": 203565
+  "bytes": 203565,
+  "preview": "assets/models/民航飞机/涡桨支线机.png"
  },
  {
   "id": "2eG17I-VDiG",
@@ -317,7 +332,8 @@
    16.681
   ],
   "tris": 1426,
-  "bytes": 174289
+  "bytes": 174289,
+  "preview": "assets/models/民航飞机/货运飞机.png"
  },
  {
   "id": "6fyLMORhgGK",
@@ -337,7 +353,8 @@
    3.62
   ],
   "tris": 1434,
-  "bytes": 128436
+  "bytes": 128436,
+  "preview": "assets/models/军用飞机/单发战斗机.png"
  },
  {
   "id": "3B3Pa6BHXn1",
@@ -357,7 +374,8 @@
    5.795
   ],
   "tris": 928,
-  "bytes": 84620
+  "bytes": 84620,
+  "preview": "assets/models/军用飞机/双发战斗机.png"
  },
  {
   "id": "9iVI9GHMleJ",
@@ -377,7 +395,8 @@
    3.44
   ],
   "tris": 3499,
-  "bytes": 563442
+  "bytes": 563442,
+  "preview": "assets/models/军用飞机/双翼飞机.png"
  },
  {
   "id": "dukcCKsLDrS",
@@ -397,7 +416,8 @@
    2.715
   ],
   "tris": 1512,
-  "bytes": 204646
+  "bytes": 204646,
+  "preview": "assets/models/军用飞机/多用途战斗机.png"
  },
  {
   "id": "bgUY8zN2Bq9",
@@ -417,7 +437,8 @@
    5.185
   ],
   "tris": 618,
-  "bytes": 77470
+  "bytes": 77470,
+  "preview": "assets/models/军用飞机/高速截击机.png"
  },
  {
   "id": "BG0KAhmGDt",
@@ -437,7 +458,8 @@
    1.83
   ],
   "tris": 1194,
-  "bytes": 111295
+  "bytes": 111295,
+  "preview": "assets/models/地面车辆/两厢轿车.png"
  },
  {
   "id": "Cz6yDaUcM9",
@@ -457,7 +479,8 @@
    1.227
   ],
   "tris": 2954,
-  "bytes": 294432
+  "bytes": 294432,
+  "preview": "assets/models/地面车辆/低多边形轿车.png"
  },
  {
   "id": "aT_24cDaW1a",
@@ -477,7 +500,8 @@
    2.311
   ],
   "tris": 1946,
-  "bytes": 154697
+  "bytes": 154697,
+  "preview": "assets/models/地面车辆/厢式货车.png"
  },
  {
   "id": "4CPpvEmrMoF",
@@ -497,7 +521,8 @@
    3.72
   ],
   "tris": 2226,
-  "bytes": 170966
+  "bytes": 170966,
+  "preview": "assets/models/地面车辆/城市公交.png"
  },
  {
   "id": "75h3mi6uHuC",
@@ -517,7 +542,8 @@
    1.632
   ],
   "tris": 2050,
-  "bytes": 161253
+  "bytes": 161253,
+  "preview": "assets/models/地面车辆/家用轿车.png"
  },
  {
   "id": "qn4grQgHm8",
@@ -537,7 +563,8 @@
    1.948
   ],
   "tris": 3500,
-  "bytes": 318589
+  "bytes": 318589,
+  "preview": "assets/models/地面车辆/皮卡.png"
  },
  {
   "id": "eRu2kPYOCa7",
@@ -557,7 +584,8 @@
    2.314
   ],
   "tris": 2944,
-  "bytes": 266567
+  "bytes": 266567,
+  "preview": "assets/models/地面车辆/紧凑型轿车.png"
  },
  {
   "id": "unqqkULtRU",
@@ -577,7 +605,8 @@
    1.454
   ],
   "tris": 3124,
-  "bytes": 312813
+  "bytes": 312813,
+  "preview": "assets/models/地面车辆/经济型轿车.png"
  },
  {
   "id": "1mkmFkAz5v",
@@ -597,7 +626,8 @@
    1.348
   ],
   "tris": 3148,
-  "bytes": 319776
+  "bytes": 319776,
+  "preview": "assets/models/地面车辆/跑车.png"
  },
  {
   "id": "xsMtZhBkxL",
@@ -617,7 +647,8 @@
    1.742
   ],
   "tris": 3294,
-  "bytes": 329937
+  "bytes": 329937,
+  "preview": "assets/models/地面车辆/运动型多用途车.png"
  },
  {
   "id": "YWSyTmvGI2",
@@ -637,7 +668,8 @@
    3.243
   ],
   "tris": 2786,
-  "bytes": 270110
+  "bytes": 270110,
+  "preview": "assets/models/军用地面车辆/中型坦克.png"
  },
  {
   "id": "FA5daiyZQq",
@@ -657,7 +689,8 @@
    2.561
   ],
   "tris": 3500,
-  "bytes": 426257
+  "bytes": 426257,
+  "preview": "assets/models/军用地面车辆/主战坦克.png"
  },
  {
   "id": "jWS1CLA0RO",
@@ -677,7 +710,8 @@
    4.13
   ],
   "tris": 3500,
-  "bytes": 372443
+  "bytes": 372443,
+  "preview": "assets/models/军用地面车辆/主战坦克改型.png"
  },
  {
   "id": "y8lBpvMlim",
@@ -697,7 +731,8 @@
    3.196
   ],
   "tris": 3500,
-  "bytes": 596721
+  "bytes": 596721,
+  "preview": "assets/models/军用地面车辆/军用运输卡车.png"
  },
  {
   "id": "uYHpj7lz1J",
@@ -717,7 +752,8 @@
    2.964
   ],
   "tris": 3500,
-  "bytes": 451790
+  "bytes": 451790,
+  "preview": "assets/models/军用地面车辆/坦克.png"
  },
  {
   "id": "41Tq_Kf0Tui",
@@ -737,7 +773,8 @@
    2.245
   ],
   "tris": 3500,
-  "bytes": 371225
+  "bytes": 371225,
+  "preview": "assets/models/军用地面车辆/轻型坦克.png"
  },
  {
   "id": "Ebryot9iKM",
@@ -757,7 +794,8 @@
    1.962
   ],
   "tris": 3500,
-  "bytes": 637432
+  "bytes": 637432,
+  "preview": "assets/models/军用地面车辆/高机动越野车.png"
  },
  {
   "id": "wouBxOe3CD",
@@ -777,7 +815,8 @@
    5.942
   ],
   "tris": 868,
-  "bytes": 87787
+  "bytes": 87787,
+  "preview": "assets/models/军舰/导弹艇.png"
  },
  {
   "id": "8PgPdFGg3MO",
@@ -797,7 +836,8 @@
    18.388
   ],
   "tris": 2088,
-  "bytes": 297411
+  "bytes": 297411,
+  "preview": "assets/models/军舰/常规潜艇.png"
  },
  {
   "id": "aYAmfkUYZjg",
@@ -817,7 +857,8 @@
    69.067
   ],
   "tris": 2432,
-  "bytes": 231445
+  "bytes": 231445,
+  "preview": "assets/models/军舰/战列舰.png"
  },
  {
   "id": "cqV6mUkn7Ow",
@@ -837,7 +878,8 @@
    60.534
   ],
   "tris": 3500,
-  "bytes": 842082
+  "bytes": 842082,
+  "preview": "assets/models/军舰/战列舰改型.png"
  },
  {
   "id": "dfSQmeuuYt3",
@@ -857,7 +899,8 @@
    47.016
   ],
   "tris": 1348,
-  "bytes": 101943
+  "bytes": 101943,
+  "preview": "assets/models/军舰/攻击核潜艇.png"
  },
  {
   "id": "aOikPp4rz68",
@@ -877,7 +920,8 @@
    74.089
   ],
   "tris": 1044,
-  "bytes": 85195
+  "bytes": 85195,
+  "preview": "assets/models/民用船舶/大型游轮.png"
  },
  {
   "id": "5UEl54KsuC",
@@ -897,7 +941,8 @@
    3.345
   ],
   "tris": 224,
-  "bytes": 21125
+  "bytes": 21125,
+  "preview": "assets/models/民用船舶/小型渔船.png"
  },
  {
   "id": "6okvxHsSdzO",
@@ -917,7 +962,8 @@
    9.609
   ],
   "tris": 752,
-  "bytes": 69375
+  "bytes": 69375,
+  "preview": "assets/models/民用船舶/帆船.png"
  },
  {
   "id": "9znU2c-dTSR",
@@ -937,7 +983,8 @@
    8.565
   ],
   "tris": 1206,
-  "bytes": 132814
+  "bytes": 132814,
+  "preview": "assets/models/民用船舶/游艇.png"
  },
  {
   "id": "dgLCxDWhnZQ",
@@ -957,7 +1004,8 @@
    64.056
   ],
   "tris": 3500,
-  "bytes": 459645
+  "bytes": 459645,
+  "preview": "assets/models/民用船舶/游轮.png"
  },
  {
   "id": "yq9EKmEmfC",
@@ -977,7 +1025,8 @@
    109.66
   ],
   "tris": 858,
-  "bytes": 85973
+  "bytes": 85973,
+  "preview": "assets/models/民用船舶/豪华游轮.png"
  },
  {
   "id": "cIzO4MBPqI",
@@ -997,7 +1046,8 @@
    27.172
   ],
   "tris": 3500,
-  "bytes": 353138
+  "bytes": 353138,
+  "preview": "assets/models/民用船舶/远洋帆船.png"
  },
  {
   "id": "2vKA7JD0JU",
@@ -1017,7 +1067,8 @@
    64.135
   ],
   "tris": 6446,
-  "bytes": 7698811
+  "bytes": 7698811,
+  "preview": "assets/models/民用船舶/远洋邮轮.png"
  },
  {
   "id": "3AmDGcCu6Ll",
@@ -1037,6 +1088,7 @@
    78.225
   ],
   "tris": 1620,
-  "bytes": 235039
+  "bytes": 235039,
+  "preview": "assets/models/民用船舶/集装箱船.png"
  }
 ]

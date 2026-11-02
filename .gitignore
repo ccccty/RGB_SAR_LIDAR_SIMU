@@ -28,3 +28,5 @@ Thumbs.db
 
 # raw model downloads (regenerate with: python tools/fetch_vehicle_models.py)
 assets/_cache/
+# intermediate preview renders; the shipped copies live beside each .obj
+assets/models/previews/

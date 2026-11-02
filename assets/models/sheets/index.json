@@ -1,0 +1,65 @@
+[
+ {
+  "category": "旋翼无人机",
+  "category_en": "Rotary-wing UAV",
+  "count": 6,
+  "file": "assets/models/sheets/旋翼无人机.png",
+  "bytes": 217275
+ },
+ {
+  "category": "固定翼无人机",
+  "category_en": "Fixed-wing UAV",
+  "count": 1,
+  "file": "assets/models/sheets/固定翼无人机.png",
+  "bytes": 44649
+ },
+ {
+  "category": "直升机",
+  "category_en": "Helicopter",
+  "count": 4,
+  "file": "assets/models/sheets/直升机.png",
+  "bytes": 118734
+ },
+ {
+  "category": "民航飞机",
+  "category_en": "Civil aircraft",
+  "count": 5,
+  "file": "assets/models/sheets/民航飞机.png",
+  "bytes": 189535
+ },
+ {
+  "category": "军用飞机",
+  "category_en": "Military aircraft",
+  "count": 5,
+  "file": "assets/models/sheets/军用飞机.png",
+  "bytes": 165596
+ },
+ {
+  "category": "地面车辆",
+  "category_en": "Ground vehicle",
+  "count": 10,
+  "file": "assets/models/sheets/地面车辆.png",
+  "bytes": 488738
+ },
+ {
+  "category": "军用地面车辆",
+  "category_en": "Military ground vehicle",
+  "count": 7,
+  "file": "assets/models/sheets/军用地面车辆.png",
+  "bytes": 379207
+ },
+ {
+  "category": "军舰",
+  "category_en": "Naval vessel",
+  "count": 5,
+  "file": "assets/models/sheets/军舰.png",
+  "bytes": 181983
+ },
+ {
+  "category": "民用船舶",
+  "category_en": "Civil vessel",
+  "count": 9,
+  "file": "assets/models/sheets/民用船舶.png",
+  "bytes": 356138
+ }
+]
