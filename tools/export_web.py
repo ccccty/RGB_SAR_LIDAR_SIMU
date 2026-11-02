@@ -29,17 +29,17 @@ SCENES = [
 # Scene title/class/band lookup for runs exported by name. Anything not listed
 # still exports; it just gets a generic title.
 SCENE_META = {
-    "final_air": ("空中 · Global Hawk", "uav", "Ka"),
+    "final_air": ("空中 · 大型无人机", "uav", "Ka"),
     "ds_air_uav": ("空中 · 无人机", "uav", "Ka"),
     "ds_ground_vehicle": ("地面 · 巡视器", "vehicle", "W"),
     "ds_sea_boat": ("海面 · 船只", "boat", "Ka"),
     "ds1000_air": ("空中 · 无人机", "uav", "Ka"),
     "ds1000_ground": ("地面 · 巡视器", "vehicle", "W"),
     "ds1000_sea": ("海面 · 船只", "boat", "Ka"),
-    "seeker_air2air_high": ("高空空对空 · 导引头", "uav", "Ku"),
-    "seeker_surface2air": ("低空地対空 · 导引头", "uav", "Ka"),
-    "seeker_air2air_occluded": ("低空空对空 · 城市遮挡", "uav", "Ka"),
-    "seeker_air2ground": ("低空空对地 · 地面杂物", "vehicle", "W"),
+    "seeker_air2air_high": ("高空空中目标 · 双视场", "uav", "Ku"),
+    "seeker_surface2air": ("低空上升接近 · 双视场", "uav", "Ka"),
+    "seeker_air2air_occluded": ("低空空中目标 · 城市遮挡", "uav", "Ka"),
+    "seeker_air2ground": ("低空下视 · 地面杂物", "vehicle", "W"),
 }
 WEB_FRAMES = int(os.environ.get("SIMKIT_WEB_FRAMES", "0")) or None
 
@@ -62,7 +62,7 @@ MOD_LABEL = {
 }
 
 VIEW_TITLES = {
-    "seeker": "导引头窄视场",
+    "seeker": "机载导引窄视场",
     "wide": "宽视场搜索",
 }
 

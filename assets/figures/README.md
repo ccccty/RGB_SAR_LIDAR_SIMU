@@ -40,7 +40,7 @@ font_manager.addfont() 注册（D:/devtools/fonts/NotoSansCJKsc-Regular.otf、
 | 03 | fig03_sar_sequence.png | data/seeker_air2ground/sar/*.png + 各帧 boxes |
 | 04 | fig04_radar_stretch.png | data/seeker_air2ground/radar_ra/000007.png + radar.peak |
 | 05 | fig05_pointcloud_views.png | data/cloud/final_ground.json 第 1 帧 |
-| 06 | fig06_seeker_trajectory.png | manifest 三个 seeker 场景 × 20 帧 + PLAN.md P0-2 |
+| 06 | fig06_seeker_trajectory.png | manifest 三个导引视角场景 × 20 帧 + PLAN.md P0-2 |
 | 07 | fig07_radar_budget.png | data/radar_bands.json + tools/radar_budget_table.py 的雷达方程 |
 | 08 | fig08_rain_attenuation.png | data/radar_bands.json 的 rain_k / rain_a（ITU-R P.838-3） |
 | 09 | fig09_atmosphere_transmittance.png | simkit/atmosphere.py + simkit/weather.py 的 derive() |
@@ -65,7 +65,7 @@ font_manager.addfont() 注册（D:/devtools/fonts/NotoSansCJKsc-Regular.otf、
 
 ## 与最初计划的差异
 
-- **fig06**：原计划 4 个 seeker 场景，仓库当前只有 3 个（城市遮挡场景尚未重生成），
+- **fig06**：原计划 4 个导引视角场景，仓库当前只有 3 个（城市遮挡场景尚未重生成），
   图上按 3 个场景绘制并在副标题注明。
 - **fig05**：点云取自 data/cloud/*.json（manifest 的 cloud 字段已外置），
   数组单位仍是 cm，脚本换算为 m。

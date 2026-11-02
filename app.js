@@ -737,7 +737,7 @@
 
     var span = Math.round(Math.max(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]));
     $('pcTL').textContent = '点云 ' + cl.n + ' 点（绘制 ' + cl.shown + '）\n点云跨度 ' +
-      span + ' m · 命中率 ' + f1((cl.hit || 0) * 100) + '% · 量程 ' + f0(cl.maxr || 0) + ' m';
+      span + ' m · 回波率 ' + f1((cl.hit || 0) * 100) + '% · 量程 ' + f0(cl.maxr || 0) + ' m';
     $('pcBR').textContent = '拖动旋转 · 滚轮缩放 · 双击复位';
   }
   function pcSync() {
@@ -763,7 +763,7 @@
     var cl = pcCloud();
     kvInto($('pcInfo'), [
       ['点数', cl ? cl.n : (CLOUD_PEND[sc.id] ? '载入中…' : '—')],
-      ['命中率', cl ? f1((cl.hit || 0) * 100) + '%' : '—'],
+      ['回波率', cl ? f1((cl.hit || 0) * 100) + '%' : '—'],
       ['量程', cl ? f0(cl.maxr || 0) + ' m' : '—'],
       ['帧序', (pcFrameIdx + 1) + ' / ' + sc.frames.length]
     ]);
@@ -1464,7 +1464,7 @@
         ? ' · 滚转 ' + f1(P.v.roll_deg) + '°' : '')
       : '视场未知';
     $(ids.tl).textContent = (curScene().title || '') + ' · 帧 ' + ((P.fr.i || 0) + 1) + '\n' +
-      (wide ? '宽视场（搜索）' : '窄视场（导引头）') +
+      (wide ? '宽视场（搜索）' : '窄视场（机载导引）') +
       (P.v ? ' · ' + P.dw + '×' + P.dh : '');
     skFillStats($(ids.stats), P, false);
     skMag(which);

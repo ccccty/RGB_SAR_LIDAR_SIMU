@@ -126,6 +126,21 @@ SCENE_COLORS = {
 }
 BAND_COLORS = {"X": ACC, "Ku": ACC2, "K": WARN, "Ka": PUR, "W": ERR, "W94": DIM}
 
+# Display names for legends and tick labels: the internal scene ids stay as they
+# are (directory names), but nothing user-visible should print "seeker".
+SCENE_LABEL = {
+    "seeker_air2air_high": "高空空中目标",
+    "seeker_air2ground": "低空下视",
+    "seeker_surface2air": "低空上升接近",
+    "final_air": "空中 · 大型无人机",
+    "final_ground": "地面 · 巡视器",
+    "final_sea": "海面 · 帆船",
+}
+
+
+def scene_label(sid):
+    return SCENE_LABEL.get(sid, sid)
+
 
 def frame(scene_id, i):
     return SCENES[scene_id]["frames"][i]
@@ -396,11 +411,12 @@ def fig01():
 
     fig.text(L, 0.036,
              "同一帧 · 同一三维世界：%s 第 %d 帧 · 斜距 %.1f m · 窄视场目标 %d px · 天气 %s"
-             % (sid, fi + 1, fr["range_m"], round(fr["views"]["seeker"]["target_px"]),
+             % (scene_label(sid), fi + 1, fr["range_m"], round(fr["views"]["seeker"]["target_px"]),
                 {"clear": "晴", "cloudy": "阴", "rain": "雨"}.get(fr["weather"]["name"],
                                                                fr["weather"]["name"])),
              fontsize=14, color=TEXT, ha="left", va="bottom")
-    note(fig, "源 data/manifest.json + data/%s/*.png · 红外/雷达/SAR/激光已按百分位拉伸 · ○ 为雷达峰点" % sid)
+    note(fig, "源 data/manifest.json + data/%s/*.png · 红外/雷达/SAR/激光已按百分位拉伸 · ○ 为雷达峰点"
+              % scene_label(sid))
     wm(fig, "01")
     return fig, "fig01_modality_wall.png"
 
@@ -563,7 +579,7 @@ def fig03():
              "20 帧目标横向漂移 %.1f px：框中心始终停在 x = %.1f px · PLAN P0-3 要求 ≥20 px → 未达标（每帧把波束重新对准目标，帧间差异只剩斑点噪声）"
              % (drift, cx[0] if cx else 0.0),
              fontsize=12.5, color=TEXT, va="bottom")
-    note(fig, "源 data/%s/sar/*.png + manifest 各帧 boxes · 20 帧共用一个显示拉伸区间" % sid)
+    note(fig, "源 %s场景的 SAR 序列 + manifest 各帧 boxes · 20 帧共用一个显示拉伸区间" % scene_label(sid))
     wm(fig, "03")
     return fig, "fig03_sar_sequence.png"
 
@@ -626,7 +642,8 @@ def fig04():
              "而是目标峰与噪底差了 %d 个灰阶，线性映射把整幅图压进了最暗的几条色阶。"
              % (int(raw.max()) - int(p50)),
              fontsize=13.5, color=TEXT, va="bottom")
-    note(fig, "源 data/%s/radar_ra/%06d.png + manifest radar.peak · 分析：numpy 直方图" % (sid, fi))
+    note(fig, "源 %s场景第 %d 帧雷达距离-角度图 + manifest radar.peak · 分析：numpy 直方图"
+         % (scene_label(sid), fi))
     wm(fig, "04")
     return fig, "fig04_radar_stretch.png"
 
@@ -676,16 +693,17 @@ def fig05():
     cb.outline.set_edgecolor(SPINE)
 
     fig.text(L, 0.10,
-             "点数 %s（命中率 %.1f%%）· 量程 %d m · 强度 %d–%d（原始计数）· 高度 %.2f–%.2f m"
+             "点数 %s（回波率 %.1f%%）· 量程 %d m · 强度 %d–%d（原始计数）· 高度 %.2f–%.2f m"
              % (format(int(c["n"]), ","), 100.0 * c["hit"], nmax,
                 int(inten.min()), int(inten.max()), z.min(), z.max()),
              fontsize=13.5, color=TEXT, va="bottom")
-    note(fig, "源 data/cloud/%s.json 第 %d 帧（manifest 的 cloud 字段外置）· 单位 cm → m" % (sid, fi))
+    note(fig, "源 %s场景第 %d 帧点云（manifest 的 cloud 字段外置）· 单位 cm → m"
+         % (scene_label(sid), fi))
     wm(fig, "05")
     return fig, "fig05_pointcloud_views.png"
 
 
-# ============================================================ fig06 导引头轨迹
+# ============================================================ fig06 导引视角轨迹
 def fig06():
     seeks = ["seeker_air2air_high", "seeker_air2ground", "seeker_surface2air"]
     fig = new_fig()
@@ -704,7 +722,7 @@ def fig06():
         px = [f["views"]["seeker"]["target_px"] for f in fr]
         pw = [f["views"]["wide"]["target_px"] for f in fr]
         col = SCENE_COLORS[sid]
-        ax.plot(xs, rg, color=col, lw=2.4, marker="o", ms=3.2, label=sid)
+        ax.plot(xs, rg, color=col, lw=2.4, marker="o", ms=3.2, label=scene_label(sid))
         ax2.plot(xs, px, color=col, lw=1.7, ls="--", alpha=0.95)
         ax2.plot(xs, pw, color=col, lw=1.4, ls=":", alpha=0.7)
 
@@ -725,7 +743,7 @@ def fig06():
     ax.text(0.6, 8020, "实线 = 斜距（左轴，m）· 虚线 = 窄视场 target_px · 点线 = 宽视场 target_px（右轴，px）",
             fontsize=12, color=DIM, va="top")
 
-    handles = [Line2D([], [], color=SCENE_COLORS[s], lw=2.2, label=s) for s in seeks]
+    handles = [Line2D([], [], color=SCENE_COLORS[s], lw=2.2, label=scene_label(s)) for s in seeks]
     handles += [Line2D([], [], color=DIM, lw=2.2, label="斜距（左轴）"),
                 Line2D([], [], color=DIM, lw=1.7, ls="--", label="窄视场 2.2° 像素"),
                 Line2D([], [], color=DIM, lw=1.4, ls=":", label="宽视场 18° 像素")]
@@ -744,7 +762,7 @@ def fig06():
                 min(f["views"]["wide"]["target_px"] for s in seeks for f in SCENES[s]["frames"]),
                 max(f["views"]["wide"]["target_px"] for s in seeks for f in SCENES[s]["frames"])),
              fontsize=13, color=TEXT)
-    note(fig, "源 data/manifest.json：3 个 seeker 场景 × 20 帧（城市遮挡场景尚未重生成）")
+    note(fig, "源 data/manifest.json：3 个导引视角场景 × 20 帧（城市遮挡场景尚未重生成）")
     wm(fig, "06")
     return fig, "fig06_seeker_trajectory.png"
 
@@ -966,7 +984,8 @@ def fig10():
              "检查口径：%s\n"
              "标签在导出时由同一套投影直接算出，所以“偏差 0”只说明链路没有漂移；它不证明两张图的像素已经对齐（那是 P2-3 的独立指标）。"
              % lc["meaning"], fontsize=13, color=DIM, va="top", linespacing=1.75)
-    note(fig, "源 datasets/yolo/export.json label_consistency + data/%s 第 %d 帧" % (sid, fi))
+    note(fig, "源 datasets/yolo/export.json label_consistency + %s场景第 %d 帧"
+         % (scene_label(sid), fi))
     wm(fig, "10")
     return fig, "fig10_label_consistency.png"
 
@@ -1213,7 +1232,7 @@ def fig15():
     ax.set_xticks(range(len(keys)))
     ax.set_xticklabels(keys, rotation=26, ha="right", fontsize=12)
     ax.set_yticks(range(len(sids)))
-    ax.set_yticklabels(sids, fontsize=12.5)
+    ax.set_yticklabels([scene_label(x) for x in sids], fontsize=12.5)
     ax.set_xticks(np.arange(-0.5, len(keys)), minor=True)
     ax.set_yticks(np.arange(-0.5, len(sids)), minor=True)
     ax.grid(which="minor", color=BG, lw=2.0, ls="-")
@@ -1470,7 +1489,7 @@ def fig18():
              "同一时刻、同一目标、同一套投影：框中心在各模态的像素坐标一致（见 fig10），"
              "差别只在采样网格与动态范围。",
              fontsize=12.5, color=DIM, va="top")
-    note(fig, "源 data/%s 第 %d 帧六模态 PNG + manifest boxes/radar.peak" % (sid, fi + 1))
+    note(fig, "源 %s场景第 %d 帧六模态图 + manifest boxes/radar.peak" % (scene_label(sid), fi + 1))
     wm(fig, "18")
     return fig, "fig18_target_crops.png"
 
@@ -1490,7 +1509,7 @@ def fig19():
             xs.append(f["range_m"]); ys.append(v["target_px"])
         pts[sid] = (np.array(xs), np.array(ys))
         ax.scatter(xs, ys, s=46, color=SCENE_COLORS[sid], edgecolors=BG, linewidths=0.6,
-                   zorder=6, label=sid)
+                   zorder=6, label=scene_label(sid))
     npts = sum(len(v[0]) for v in pts.values())
     for sid in ("seeker_air2air_high", "seeker_air2ground", "seeker_surface2air"):
         xs, ys = [], []
@@ -1520,8 +1539,8 @@ def fig19():
     lbl = [("final_air  3.5° / 480 px", 1500, 215, 2400, 300),
            ("final_sea  12° / 480 px", 150, 158, 190, 250),
            ("final_ground  30° / 480 px", 40, 71, 46, 40),
-           ("seeker 窄视场  2.2° / 768 px", 3200, 24.5, 3400, 42),
-           ("seeker 宽视场  18° / 640 px", 3600, 2.55, 3800, 3.4)]
+           ("导引窄视场  2.2° / 768 px", 3200, 24.5, 3400, 42),
+           ("导引宽视场  18° / 640 px", 3600, 2.55, 3800, 3.4)]
     for txt, xx, yy, tx, ty in lbl:
         ax.annotate(txt, xy=(xx, yy), xytext=(tx, ty), fontsize=11.5, color=DIM,
                     va="center", ha="left",
@@ -1529,7 +1548,7 @@ def fig19():
     ax.text(32, 9.0, "实心圆 = 窄视场取景 · 空心三角 = 宽视场 18° 取景", fontsize=11.5,
             color=DIM, va="center", ha="left")
 
-    hand = [Line2D([], [], marker="o", ls="", color=SCENE_COLORS[s], ms=8, label=s)
+    hand = [Line2D([], [], marker="o", ls="", color=SCENE_COLORS[s], ms=8, label=scene_label(s))
             for s in SCENES]
     hand.append(Line2D([], [], color=TEXT, lw=1.3, ls="--", label="斜率 -1 参考线"))
     leg = fig.legend(handles=hand, loc="lower center", ncol=7, fontsize=11,
@@ -1539,7 +1558,7 @@ def fig19():
     fig.text(L, 0.105,
              "78 帧 · 6 个场景 · 像素跨度 = 目标物理尺寸 /（视场 × 斜距）：斜距只是三个自变量之一，"
              "拿不同视场的点画一条拟合线没有意义", fontsize=12.5, color=TEXT)
-    note(fig, "源 data/manifest.json：range_m 与 views.seeker/wide.target_px（共 %d 个点）" % npts)
+    note(fig, "源 data/manifest.json：range_m 与窄/宽视场 target_px（共 %d 个点）" % npts)
     wm(fig, "19")
     return fig, "fig19_target_px_range.png"
 
@@ -1588,7 +1607,7 @@ def fig20():
     sar_frames = sum(len(s["frames"]) for s in MANIFEST["scenes"] if s.get("sar_meta"))
 
     cards = [
-        ("%d" % n_scenes, "场景", "空中 / 地面 / 海面 + 三种导引头交战"),
+        ("%d" % n_scenes, "场景", "空中 / 地面 / 海面 + 三种导引视角"),
         ("%d" % n_frames, "帧", "每帧多模态同步成像"),
         ("%d" % len(keys), "模态键", "可见光 / 中波 / 长波 / 雷达 / LiDAR / SAR"),
         ("%d" % n_boxes, "标注框", "manifest 中像素框总数（含宽视场）"),
@@ -1635,30 +1654,30 @@ META = {
                subtitle="可见光、中波红外、长波红外、雷达、SAR、LiDAR 在同一时刻、同一三维世界的成像",
                tag="概览",
                desc="六路传感器在同一帧上给出同一目标的互补观测：可见光与红外给纹理和热特征，雷达给距离-角度回波，SAR 给距离-方位分辨单元，LiDAR 给稀疏量程点。",
-               source="data/manifest.json + data/seeker_air2ground/*.png（第 8 帧）"),
+               source="data/manifest.json + 低空下视场景的原始图像（第 8 帧）"),
     "02": dict(title="SAR 成像几何与分辨率",
                subtitle="侧视几何、合成孔径、地距-方位分辨单元与 c/2B、0.886λR₀/(2L_sa)",
                tag="SAR",
                desc="用场景真实参数（9.6 GHz、150 MHz、3000 m、180 m/s、512 脉冲）算出 ρ_r=1.17 m、ρ_a=1.05 m，与 manifest 的 sar_meta 完全一致。",
-               source="data/seeker_air2ground/cfg.json + manifest sar_meta + docs/SAR成像.md"),
+               source="低空下视场景的 cfg.json + manifest sar_meta + docs/SAR成像.md"),
     "03": dict(title="SAR 20 帧序列条带",
                subtitle="同一场景 20 帧 SAR 缩略图与目标框的横向漂移",
                tag="SAR",
                desc="目标在 20 帧里只漂几个像素：每帧重新把波束对准目标，帧间差异主要是斑点噪声，PLAN P0-3 的 ≥20 px 要求未达成。",
-               source="data/seeker_air2ground/sar/*.png + manifest 各帧 boxes + PLAN.md P0-3"),
+               source="低空下视场景的 SAR 序列 + manifest 各帧 boxes + PLAN.md P0-3"),
     "04": dict(title="雷达距离-角度图的显示拉伸",
                subtitle="原始 8-bit 图、百分位拉伸图与灰阶直方图的三面对照",
                tag="雷达",
                desc="原始图 95% 以上的像素挤在最暗的几条灰阶里，线性显示看起来全黑；拉伸后目标峰与噪底才分得开，检出点也才可标注。",
-               source="data/seeker_air2ground/radar_ra/000007.png + manifest radar.peak"),
+               source="低空下视场景第 8 帧雷达距离-角度图 + manifest radar.peak"),
     "05": dict(title="LiDAR 点云三视图",
                subtitle="地面场景一帧 3 万个点的俯视/前视/侧视，按高度着色",
                tag="LiDAR",
-               desc="点云给出与图像无关的第三维：地面、目标高度与量程分布可以直接读出，命中率与量程都来自该帧的真实统计。",
+               desc="点云给出与图像无关的第三维：地面、目标高度与量程分布可以直接读出，回波率与量程都来自该帧的真实统计。",
                source="data/cloud/final_ground.json 第 1 帧（manifest cloud 字段外置）"),
-    "06": dict(title="导引头距离与目标像素轨迹",
-               subtitle="3 个 seeker 场景 × 20 帧的斜距与窄/宽视场像素跨度双轴曲线",
-               tag="导引头",
+    "06": dict(title="机载导引距离与目标像素轨迹",
+               subtitle="3 个无人机导引视角场景 × 20 帧的斜距与窄/宽视场像素跨度双轴曲线",
+               tag="无人机视角",
                desc="窄视场 20 帧内目标稳定在 23–27 px，宽视场同一目标只有 2.4–2.6 px，远低于 6 px 的可训练下限。",
                source="data/manifest.json + PLAN.md P0-2"),
     "07": dict(title="雷达链路预算与最大探测距离",
@@ -1680,7 +1699,7 @@ META = {
                subtitle="同一目标在可见光/中波/长波上的框完全重合，240 对样本偏差 0.0 px",
                tag="数据集",
                desc="标签由同一套投影在一次运行里生成，因此逐位相同；这证明的是导出链路没有漂移，像素级配准仍需 P2-3 的独立指标。",
-               source="datasets/yolo/export.json label_consistency + data/seeker_air2ground 第 8 帧"),
+               source="datasets/yolo/export.json label_consistency + 低空下视场景第 8 帧"),
     "11": dict(title="数据集构成",
                subtitle="8 种 flavour × train/val 与 5 种 stack 的真实计数",
                tag="数据集",
@@ -1704,7 +1723,7 @@ META = {
     "15": dict(title="场景 × 模态覆盖矩阵",
                subtitle="6 个场景 × 10 个模态键：有图、有框、缺模态一目了然",
                tag="数据集",
-               desc="SAR 只在低空空对地场景出现，宽视场三种模态只在导引头场景出现；覆盖矩阵是判断“哪个场景能训练什么”的第一张表。",
+               desc="SAR 只在低空下视场景出现，宽视场三种模态只在导引视角场景出现；覆盖矩阵是判断“哪个场景能训练什么”的第一张表。",
                source="data/manifest.json"),
     "16": dict(title="仿真管线架构",
                subtitle="场景 JSON 到 几何/BVH 到 五路传感器 到 投影标注 到 数据集/站点",
@@ -1720,7 +1739,7 @@ META = {
                subtitle="六路裁剪并排，标出源裁剪像素数与放大倍数",
                tag="概览",
                desc="同一时刻同一目标在六个模态里的局部形态：可见光给轮廓、红外给热斑、雷达给距离-角度峰、SAR 给分辨单元、LiDAR 给稀疏量程点。",
-               source="data/seeker_air2ground 第 8 帧六模态 PNG + manifest boxes/radar.peak"),
+               source="低空下视场景第 8 帧六模态图 + manifest boxes/radar.peak"),
     "19": dict(title="目标像素跨度 vs 斜距",
                subtitle="78 帧散点、1/R 拟合与 6 px 下限",
                tag="数据集",
@@ -1801,7 +1820,7 @@ font_manager.addfont() 注册（D:/devtools/fonts/NotoSansCJKsc-Regular.otf、
 | 03 | fig03_sar_sequence.png | data/seeker_air2ground/sar/*.png + 各帧 boxes |
 | 04 | fig04_radar_stretch.png | data/seeker_air2ground/radar_ra/000007.png + radar.peak |
 | 05 | fig05_pointcloud_views.png | data/cloud/final_ground.json 第 1 帧 |
-| 06 | fig06_seeker_trajectory.png | manifest 三个 seeker 场景 × 20 帧 + PLAN.md P0-2 |
+| 06 | fig06_seeker_trajectory.png | manifest 三个导引视角场景 × 20 帧 + PLAN.md P0-2 |
 | 07 | fig07_radar_budget.png | data/radar_bands.json + tools/radar_budget_table.py 的雷达方程 |
 | 08 | fig08_rain_attenuation.png | data/radar_bands.json 的 rain_k / rain_a（ITU-R P.838-3） |
 | 09 | fig09_atmosphere_transmittance.png | simkit/atmosphere.py + simkit/weather.py 的 derive() |
@@ -1826,7 +1845,7 @@ font_manager.addfont() 注册（D:/devtools/fonts/NotoSansCJKsc-Regular.otf、
 
 ## 与最初计划的差异
 
-- **fig06**：原计划 4 个 seeker 场景，仓库当前只有 3 个（城市遮挡场景尚未重生成），
+- **fig06**：原计划 4 个导引视角场景，仓库当前只有 3 个（城市遮挡场景尚未重生成），
   图上按 3 个场景绘制并在副标题注明。
 - **fig05**：点云取自 data/cloud/*.json（manifest 的 cloud 字段已外置），
   数组单位仍是 cm，脚本换算为 m。
