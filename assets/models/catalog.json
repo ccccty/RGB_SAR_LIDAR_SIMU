@@ -1,0 +1,1042 @@
+[
+ {
+  "id": "DNbUoMtG3H",
+  "name_cn": "四旋翼无人机",
+  "category": "旋翼无人机",
+  "category_en": "Rotary-wing UAV",
+  "file": "assets/models/旋翼无人机/四旋翼无人机.obj",
+  "source_title": "Drone",
+  "author": "NateGazzard",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/DNbUoMtG3H",
+  "length_m": 0.35,
+  "dims_m": [
+   0.35,
+   0.257,
+   0.093
+  ],
+  "tris": 3500,
+  "bytes": 437965
+ },
+ {
+  "id": "3Ae_y67lzvd",
+  "name_cn": "四旋翼无人机改型",
+  "category": "旋翼无人机",
+  "category_en": "Rotary-wing UAV",
+  "file": "assets/models/旋翼无人机/四旋翼无人机改型.obj",
+  "source_title": "Drone",
+  "author": "Silly Fear",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/3Ae_y67lzvd",
+  "length_m": 0.42,
+  "dims_m": [
+   0.42,
+   0.394,
+   0.215
+  ],
+  "tris": 2397,
+  "bytes": 362290
+ },
+ {
+  "id": "6CUQX98vha4",
+  "name_cn": "多旋翼无人机",
+  "category": "旋翼无人机",
+  "category_en": "Rotary-wing UAV",
+  "file": "assets/models/旋翼无人机/多旋翼无人机.obj",
+  "source_title": "Stinger Drone",
+  "author": "Aaron Clifford",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/6CUQX98vha4",
+  "length_m": 0.6,
+  "dims_m": [
+   0.6,
+   0.56,
+   0.303
+  ],
+  "tris": 1132,
+  "bytes": 171648
+ },
+ {
+  "id": "dJ9mjQQqDQJ",
+  "name_cn": "小型四旋翼",
+  "category": "旋翼无人机",
+  "category_en": "Rotary-wing UAV",
+  "file": "assets/models/旋翼无人机/小型四旋翼.obj",
+  "source_title": "Little Drone",
+  "author": "Nick Olson",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/dJ9mjQQqDQJ",
+  "length_m": 0.25,
+  "dims_m": [
+   0.25,
+   0.152,
+   0.071
+  ],
+  "tris": 2690,
+  "bytes": 383636
+ },
+ {
+  "id": "dCOUTcu89u6",
+  "name_cn": "无人机机体",
+  "category": "旋翼无人机",
+  "category_en": "Rotary-wing UAV",
+  "file": "assets/models/旋翼无人机/无人机机体.obj",
+  "source_title": "Drone core",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/dCOUTcu89u6",
+  "length_m": 0.45,
+  "dims_m": [
+   0.45,
+   0.226,
+   0.037
+  ],
+  "tris": 864,
+  "bytes": 96734
+ },
+ {
+  "id": "fyB_cRYLcUY",
+  "name_cn": "航拍无人机",
+  "category": "旋翼无人机",
+  "category_en": "Rotary-wing UAV",
+  "file": "assets/models/旋翼无人机/航拍无人机.obj",
+  "source_title": "camera drone",
+  "author": "Christopher Burgess (ChrispyBurgers)",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/fyB_cRYLcUY",
+  "length_m": 0.3,
+  "dims_m": [
+   0.3,
+   0.187,
+   0.211
+  ],
+  "tris": 1830,
+  "bytes": 295259
+ },
+ {
+  "id": "3Eio09miiAF",
+  "name_cn": "中空长航时无人机",
+  "category": "固定翼无人机",
+  "category_en": "Fixed-wing UAV",
+  "file": "assets/models/固定翼无人机/中空长航时无人机.obj",
+  "source_title": "Predator Drone",
+  "author": "sftwr314r8",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/3Eio09miiAF",
+  "length_m": 8.22,
+  "dims_m": [
+   8.22,
+   8.466,
+   2.45
+  ],
+  "tris": 434,
+  "bytes": 64642
+ },
+ {
+  "id": "hG2Qr0A3zR",
+  "name_cn": "武装直升机",
+  "category": "直升机",
+  "category_en": "Helicopter",
+  "file": "assets/models/直升机/武装直升机.obj",
+  "source_title": "Helicopter",
+  "author": "Zsky",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/hG2Qr0A3zR",
+  "length_m": 14.5,
+  "dims_m": [
+   14.5,
+   15.854,
+   4.004
+  ],
+  "tris": 1088,
+  "bytes": 109965
+ },
+ {
+  "id": "EQJ2MECUbx",
+  "name_cn": "轻型直升机",
+  "category": "直升机",
+  "category_en": "Helicopter",
+  "file": "assets/models/直升机/轻型直升机.obj",
+  "source_title": "Helicopter",
+  "author": "kazuma",
+  "license": "CC0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source_page": "https://poly.pizza/m/EQJ2MECUbx",
+  "length_m": 9.0,
+  "dims_m": [
+   9.0,
+   11.855,
+   3.544
+  ],
+  "tris": 1094,
+  "bytes": 120649
+ },
+ {
+  "id": "eb7b31pjGtQ",
+  "name_cn": "运输直升机",
+  "category": "直升机",
+  "category_en": "Helicopter",
+  "file": "assets/models/直升机/运输直升机.obj",
+  "source_title": "Helicopter",
+  "author": "jeremy",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/eb7b31pjGtQ",
+  "length_m": 15.0,
+  "dims_m": [
+   15.0,
+   19.986,
+   6.811
+  ],
+  "tris": 840,
+  "bytes": 81186
+ },
+ {
+  "id": "cTzINMr0WdS",
+  "name_cn": "通用直升机",
+  "category": "直升机",
+  "category_en": "Helicopter",
+  "file": "assets/models/直升机/通用直升机.obj",
+  "source_title": "Helicopter",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/cTzINMr0WdS",
+  "length_m": 12.0,
+  "dims_m": [
+   12.0,
+   16.719,
+   4.461
+  ],
+  "tris": 1041,
+  "bytes": 108267
+ },
+ {
+  "id": "a3XrQkLNna9",
+  "name_cn": "双发窄体客机",
+  "category": "民航飞机",
+  "category_en": "Civil aircraft",
+  "file": "assets/models/民航飞机/双发窄体客机.obj",
+  "source_title": "Airplane",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/a3XrQkLNna9",
+  "length_m": 37.6,
+  "dims_m": [
+   37.6,
+   40.421,
+   13.056
+  ],
+  "tris": 3500,
+  "bytes": 327341
+ },
+ {
+  "id": "8ciDd9k8wha",
+  "name_cn": "四发宽体客机",
+  "category": "民航飞机",
+  "category_en": "Civil aircraft",
+  "file": "assets/models/民航飞机/四发宽体客机.obj",
+  "source_title": "Airplane",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/8ciDd9k8wha",
+  "length_m": 70.0,
+  "dims_m": [
+   70.0,
+   74.881,
+   25.949
+  ],
+  "tris": 1772,
+  "bytes": 269400
+ },
+ {
+  "id": "8VysVKMXN2J",
+  "name_cn": "支线客机",
+  "category": "民航飞机",
+  "category_en": "Civil aircraft",
+  "file": "assets/models/民航飞机/支线客机.obj",
+  "source_title": "Airplane",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/8VysVKMXN2J",
+  "length_m": 27.0,
+  "dims_m": [
+   27.0,
+   42.02,
+   13.454
+  ],
+  "tris": 1770,
+  "bytes": 234244
+ },
+ {
+  "id": "9Ev6pklkSYp",
+  "name_cn": "涡桨支线机",
+  "category": "民航飞机",
+  "category_en": "Civil aircraft",
+  "file": "assets/models/民航飞机/涡桨支线机.obj",
+  "source_title": "Airplane",
+  "author": "jeremy",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/9Ev6pklkSYp",
+  "length_m": 22.0,
+  "dims_m": [
+   22.0,
+   22.146,
+   5.95
+  ],
+  "tris": 1886,
+  "bytes": 203565
+ },
+ {
+  "id": "2eG17I-VDiG",
+  "name_cn": "货运飞机",
+  "category": "民航飞机",
+  "category_en": "Civil aircraft",
+  "file": "assets/models/民航飞机/货运飞机.obj",
+  "source_title": "Airplane",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/2eG17I-VDiG",
+  "length_m": 45.0,
+  "dims_m": [
+   45.0,
+   48.138,
+   16.681
+  ],
+  "tris": 1426,
+  "bytes": 174289
+ },
+ {
+  "id": "6fyLMORhgGK",
+  "name_cn": "单发战斗机",
+  "category": "军用飞机",
+  "category_en": "Military aircraft",
+  "file": "assets/models/军用飞机/单发战斗机.obj",
+  "source_title": "Jet",
+  "author": "jeremy",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/6fyLMORhgGK",
+  "length_m": 15.0,
+  "dims_m": [
+   15.0,
+   16.68,
+   3.62
+  ],
+  "tris": 1434,
+  "bytes": 128436
+ },
+ {
+  "id": "3B3Pa6BHXn1",
+  "name_cn": "双发战斗机",
+  "category": "军用飞机",
+  "category_en": "Military aircraft",
+  "file": "assets/models/军用飞机/双发战斗机.obj",
+  "source_title": "Jet",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/3B3Pa6BHXn1",
+  "length_m": 19.0,
+  "dims_m": [
+   19.0,
+   20.013,
+   5.795
+  ],
+  "tris": 928,
+  "bytes": 84620
+ },
+ {
+  "id": "9iVI9GHMleJ",
+  "name_cn": "双翼飞机",
+  "category": "军用飞机",
+  "category_en": "Military aircraft",
+  "file": "assets/models/军用飞机/双翼飞机.obj",
+  "source_title": "AIRCO DH2 v2",
+  "author": "Joshua Johanson",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/9iVI9GHMleJ",
+  "length_m": 7.9,
+  "dims_m": [
+   7.9,
+   11.86,
+   3.44
+  ],
+  "tris": 3499,
+  "bytes": 563442
+ },
+ {
+  "id": "dukcCKsLDrS",
+  "name_cn": "多用途战斗机",
+  "category": "军用飞机",
+  "category_en": "Military aircraft",
+  "file": "assets/models/军用飞机/多用途战斗机.obj",
+  "source_title": "Jet",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/dukcCKsLDrS",
+  "length_m": 16.0,
+  "dims_m": [
+   16.0,
+   18.171,
+   2.715
+  ],
+  "tris": 1512,
+  "bytes": 204646
+ },
+ {
+  "id": "bgUY8zN2Bq9",
+  "name_cn": "高速截击机",
+  "category": "军用飞机",
+  "category_en": "Military aircraft",
+  "file": "assets/models/军用飞机/高速截击机.obj",
+  "source_title": "Jet",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/bgUY8zN2Bq9",
+  "length_m": 18.0,
+  "dims_m": [
+   18.0,
+   18.205,
+   5.185
+  ],
+  "tris": 618,
+  "bytes": 77470
+ },
+ {
+  "id": "BG0KAhmGDt",
+  "name_cn": "两厢轿车",
+  "category": "地面车辆",
+  "category_en": "Ground vehicle",
+  "file": "assets/models/地面车辆/两厢轿车.obj",
+  "source_title": "Car Hatchback",
+  "author": "Kay Lousberg",
+  "license": "CC0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source_page": "https://poly.pizza/m/BG0KAhmGDt",
+  "length_m": 4.0,
+  "dims_m": [
+   4.0,
+   2.079,
+   1.83
+  ],
+  "tris": 1194,
+  "bytes": 111295
+ },
+ {
+  "id": "Cz6yDaUcM9",
+  "name_cn": "低多边形轿车",
+  "category": "地面车辆",
+  "category_en": "Ground vehicle",
+  "file": "assets/models/地面车辆/低多边形轿车.obj",
+  "source_title": "Car",
+  "author": "Quaternius",
+  "license": "CC0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source_page": "https://poly.pizza/m/Cz6yDaUcM9",
+  "length_m": 4.4,
+  "dims_m": [
+   4.4,
+   1.884,
+   1.227
+  ],
+  "tris": 2954,
+  "bytes": 294432
+ },
+ {
+  "id": "aT_24cDaW1a",
+  "name_cn": "厢式货车",
+  "category": "地面车辆",
+  "category_en": "Ground vehicle",
+  "file": "assets/models/地面车辆/厢式货车.obj",
+  "source_title": "Van",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/aT_24cDaW1a",
+  "length_m": 5.4,
+  "dims_m": [
+   5.4,
+   2.954,
+   2.311
+  ],
+  "tris": 1946,
+  "bytes": 154697
+ },
+ {
+  "id": "4CPpvEmrMoF",
+  "name_cn": "城市公交",
+  "category": "地面车辆",
+  "category_en": "Ground vehicle",
+  "file": "assets/models/地面车辆/城市公交.obj",
+  "source_title": "Bus",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/4CPpvEmrMoF",
+  "length_m": 12.0,
+  "dims_m": [
+   12.0,
+   3.815,
+   3.72
+  ],
+  "tris": 2226,
+  "bytes": 170966
+ },
+ {
+  "id": "75h3mi6uHuC",
+  "name_cn": "家用轿车",
+  "category": "地面车辆",
+  "category_en": "Ground vehicle",
+  "file": "assets/models/地面车辆/家用轿车.obj",
+  "source_title": "Car",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/75h3mi6uHuC",
+  "length_m": 4.5,
+  "dims_m": [
+   4.5,
+   2.298,
+   1.632
+  ],
+  "tris": 2050,
+  "bytes": 161253
+ },
+ {
+  "id": "qn4grQgHm8",
+  "name_cn": "皮卡",
+  "category": "地面车辆",
+  "category_en": "Ground vehicle",
+  "file": "assets/models/地面车辆/皮卡.obj",
+  "source_title": "Pickup Truck",
+  "author": "Quaternius",
+  "license": "CC0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source_page": "https://poly.pizza/m/qn4grQgHm8",
+  "length_m": 5.4,
+  "dims_m": [
+   5.4,
+   2.41,
+   1.948
+  ],
+  "tris": 3500,
+  "bytes": 318589
+ },
+ {
+  "id": "eRu2kPYOCa7",
+  "name_cn": "紧凑型轿车",
+  "category": "地面车辆",
+  "category_en": "Ground vehicle",
+  "file": "assets/models/地面车辆/紧凑型轿车.obj",
+  "source_title": "Car",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/eRu2kPYOCa7",
+  "length_m": 4.3,
+  "dims_m": [
+   4.3,
+   2.138,
+   2.314
+  ],
+  "tris": 2944,
+  "bytes": 266567
+ },
+ {
+  "id": "unqqkULtRU",
+  "name_cn": "经济型轿车",
+  "category": "地面车辆",
+  "category_en": "Ground vehicle",
+  "file": "assets/models/地面车辆/经济型轿车.obj",
+  "source_title": "Car",
+  "author": "Quaternius",
+  "license": "CC0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source_page": "https://poly.pizza/m/unqqkULtRU",
+  "length_m": 4.2,
+  "dims_m": [
+   4.2,
+   2.079,
+   1.454
+  ],
+  "tris": 3124,
+  "bytes": 312813
+ },
+ {
+  "id": "1mkmFkAz5v",
+  "name_cn": "跑车",
+  "category": "地面车辆",
+  "category_en": "Ground vehicle",
+  "file": "assets/models/地面车辆/跑车.obj",
+  "source_title": "Sports Car",
+  "author": "Quaternius",
+  "license": "CC0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source_page": "https://poly.pizza/m/1mkmFkAz5v",
+  "length_m": 4.4,
+  "dims_m": [
+   4.4,
+   2.097,
+   1.348
+  ],
+  "tris": 3148,
+  "bytes": 319776
+ },
+ {
+  "id": "xsMtZhBkxL",
+  "name_cn": "运动型多用途车",
+  "category": "地面车辆",
+  "category_en": "Ground vehicle",
+  "file": "assets/models/地面车辆/运动型多用途车.obj",
+  "source_title": "SUV",
+  "author": "Quaternius",
+  "license": "CC0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source_page": "https://poly.pizza/m/xsMtZhBkxL",
+  "length_m": 4.8,
+  "dims_m": [
+   4.8,
+   2.407,
+   1.742
+  ],
+  "tris": 3294,
+  "bytes": 329937
+ },
+ {
+  "id": "YWSyTmvGI2",
+  "name_cn": "中型坦克",
+  "category": "军用地面车辆",
+  "category_en": "Military ground vehicle",
+  "file": "assets/models/军用地面车辆/中型坦克.obj",
+  "source_title": "Tank",
+  "author": "Zayn",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/YWSyTmvGI2",
+  "length_m": 8.0,
+  "dims_m": [
+   8.0,
+   4.716,
+   3.243
+  ],
+  "tris": 2786,
+  "bytes": 270110
+ },
+ {
+  "id": "FA5daiyZQq",
+  "name_cn": "主战坦克",
+  "category": "军用地面车辆",
+  "category_en": "Military ground vehicle",
+  "file": "assets/models/军用地面车辆/主战坦克.obj",
+  "source_title": "Tank",
+  "author": "Quaternius",
+  "license": "CC0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source_page": "https://poly.pizza/m/FA5daiyZQq",
+  "length_m": 9.8,
+  "dims_m": [
+   9.8,
+   5.595,
+   2.561
+  ],
+  "tris": 3500,
+  "bytes": 426257
+ },
+ {
+  "id": "jWS1CLA0RO",
+  "name_cn": "主战坦克改型",
+  "category": "军用地面车辆",
+  "category_en": "Military ground vehicle",
+  "file": "assets/models/军用地面车辆/主战坦克改型.obj",
+  "source_title": "Tank",
+  "author": "Quaternius",
+  "license": "CC0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source_page": "https://poly.pizza/m/jWS1CLA0RO",
+  "length_m": 9.5,
+  "dims_m": [
+   9.5,
+   5.574,
+   4.13
+  ],
+  "tris": 3500,
+  "bytes": 372443
+ },
+ {
+  "id": "y8lBpvMlim",
+  "name_cn": "军用运输卡车",
+  "category": "军用地面车辆",
+  "category_en": "Military ground vehicle",
+  "file": "assets/models/军用地面车辆/军用运输卡车.obj",
+  "source_title": "M939 Truck",
+  "author": "J-Toastie",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/y8lBpvMlim",
+  "length_m": 7.6,
+  "dims_m": [
+   7.6,
+   2.795,
+   3.196
+  ],
+  "tris": 3500,
+  "bytes": 596721
+ },
+ {
+  "id": "uYHpj7lz1J",
+  "name_cn": "坦克",
+  "category": "军用地面车辆",
+  "category_en": "Military ground vehicle",
+  "file": "assets/models/军用地面车辆/坦克.obj",
+  "source_title": "Tank",
+  "author": "Quaternius",
+  "license": "CC0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source_page": "https://poly.pizza/m/uYHpj7lz1J",
+  "length_m": 8.0,
+  "dims_m": [
+   8.0,
+   4.947,
+   2.964
+  ],
+  "tris": 3500,
+  "bytes": 451790
+ },
+ {
+  "id": "41Tq_Kf0Tui",
+  "name_cn": "轻型坦克",
+  "category": "军用地面车辆",
+  "category_en": "Military ground vehicle",
+  "file": "assets/models/军用地面车辆/轻型坦克.obj",
+  "source_title": "Tank",
+  "author": "Nico _",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/41Tq_Kf0Tui",
+  "length_m": 6.6,
+  "dims_m": [
+   6.6,
+   3.614,
+   2.245
+  ],
+  "tris": 3500,
+  "bytes": 371225
+ },
+ {
+  "id": "Ebryot9iKM",
+  "name_cn": "高机动越野车",
+  "category": "军用地面车辆",
+  "category_en": "Military ground vehicle",
+  "file": "assets/models/军用地面车辆/高机动越野车.obj",
+  "source_title": "Humvee",
+  "author": "madtrollstudio",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/Ebryot9iKM",
+  "length_m": 4.6,
+  "dims_m": [
+   4.6,
+   2.654,
+   1.962
+  ],
+  "tris": 3500,
+  "bytes": 637432
+ },
+ {
+  "id": "wouBxOe3CD",
+  "name_cn": "导弹艇",
+  "category": "军舰",
+  "category_en": "Naval vessel",
+  "file": "assets/models/军舰/导弹艇.obj",
+  "source_title": "Military Boat",
+  "author": "Zsky",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/wouBxOe3CD",
+  "length_m": 25.0,
+  "dims_m": [
+   25.0,
+   9.455,
+   5.942
+  ],
+  "tris": 868,
+  "bytes": 87787
+ },
+ {
+  "id": "8PgPdFGg3MO",
+  "name_cn": "常规潜艇",
+  "category": "军舰",
+  "category_en": "Naval vessel",
+  "file": "assets/models/军舰/常规潜艇.obj",
+  "source_title": "Submarine",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/8PgPdFGg3MO",
+  "length_m": 70.0,
+  "dims_m": [
+   70.0,
+   14.091,
+   18.388
+  ],
+  "tris": 2088,
+  "bytes": 297411
+ },
+ {
+  "id": "aYAmfkUYZjg",
+  "name_cn": "战列舰",
+  "category": "军舰",
+  "category_en": "Naval vessel",
+  "file": "assets/models/军舰/战列舰.obj",
+  "source_title": "Simple Battleship",
+  "author": "Thomas de Rivaz",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/aYAmfkUYZjg",
+  "length_m": 220.0,
+  "dims_m": [
+   220.0,
+   41.422,
+   69.067
+  ],
+  "tris": 2432,
+  "bytes": 231445
+ },
+ {
+  "id": "cqV6mUkn7Ow",
+  "name_cn": "战列舰改型",
+  "category": "军舰",
+  "category_en": "Naval vessel",
+  "file": "assets/models/军舰/战列舰改型.obj",
+  "source_title": "low poly battleship",
+  "author": "angelo raffaele Catalano",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/cqV6mUkn7Ow",
+  "length_m": 250.0,
+  "dims_m": [
+   250.708,
+   58.884,
+   60.534
+  ],
+  "tris": 3500,
+  "bytes": 842082
+ },
+ {
+  "id": "dfSQmeuuYt3",
+  "name_cn": "攻击核潜艇",
+  "category": "军舰",
+  "category_en": "Naval vessel",
+  "file": "assets/models/军舰/攻击核潜艇.obj",
+  "source_title": "Submarine",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/dfSQmeuuYt3",
+  "length_m": 110.0,
+  "dims_m": [
+   110.0,
+   28.564,
+   47.016
+  ],
+  "tris": 1348,
+  "bytes": 101943
+ },
+ {
+  "id": "aOikPp4rz68",
+  "name_cn": "大型游轮",
+  "category": "民用船舶",
+  "category_en": "Civil vessel",
+  "file": "assets/models/民用船舶/大型游轮.obj",
+  "source_title": "Cruise liner",
+  "author": "jeremy",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/aOikPp4rz68",
+  "length_m": 260.0,
+  "dims_m": [
+   260.0,
+   63.626,
+   74.089
+  ],
+  "tris": 1044,
+  "bytes": 85195
+ },
+ {
+  "id": "5UEl54KsuC",
+  "name_cn": "小型渔船",
+  "category": "民用船舶",
+  "category_en": "Civil vessel",
+  "file": "assets/models/民用船舶/小型渔船.obj",
+  "source_title": "Boat",
+  "author": "Quaternius",
+  "license": "CC0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source_page": "https://poly.pizza/m/5UEl54KsuC",
+  "length_m": 15.0,
+  "dims_m": [
+   15.0,
+   7.772,
+   3.345
+  ],
+  "tris": 224,
+  "bytes": 21125
+ },
+ {
+  "id": "6okvxHsSdzO",
+  "name_cn": "帆船",
+  "category": "民用船舶",
+  "category_en": "Civil vessel",
+  "file": "assets/models/民用船舶/帆船.obj",
+  "source_title": "Sailboat",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/6okvxHsSdzO",
+  "length_m": 12.0,
+  "dims_m": [
+   12.0,
+   7.25,
+   9.609
+  ],
+  "tris": 752,
+  "bytes": 69375
+ },
+ {
+  "id": "9znU2c-dTSR",
+  "name_cn": "游艇",
+  "category": "民用船舶",
+  "category_en": "Civil vessel",
+  "file": "assets/models/民用船舶/游艇.obj",
+  "source_title": "Yacht",
+  "author": "Alex Safayan",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/9znU2c-dTSR",
+  "length_m": 28.0,
+  "dims_m": [
+   28.0,
+   5.969,
+   8.565
+  ],
+  "tris": 1206,
+  "bytes": 132814
+ },
+ {
+  "id": "dgLCxDWhnZQ",
+  "name_cn": "游轮",
+  "category": "民用船舶",
+  "category_en": "Civil vessel",
+  "file": "assets/models/民用船舶/游轮.obj",
+  "source_title": "Cruise ship",
+  "author": "Poly by Google",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/dgLCxDWhnZQ",
+  "length_m": 240.0,
+  "dims_m": [
+   240.0,
+   59.613,
+   64.056
+  ],
+  "tris": 3500,
+  "bytes": 459645
+ },
+ {
+  "id": "yq9EKmEmfC",
+  "name_cn": "豪华游轮",
+  "category": "民用船舶",
+  "category_en": "Civil vessel",
+  "file": "assets/models/民用船舶/豪华游轮.obj",
+  "source_title": "Cruise Ship",
+  "author": "Quaternius",
+  "license": "CC0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source_page": "https://poly.pizza/m/yq9EKmEmfC",
+  "length_m": 300.0,
+  "dims_m": [
+   300.0,
+   66.495,
+   109.66
+  ],
+  "tris": 858,
+  "bytes": 85973
+ },
+ {
+  "id": "cIzO4MBPqI",
+  "name_cn": "远洋帆船",
+  "category": "民用船舶",
+  "category_en": "Civil vessel",
+  "file": "assets/models/民用船舶/远洋帆船.obj",
+  "source_title": "Sail Ship",
+  "author": "Quaternius",
+  "license": "CC0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source_page": "https://poly.pizza/m/cIzO4MBPqI",
+  "length_m": 45.0,
+  "dims_m": [
+   45.0,
+   11.964,
+   27.172
+  ],
+  "tris": 3500,
+  "bytes": 353138
+ },
+ {
+  "id": "2vKA7JD0JU",
+  "name_cn": "远洋邮轮",
+  "category": "民用船舶",
+  "category_en": "Civil vessel",
+  "file": "assets/models/民用船舶/远洋邮轮.obj",
+  "source_title": "Titanic",
+  "author": "LEDEGENERE",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/2vKA7JD0JU",
+  "length_m": 269.0,
+  "dims_m": [
+   269.0,
+   31.504,
+   64.135
+  ],
+  "tris": 6446,
+  "bytes": 7698811
+ },
+ {
+  "id": "3AmDGcCu6Ll",
+  "name_cn": "集装箱船",
+  "category": "民用船舶",
+  "category_en": "Civil vessel",
+  "file": "assets/models/民用船舶/集装箱船.obj",
+  "source_title": "Container Ship",
+  "author": "Alex Safayan",
+  "license": "CC-BY",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source_page": "https://poly.pizza/m/3AmDGcCu6Ll",
+  "length_m": 200.0,
+  "dims_m": [
+   200.0,
+   43.081,
+   78.225
+  ],
+  "tris": 1620,
+  "bytes": 235039
+ }
+]

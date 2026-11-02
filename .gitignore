@@ -25,3 +25,6 @@ _tmp/
 _lidar/
 .DS_Store
 Thumbs.db
+
+# raw model downloads (regenerate with: python tools/fetch_vehicle_models.py)
+assets/_cache/
