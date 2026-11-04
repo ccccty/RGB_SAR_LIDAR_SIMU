@@ -732,6 +732,10 @@ def _preflight_payload(q):
         warnings.append("迎头拍摄却设为远离：几何自相矛盾，建议把接近方式改成「接近」")
     if aspect == "pursuit" and closing == "in":
         warnings.append("追击拍摄却设为接近：目标会倒着飞，建议改成「远离」")
+    if aspect in ("look_down", "top_down") and closing == "out":
+        # A look-down engagement closes: the camera is above the target and the
+        # slant range shrinks. "out" here would have the target recede downwards.
+        warnings.append("俯视拍摄却设为远离：俯视是自上而下接近，建议改成「接近」")
 
     # Sub-pixel target: the pixel budget is the honest way to say "you asked for
     # a 500 m target at 40 km through a 2 deg lens and you will get three dots".
@@ -915,8 +919,13 @@ def _parse(body):
     # Aspect is the operator-facing word for what the geometry actually is:
     # whether the target comes at the camera or runs away from it. Closing rate
     # alone does not say this -- a receding target can still be filmed head-on.
+    # Three values, matching the three buttons in the view selector. look_down is
+    # the surface engagement; top_down is what the background-placement editor
+    # sends, because clicking a pixel on a plate only means anything under a
+    # straight-down camera.
     q["aspect"] = _choice(body, "aspect", "拍摄方位",
-                          {"": 1, "head_on": 1, "pursuit": 1}, "")
+                          {"": 1, "head_on": 1, "pursuit": 1,
+                           "look_down": 1, "top_down": 1}, "")
     # Where the dataset lands. Blank keeps the default out/studio_runs/<id>.
     q["out_dir"] = _safe_out_dir(body.get("output_dir"))
     raw_ecm = body.get("ecm")
@@ -1075,6 +1084,12 @@ def _compose(q, cfg):
             sk["platform"] = plat
         else:
             sk.pop("mode", None)
+        # The view selector's choice has to reach the geometry, not just the
+        # form: a hand-authored scene carries its own seeker block with no
+        # aspect, so picking 迎头 in the workbench used to change nothing at all.
+        if q.get("aspect"):
+            sk["aspect"] = str(q["aspect"])
+            sk["closing"] = "out" if str(q["aspect"]) == "pursuit" else "in"
         clip["seeker"] = sk
         cfg.pop("seeker", None)
 
@@ -2075,7 +2090,9 @@ class Handler(BaseHTTPRequestHandler):
             ecm=_ecm_kinds_payload(),
             env_kinds=[dict(key=k, label=v) for k, v in
                        __import__("simkit.scenegen", fromlist=["x"]).ENV_LABELS.items()],
-            aspects=[dict(key="head_on", label="迎头"), dict(key="pursuit", label="追击")],
+            aspects=[dict(key="head_on", label="迎头", domain="air"),
+                     dict(key="pursuit", label="追击", domain="air"),
+                     dict(key="look_down", label="俯视", domain="surface")],
             cost=dict(sec=COST_SEC_PER_FRAME, mb=COST_MB_PER_FRAME),
             default_out=RUNS, project_root=ROOT, recipes=_list_recipes(),
             # Which target classes stand on the ground: the view selector greys
