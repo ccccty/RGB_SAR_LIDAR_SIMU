@@ -1104,3 +1104,33 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent-line); outli
 .place-out { margin-top: 8px; }
 .place-out img { width: 100%; border-radius: 6px; border: 1px solid #253040; display: block; }
 .seg.small button { font-size: 11px; padding: 3px 8px; }
+.bg-domain { margin: 8px 0 2px; font-size: 11px; color: #7f8fa2; font-weight: 600; }
+.bg-domain:first-child { margin-top: 2px; }
+.bg-cats + .bg-domain { margin-top: 10px; }
+/* ---- 背景库折叠树 ---- */
+.bg-lib { display: block; margin-top: 4px; }
+.bg-sec { border: 1px solid #1e2833; border-radius: 6px; margin-bottom: 6px; overflow: hidden; }
+.bg-sec-head { display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 7px 9px; background: #131a22; border: none; border-bottom: 1px solid #1e2833;
+  color: #cfdae6; font-size: 12px; font-weight: 600; cursor: pointer; text-align: left; }
+.bg-sec-head:hover { background: #17202a; }
+.bg-sec-body { padding: 4px; }
+.bg-caret { color: #7f8fa2; font-size: 10px; width: 10px; display: inline-block; }
+.bg-catrow { margin: 2px 0; }
+.bg-cathead { display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 4px 6px; background: transparent; border: 1px solid transparent;
+  border-radius: 5px; color: #aebccb; font-size: 12px; cursor: pointer; text-align: left; }
+.bg-cathead:hover { background: #131a22; border-color: #223040; }
+.bg-cathead.on { border-color: #56b6ff; background: #0f1822; color: #dbe9f6; }
+.bg-cat-cover { width: 46px; height: 30px; object-fit: cover; border-radius: 3px; flex: none; }
+.bg-catname { flex: 1; }
+.bg-catcount { color: #6d7a88; font-size: 11px; }
+.bg-thumbs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
+  padding: 6px 4px 8px 24px; }
+.bg-thumb { padding: 0; background: #0d1218; border: 1px solid #223040;
+  border-radius: 4px; overflow: hidden; cursor: pointer; line-height: 0; }
+.bg-thumb img { width: 100%; height: 44px; object-fit: cover; display: block; }
+.bg-thumb.on { border-color: #56b6ff; box-shadow: 0 0 0 1px #56b6ff66 inset; }
+.bg-thumb-any { display: flex; align-items: center; justify-content: center;
+  height: 46px; color: #8b99a8; font-size: 11px; background: #0d1218; }
+.bg-thumb-any.on { color: #dbe9f6; }

@@ -304,6 +304,14 @@ class ClipPlan:
                 if self.target.get("motion_type") == "ground" else None))
             self.rig = motion.Rig(dict(spec.get("rig") or {}), cam0, self.path, rng)
             self.rig_lag = self.rig.lag
+            # A fixed mount that pans to follow the target. Without it a long
+            # clip filmed from one spot watches the target fly out of frame:
+            # ds_air_uav covers 1224 m of sky through a 151 m wide frame, so 85%
+            # of the frames have nothing labelled in them.
+            # clip.camera is the camera NAME ("optical"), not a block, so the
+            # tracking flag gets its own key.
+            if str(spec.get("camera_track", "")).lower() in ("1", "true", "yes", "on"):
+                self.mode = "track"
 
         # ---- state sources (docs/多目标运动仿真调研.md 5.1) ----------------
         # One Track per object.  The primary target's track is derived (seeker
@@ -911,6 +919,10 @@ class ClipPlan:
                 aim = aim + (np.tan(np.radians(azw)) * right +
                              np.tan(np.radians(elw)) * up) * d
             return pos, aim
+        if self.mode == "track":
+            # Mount stays put, gimbal follows the target.
+            pos, _aim = self.rig.pose(t, self.cam0)
+            return pos, self.target_pos(t)
         pos, aim = self.rig.pose(t, self.cam0)
         return pos, aim
 

@@ -199,5 +199,8 @@
   "sensor_jitter_yaw_deg": 0.35,
   "temp_jitter_c": 3.0,
   "sun_az_jitter_deg": 24.0
+ },
+ "clip": {
+  "camera_track": true
  }
 }

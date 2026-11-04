@@ -218,6 +218,27 @@ class BackdropLibraryTests(unittest.TestCase):
             rel = cat + "/" + os.path.basename(picked)
             self.assertIn(rel, aerial, rel)
 
+    def test_a_chosen_file_beats_the_seed_rotation(self):
+        """Picking a specific plate must survive any seed."""
+        from simkit import scenegen
+        lib = scenegen.backdrop_library()
+        files = lib.get("sky") or []
+        if len(files) < 2:
+            self.skipTest("need at least two sky plates")
+        want = files[1]
+        for seed in (0, 3, 99):
+            r = scenegen.default_recipe()
+            r['environment'].update(kind='sky', weather='clear')
+            r['environment']['background'] = {'mode': 'library', 'category': 'sky',
+                                              'file': want}
+            r['objects'] = [dict(asset='军用飞机/双发战斗机.obj', cls='fighter',
+                                 scale=1.0, count=1)]
+            r['view'].update(aspect='head_on', range_km=6.0, fov_deg=2.2)
+            r['capture'].update(sensors=['optical'], frames=1, seed=seed)
+            cfg = scenegen.build_scene(scenegen.validate_recipe(r))
+            used = os.path.basename(cfg['optical'].get('sky_image') or '')
+            self.assertEqual(used, want)
+
     def test_manual_placement_turns_the_plate_into_a_map(self):
         """top_down must centre the plate and disable the tiling tricks."""
         from simkit import scenegen

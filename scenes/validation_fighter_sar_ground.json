@@ -201,6 +201,7 @@
    "radius_m": 100,
    "speed_mps": 3,
    "phase": -1.5707963267948966
-  }
+  },
+  "camera_track": true
  }
 }

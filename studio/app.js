@@ -129,10 +129,14 @@
     return {
       name: "我的数据集",
       env: { kind: "sky", weather: "clear" },
-      bg: { mode: "none", path: "", dataUrl: "", category: "forest" },
+      /* file 为空时按种子在同类照片间轮换；选定具体照片则永远用它。 */
+      bg: { mode: "none", path: "", dataUrl: "", category: "forest", file: "" },
+      bgUi: { open: "", domains: {} },
       /* 在背景图上的放置：uv 是归一化图面坐标，orig 为左上角。
          points 是同一条轨迹的 uv 序列。 */
-      place: { mode: "place", u: 0.5, v: 0.5, points: [], busy: false, url: "" },
+      /* placed 只有在用户真的在图面上点过之后才为 true：否则默认的 0.5/0.5
+         会让"只要选了背景库就强制正俯视"，把迎头/追击都盖掉。 */
+      place: { mode: "place", u: 0.5, v: 0.5, points: [], busy: false, url: "", placed: false },
       obj: {
         category: "军用飞机", asset: "军用飞机/双发战斗机.obj",
         cls: "fighter", scale: 1.0, count: 1
@@ -273,7 +277,16 @@
   function envLabel(key) { return labelIn(OPT.env_kinds, key, key); }
   function weatherLabel(key) { return labelIn(OPT.weather, key, key); }
   function sensorLabel(key) { return labelIn(OPT.sensors, key, key); }
+  /* 当前目标是否站在地面/海面上：决定哪些视角可用。 */
+  function isSurfaceTarget() {
+    var cls = trim(S.obj.cls || "");
+    var list = (OPT && OPT.surface_cls) || [];
+    if (list.length) { return indexOf(list, cls) >= 0; }
+    return cls === "vehicle" || cls === "tank" || cls === "ship";
+  }
+
   function aspectLabel(key) {
+    if (key === "look_down" || key === "top_down") { return "俯视"; }
     if (key === "head_on") { return "迎头"; }
     if (key === "pursuit") { return "追击"; }
     return labelIn(OPT.aspects, key, key);
@@ -445,8 +458,11 @@
     }
     if (S.bg.mode === "library") {
       /* Real plate from assets/backdrops. For ground/sea the engine also maps it
-         onto the ground material -- a look-down view shows terrain, not sky. */
-      return { mode: "library", category: S.bg.category || "forest" };
+         onto the ground material -- a look-down view shows terrain, not sky.
+         A chosen file wins over the seed rotation the engine would otherwise do. */
+      var _bg = { mode: "library", category: S.bg.category || "forest" };
+      if (S.bg.file) { _bg.file = S.bg.file; }
+      return _bg;
     }
     if (S.bg.mode === "upload") {
       return { mode: "upload", path: trim(S.bg.path) };
@@ -520,7 +536,7 @@
     var recipe = buildRecipe();
     /* 在背景图上放置过目标时，视角必须锁成俯视正下方：uv 只有在 top_down
        的板面坐标系里才等于像素位置。 */
-    if (S.bg.mode === "library" && S.place.u !== null && S.place.u !== undefined) {
+    if (S.bg.mode === "library" && S.place.placed) {
       recipe.view.aspect = "top_down";
       recipe.view.ground_span_m = 600;
       recipe.objects[0].uv = [S.place.u, S.place.v];
@@ -740,22 +756,31 @@
       if (!BACKDROPS.length) {
         cats.appendChild(ce("p", "note", "背景库未加载：后端未连接或 assets/backdrops 为空。"));
       } else {
-        each(BACKDROPS, function (c) {
-          var btn = ce("button", "bg-cat" + (S.bg.category === c.key ? " on" : ""), "");
-          btn.type = "button";
-          if (c.cover) {
-            var im = ce("img", "");
-            im.src = c.cover;
-            im.alt = "";
-            btn.appendChild(im);
-          }
-          btn.appendChild(ce("span", "", c.label + " " + c.count));
-          btn.onclick = function () {
-            S.bg.category = c.key;
+        /* 折叠树：域 → 类别 → 单张照片。可以只看类别（按种子轮换），
+           也可以点开类别挑具体一张（那样每次都用它）。 */
+        each(["air", "land", "sea"], function (dom) {
+          var group = [];
+          each(BACKDROPS, function (c) { if ((c.domain || "land") === dom) { group.push(c); } });
+          if (!group.length) { return; }
+          var total = 0;
+          each(group, function (c) { total += c.count; });
+          var open = S.bgUi.domains[dom] !== false;
+          var sec = ce("div", "bg-sec", "");
+          var head = ce("button", "bg-sec-head", "");
+          head.type = "button";
+          head.appendChild(ce("span", "bg-caret", open ? "▾" : "▸"));
+          head.appendChild(ce("span", "", (group[0].domain_label || dom) + " · " + total + " 张"));
+          head.onclick = function () {
+            S.bgUi.domains[dom] = !open;
             renderScene();
-            touch();
           };
-          cats.appendChild(btn);
+          sec.appendChild(head);
+          if (open) {
+            var body = ce("div", "bg-sec-body", "");
+            each(group, function (c) { body.appendChild(backdropCategoryRow(c)); });
+            sec.appendChild(body);
+          }
+          cats.appendChild(sec);
         });
       }
       renderPlace();
@@ -763,9 +788,14 @@
       if (note) {
         var cur = null;
         each(BACKDROPS, function (x) { if (x.key === S.bg.category) { cur = x; } });
-        note.textContent = cur
-          ? "当前：" + cur.label + "，" + cur.count + " 张；按种子轮换，避免整套背景雷同。"
-          : "按种子在同类照片间轮换。";
+        if (S.bg.file) {
+          note.textContent = "已选定：" + S.bg.file + "（每次都用这张）";
+        } else if (cur) {
+          note.textContent = "当前：" + cur.label + "，" + cur.count + " 张；未选具体照片，",
+          note.textContent += "按种子轮换。点开类别可指定某一张。";
+        } else {
+          note.textContent = "展开类别可指定具体照片。";
+        }
       }
     }
     var path = $("bgPath");
@@ -777,7 +807,72 @@
   }
 
   /* ------------------------------------------------- 背景图放置 / 轨迹 */
+  /* 背景库：一个类别一行，点开看该类全部照片，点某张即选定。 */
+  function backdropCategoryRow(c) {
+    var row = ce("div", "bg-catrow", "");
+    var expanded = S.bgUi.open === c.key;
+    var active = S.bg.category === c.key;
+    var head = ce("button", "bg-cathead" + (active ? " on" : ""), "");
+    head.type = "button";
+    head.appendChild(ce("span", "bg-caret", expanded ? "▾" : "▸"));
+    if (c.cover) {
+      var im = ce("img", "bg-cat-cover");
+      im.src = S.bg.category === c.key && S.bg.file
+        ? "/api/backdrop/" + c.key + "/" + encodeURIComponent(S.bg.file)
+        : c.cover;
+      im.alt = "";
+      im.loading = "lazy";
+      head.appendChild(im);
+    }
+    head.appendChild(ce("span", "bg-catname", c.label));
+    head.appendChild(ce("span", "bg-catcount", c.count + " 张"));
+    head.onclick = function () {
+      S.bgUi.open = expanded ? "" : c.key;
+      if (!active) { S.bg.category = c.key; S.bg.file = ""; }
+      renderScene();
+      touch();
+    };
+    row.appendChild(head);
+    if (expanded) {
+      var grid = ce("div", "bg-thumbs", "");
+      var files = c.files || [];
+      /* 第一块是"不指定"：回到按种子轮换。 */
+      var any = ce("button", "bg-thumb bg-thumb-any" + (active && !S.bg.file ? " on" : ""), "");
+      any.type = "button";
+      any.appendChild(ce("span", "", "全部/轮换"));
+      any.onclick = function () {
+        S.bg.category = c.key;
+        S.bg.file = "";
+        renderScene();
+        touch();
+      };
+      grid.appendChild(any);
+      each(files, function (f) {
+        var b = ce("button", "bg-thumb" + (S.bg.file === f ? " on" : ""), "");
+        b.type = "button";
+        b.title = f;
+        var t = ce("img", "");
+        t.src = "/api/backdrop/" + c.key + "/" + encodeURIComponent(f);
+        t.alt = "";
+        t.loading = "lazy";
+        b.appendChild(t);
+        b.onclick = function () {
+          S.bg.category = c.key;
+          S.bg.file = f;
+          renderScene();
+          touch();
+        };
+        grid.appendChild(b);
+      });
+      row.appendChild(grid);
+    }
+    return row;
+  }
+
   function placeCoverUrl() {
+    if (S.bg.file) {
+      return "/api/backdrop/" + S.bg.category + "/" + encodeURIComponent(S.bg.file);
+    }
     var cur = null;
     each(BACKDROPS, function (c) { if (c.key === S.bg.category) { cur = c; } });
     return cur ? cur.cover : "";
@@ -841,6 +936,7 @@
     if (!rect.width || !rect.height) { return; }
     var u = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
     var v = Math.max(0, Math.min(1, (ev.clientY - rect.top) / rect.height));
+    S.place.placed = true;
     if (S.place.mode === "place") {
       S.place.u = u; S.place.v = v; S.place.points = [];
     } else {
@@ -855,9 +951,12 @@
     if (S.place.busy) { return; }
     var u = S.place.points.length ? S.place.points[0][0] : S.place.u;
     var v = S.place.points.length ? S.place.points[0][1] : S.place.v;
+    var st = $("placeStatus");
     S.place.busy = true;
     renderPlace();
-    api("/place", {
+    /* 用 ajax：app.js 里没有 api() 这个函数（那是 bench.js 内部的），
+       之前 api("/place") 会抛 ReferenceError，按钮永久卡在"渲染中"。 */
+    ajax("POST", API + "/place", {
       category: S.bg.category,
       u: u, v: v,
       span_m: 600,
@@ -866,15 +965,15 @@
       samples: 12,
       asset: S.obj.asset,
       cls: S.obj.cls || "vehicle"
-    }).then(function (d) {
-      S.place.url = d.url + "?t=" + Date.now();
-      var st = $("placeStatus");
-      if (st) { st.textContent = "世界坐标 " + d.world.join(", ") + " · " + d.seconds + " 秒"; }
-    }).catch(function (e) {
-      var st = $("placeStatus");
-      if (st) { st.textContent = "预览失败：" + e.message; }
-    }).then(function () {
+    }, function (err, d) {
       S.place.busy = false;
+      if (err) {
+        if (st) { st.textContent = "预览失败：" + (err.error || err.message || "未知错误"); }
+        renderPlace();
+        return;
+      }
+      S.place.url = d.url + "?t=" + Date.now();
+      if (st) { st.textContent = "世界坐标 " + d.world.join(", ") + " · " + d.seconds + " 秒"; }
       renderPlace();
     });
   }
@@ -1597,15 +1696,33 @@
 
     var aspect = $("aspectSeg");
     clear(aspect);
-    each([{ key: "head_on", label: "迎头" }, { key: "pursuit", label: "追击" }], function (item) {
-      var btn = ce("button", S.view.aspect === item.key ? "on" : "", item.label);
+    /* 迎头/追击只对空中目标有意义，俯视只对地面与海面目标有意义。不适用的
+       那一个置灰，避免选了以后被引擎悄悄换掉、摘要和实际不一致。 */
+    var surface = isSurfaceTarget();
+    /* 换目标时把不适用的视角自动换成可用的那个：切成坦克后还停在"迎头"的
+       话，三个按钮全灰、摘要却写着迎头，实际跑起来又被引擎改成俯视。 */
+    if (surface && S.view.aspect !== "look_down") {
+      S.view.aspect = "look_down";
+    } else if (!surface && S.view.aspect === "look_down") {
+      S.view.aspect = "head_on";
+    }
+    each([{ key: "head_on", label: "迎头", air: true },
+          { key: "pursuit", label: "追击", air: true },
+          { key: "look_down", label: "俯视", air: false }], function (item) {
+      var enabled = surface ? !item.air : item.air;
+      var btn = ce("button", S.view.aspect === item.key && enabled ? "on" : "", item.label);
       btn.type = "button";
-      btn.onclick = function () {
-        S.view.aspect = item.key;
-        renderView();
-        renderSummaries();
-        touch();
-      };
+      if (!enabled) {
+        btn.disabled = true;
+        btn.title = surface ? "地面/海面目标使用俯视" : "空中目标使用迎头或追击";
+      } else {
+        btn.onclick = function () {
+          S.view.aspect = item.key;
+          renderView();
+          renderSummaries();
+          touch();
+        };
+      }
       aspect.appendChild(btn);
     });
 
@@ -2915,7 +3032,8 @@
 
     var view = recipe.view || {};
     if (num(view.range_km, 0) > 0) { S.view.range_km = num(view.range_km, 8); }
-    if (view.aspect === "head_on" || view.aspect === "pursuit") { S.view.aspect = view.aspect; }
+    if (view.aspect === "head_on" || view.aspect === "pursuit" ||
+        view.aspect === "look_down") { S.view.aspect = view.aspect; }
     if (num(view.fov_deg, 0) > 0) { S.view.fov_deg = num(view.fov_deg, 2.2); }
     S.view.views = view.views === "dual" ? "dual" : "single";
 
@@ -3265,6 +3383,7 @@
       cb.addEventListener("click", function () {
         S.place.points = [];
         S.place.url = "";
+        S.place.placed = false;
         renderPlace();
       });
     }

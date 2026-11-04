@@ -40,3 +40,8 @@ assets/models/previews/
 
 # scratch probe folders from ad-hoc testing
 sgprobe_*/
+
+# GitHub Actions workflow: pushing it needs a token with the `workflow`
+# scope, which the current credential does not have. Kept on disk; add it
+# back once a properly scoped token is in place.
+.github/workflows/

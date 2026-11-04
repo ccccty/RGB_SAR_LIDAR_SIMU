@@ -787,7 +787,11 @@ def main():
             exposures[v["name"]] = auto_exposure(
                 sc, v, opt.get("exposure_bias", 0.0))
     base_exp = opt.get("exposure_bias", 0.0)
-    export_geometry = bool(opt.get("export_geometry") or (opt.get("sensor") or {}).get("enabled"))
+    # Default ON: the alternative (centre-ray visibility) drops a partially
+    # occluded target entirely, while the IR path keeps it from rendered pixels.
+    # That made the same frame report 4 optical boxes and 5 IR boxes. One rule
+    # for every scene: per-pixel visibility from the instance pass.
+    export_geometry = bool(opt.get("export_geometry", True))
     pass_output = None
     if export_geometry:
         from blender.sensor_helpers import setup_passes

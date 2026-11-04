@@ -206,7 +206,16 @@ ASPECT_BY_ENV = {'sky': ('head_on', 'pursuit'),
 # is the simulated target composited onto one of these, which is the only way a
 # frame shows real forest or harbour texture instead of a procedural gradient.
 BACKDROP_DIR = os.path.join(ROOT, 'assets', 'backdrops')
-BACKDROP_CATEGORIES = ('forest', 'city', 'port', 'island', 'open')
+# Three domains, because a dataset is generated for one of them: an aircraft is
+# shot against sky, a vehicle against terrain, a vessel against water. Each
+# domain carries several scene types so a batch is not 20 copies of one forest.
+BACKDROP_DOMAIN = {
+    'sky': 'air',
+    'forest': 'land', 'city': 'land', 'desert': 'land', 'rural': 'land',
+    'mountain': 'land', 'industrial': 'land',
+    'open': 'sea', 'port': 'sea', 'island': 'sea',
+}
+BACKDROP_CATEGORIES = tuple(BACKDROP_DOMAIN.keys())
 WIND_MS = {'clear': 6.0, 'cloudy': 9.0, 'rain': 13.0, 'fog': 3.0,
            'mixed': 9.0, 'evolve': 9.0}
 
@@ -1681,6 +1690,12 @@ def build_scene(recipe):
         if _gr.get('enabled', True) and float(_gr.get('size') or 0.0) < _need:
             _gr['size'] = round(_need, 1)
     _apply_background(cfg, r['environment'], r['capture']['sensors'], notes)
+    if not top_down and (cfg.get('ground') or {}).get('backdrop'):
+        # Scale the plate so one photo covers roughly one frame. Tiling a desert
+        # satellite shot every 300 m laid an obvious seam grid across the picture.
+        _frame_w = 2.0 * float(range_m) * math.tan(math.radians(float(fov)) / 2.0)
+        if _frame_w > 1.0:
+            cfg['ground']['backdrop_span_m'] = round(_frame_w, 1)
     if top_down:
         # Placed targets: the plate becomes the map, so it is centred on the world
         # origin with no rotation and no random offset. Any of those would put the

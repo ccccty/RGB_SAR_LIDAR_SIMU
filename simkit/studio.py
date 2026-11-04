@@ -221,7 +221,9 @@ def _scene_file(name):
         raise BadRequest("scenes/ 目录里没有场景文件")
     raw = str(name or "").strip()
     if not raw:
-        return sorted(paths)[0]
+        # paths is stem -> path; returning the stem made the caller try to open
+        # a file named 'demo_air_uav' and fail with a bare ENOENT.
+        return paths[sorted(paths)[0]]
     stem = raw[:-5] if raw.lower().endswith(".json") else raw
     if stem in paths:
         return paths[stem]
@@ -564,8 +566,11 @@ def _assets_payload():
     return dict(assets=out)
 
 
-BACKDROP_LABELS = {"forest": "森林", "city": "城市", "port": "港口",
-                   "island": "岛屿", "open": "开阔海面"}
+BACKDROP_LABELS = {"sky": "云层天空", "forest": "森林", "city": "城市",
+                   "desert": "荒漠", "rural": "乡村农田", "mountain": "山地",
+                   "industrial": "工业区", "port": "港口", "island": "岛屿",
+                   "open": "开阔海面"}
+BACKDROP_DOMAIN_LABELS = {"air": "空域", "land": "陆域", "sea": "海域"}
 
 
 def _backdrops_payload():
@@ -579,9 +584,12 @@ def _backdrops_payload():
     out = []
     for key in scenegen.BACKDROP_CATEGORIES:
         files = lib.get(key) or []
+        dom = scenegen.BACKDROP_DOMAIN.get(key, "land")
         out.append(dict(key=key, label=BACKDROP_LABELS.get(key, key),
+                        domain=dom,
+                        domain_label=BACKDROP_DOMAIN_LABELS.get(dom, dom),
                         count=len(files),
-                        files=files[:40],
+                        files=files[:60],
                         cover=("/api/backdrop/%s/%s" % (key, files[0])) if files else ""))
     total = sum(c["count"] for c in out)
     return dict(categories=out, total=total,
@@ -1474,9 +1482,14 @@ def _parse_place(body):
     def uv(name, default):
         v = body.get(name, default)
         try:
-            return max(0.0, min(1.0, float(v)))
+            x = float(v)
         except (TypeError, ValueError):
             raise BadRequest("%s 必须是 0..1 的数字" % name)
+        if not (0.0 <= x <= 1.0):
+            # Silently clamping a click that lands outside the plate would put
+            # the target on an edge the operator never pointed at.
+            raise BadRequest("%s 必须在 0..1 之间（收到 %s）" % (name, x))
+        return x
     cat = str(body.get("category") or "").strip()
     from . import scenegen
     if cat and cat not in scenegen.BACKDROP_CATEGORIES:
@@ -2000,6 +2013,11 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
+    def _reset_request_state(self):
+        """Drop everything cached for the previous request on this connection."""
+        self._cached_body = None
+        self._cached_error = None
+
     def _body(self):
         """Read and cache the request body.
 
@@ -2009,6 +2027,12 @@ class Handler(BaseHTTPRequestHandler):
         ('{}GET')" -- measured). Caching also lets drain() run at the top of
         do_POST without the handlers seeing an empty body.
         """
+        err = getattr(self, "_cached_error", None)
+        if err is not None:
+            # A body that failed to parse must keep failing: _drain_body swallows
+            # the first raise so the socket is still consumed, and the handler
+            # that runs afterwards has to see the 400 rather than an empty dict.
+            raise err
         if getattr(self, "_cached_body", None) is not None:
             return self._cached_body
         n = int(self.headers.get("Content-Length") or 0)
@@ -2023,7 +2047,8 @@ class Handler(BaseHTTPRequestHandler):
             self._cached_body = json.loads(raw.decode("utf-8"))
         except ValueError:
             self._cached_body = {}
-            raise BadRequest("请求体不是合法 JSON")
+            self._cached_error = BadRequest("请求体不是合法 JSON")
+            raise self._cached_error
         return self._cached_body
 
     def _drain_body(self):
@@ -2052,9 +2077,18 @@ class Handler(BaseHTTPRequestHandler):
                        __import__("simkit.scenegen", fromlist=["x"]).ENV_LABELS.items()],
             aspects=[dict(key="head_on", label="迎头"), dict(key="pursuit", label="追击")],
             cost=dict(sec=COST_SEC_PER_FRAME, mb=COST_MB_PER_FRAME),
-            default_out=RUNS, project_root=ROOT, recipes=_list_recipes())
+            default_out=RUNS, project_root=ROOT, recipes=_list_recipes(),
+            # Which target classes stand on the ground: the view selector greys
+            # out 俯视 for an aircraft and 迎头/追击 for a tank.
+            surface_cls=sorted(__import__("simkit.scenegen", fromlist=["x"]).SURFACE_CLS))
 
     def do_GET(self):
+        # The Handler instance is reused across keep-alive requests, so any
+        # per-request cache has to be cleared here. Leaving _cached_body set made
+        # the second POST on one socket replay the first body while its own bytes
+        # stayed in the buffer, and the request after it was parsed as garbage
+        # (measured: 501 Unsupported method '{"frames":7...}GET').
+        self._reset_request_state()
         # GET used to run without a catch: a BadRequest from a helper (a bad
         # output path, a malformed dataset id) escaped to socketserver, the
         # connection closed with NO response, and the browser's ajax.onerror
@@ -2166,6 +2200,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, fh.read(), mime)
 
     def do_POST(self):
+        self._reset_request_state()
         u = urlparse(self.path)
         # Consume the body before any branch can return early, so a keep-alive
         # connection is never left with unread bytes in its buffer.

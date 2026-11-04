@@ -584,6 +584,21 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
 
     t_start = time.time()
 
+    # A missing sensor falls back to engine defaults for everything except
+    # optical, which is a hard error. That asymmetry is fine, but it used to be
+    # silent: demo_optical declares only an optical camera and still produced
+    # IR and radar frames from parameters the scene never chose. Say so once.
+    _declared = set((cfg.get("sensors") or {}).keys())
+    _alias = {"ir": ("ir_camera", "ir"), "optical": ("optical",),
+              "radar": ("radar",), "sar": ("sar",), "lidar": ("lidar",)}
+    for _s in sensors:
+        if not _declared:
+            break
+        if not any(a in _declared for a in _alias.get(_s, (_s,))):
+            print("  [提示] 场景未声明 %s 传感器，使用引擎默认参数生成。"
+                  "如需精确复现，请在场景里补 sensors.%s。"
+                  % (_s, "ir_camera" if _s == "ir" else _s), file=sys.stderr)
+
     if "optical" in sensors:
         # A scene may legitimately have no optical camera at all (demo_ir only
         # declares ir_camera). Asking for one anyway used to die deep inside the
@@ -783,25 +798,26 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
             # label file makes the YOLO export either skip it (class unknown) or,
             # worse, teach the detector that fences are targets
             name_of = {o["id"]: o["name"] for o in w.objs if o.get("label", True)}
-            # ECM echoes carry obj == -1: they are not world geometry, they are
-            # returns the jammer synthesised. Dropping them here made the file
-            # say "1 detection" while the radar had actually found five peaks,
-            # so a deception set looked identical to a clean one.
-            ecm_name_of = {}
-            ecm_rep = out.get("ecm") or {}
-            for ent in ecm_rep.get("entities") or []:
-                for k, _inj in enumerate(ent.get("injected") or []):
-                    ecm_name_of.setdefault("ecm:" + str(ent.get("id")), []).append(k)
-            ecm_hits = {}
+            # A detection with obj == -1 is not world geometry. Two very
+            # different things land there, and they must not be conflated:
+            #   * a real ECM echo, which ecm.radar_apply marks with ecm_id;
+            #   * clutter / a false alarm, which matches nothing in the scene.
+            # Naming every obj == -1 "ecm#NN" put 2741 phantom jamming boxes into
+            # scenes with no jamming at all (97.9% of all radar boxes across the
+            # 32-scene regression), so a clutter frame looked like a deception set.
             boxes_rd = {}
+            ecm_hits = {}
             for det in out["detections"]:
                 oid = int(det["obj"])
+                ecm_id = det.get("ecm_id")
                 if oid < 0:
-                    # label the deception by the entity that created it, in
-                    # order, so the RD file still says which peak is which
-                    hit = ecm_hits.get("n", 0)
-                    ecm_hits["n"] = hit + 1
-                    nm = "ecm#%02d" % hit
+                    if not ecm_id:
+                        # clutter: reported under unassociated_detections, never
+                        # as a box, or it teaches a detector that grass is a target
+                        continue
+                    hit = ecm_hits.get(ecm_id, 0)
+                    ecm_hits[ecm_id] = hit + 1
+                    nm = "ecm#%s:%02d" % (ecm_id, hit)
                 else:
                     nm = name_of.get(oid)
                 if nm is None:
@@ -848,7 +864,9 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
             _labeled = [o for o in (getattr(w, "objs", None) or [])
                         if o.get("label", True)]
             rlab["range_window_m"] = _rwin or None
-            if _labeled and not out["detections"]:
+            # Only obj >= 0 counts as a real target detection: clutter peaks hide
+            # a completely unseen target behind "there are detections".
+            if _labeled and not any(int(d["obj"]) >= 0 for d in out["detections"]):
                 print("  [警告] 该帧雷达零检测，但场景有 %d 个标注目标；"
                       "距离窗 %.0f m，请检查 sensors.radar.n_samples 是否足够。"
                       % (len(_labeled), _rwin), file=sys.stderr)
