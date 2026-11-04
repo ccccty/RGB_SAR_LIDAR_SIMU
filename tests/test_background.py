@@ -38,11 +38,15 @@ def base_cfg(background=None, background_temp_k=None, top_level=False):
         ground=dict(enabled=False),
         sun=dict(on=False),
         air=dict(temp_c=20.0),
+
         seed=7,
         sensors=dict(ir_camera=camera()),
         objects=[dict(name="target", shape="box", size=[1.5, 1.5, 1.5],
                       pos=[0.0, 10.0, 1.0], mat="painted_metal")],
+        # The plate's radiometric anchor defaults to the scene's ground
+        # temperature; pin it so these tests do not move when that default does.
         ir=dict(netd_mk=0.0, psf_px=0.0, texture_sigma_c=0.0, gain=1.0,
+                background_temp_k=260.0,
                 nuc=dict(enabled=False), preview_mode="temp"),
     )
     if background is not None:

@@ -460,7 +460,15 @@ def _background_temperature_k(cfg):
     the scene instead of dumping raw 0..255 (or 0..65535) values into it.
     """
     ircfg = cfg.get("ir") or {}
-    raw = ircfg.get("background_temp_k", cfg.get("background_temp_k", 260.0))
+    # Default to the scene's own ground temperature, not a fixed 260 K. A
+    # 260 K anchor put the photograph at -13 C while the ground, the buildings
+    # and the target were all solving near +20 C, so every piece of geometry
+    # saturated against a plate that represented frozen terrain.
+    _ground_c = (cfg.get("ground") or {}).get("temp_c")
+    if _ground_c is None:
+        _ground_c = float(cfg.get("air", {}).get("temp_c", 20.0)) + 8.0
+    raw = ircfg.get("background_temp_k",
+                    cfg.get("background_temp_k", float(_ground_c) + 273.15))
     value = float(raw)
     if not np.isfinite(value) or value <= 0.0:
         raise ValueError("红外背景温度必须为正的开尔文温度 ir.background_temp_k，收到 %r" % (raw,))
@@ -631,7 +639,73 @@ def _plate_view(gray, cam, w, h):
     return (top * (1.0 - fv) + bottom * fv) / np.float32(255.0)
 
 
-def _background_plate(path, w, h, cam=None):
+def _plate_view_ground(gray, cam, cfg, w, h):
+    """Sample a ground plate by projecting each pixel onto the z=0 plane.
+
+    The plate is a photograph of terrain, not a 360x180 panorama. Feeding it to
+    the equirectangular path made a nadir camera sample the pole of the sphere:
+    the whole frame collapsed onto a few texels and a city block rendered as a
+    flat grey checkerboard instead of a city.
+
+    The mapping matches the optical renderer exactly (Object coordinates, scale
+    1/span, offset backdrop_offset), so the two bands show the same terrain under
+    the same target.
+    """
+    g = cfg.get("ground") or {}
+    span = float(g.get("backdrop_span_m") or 0.0)
+    if span <= 0.0:
+        return None
+    span_y = float(g.get("backdrop_span_y_m") or span)
+    try:
+        off = g.get("backdrop_offset") or (0.5, 0.5)
+        off_u, off_v = float(off[0]), float(off[1])
+        pos = np.asarray(cam.get("pos"), float)
+        look = np.asarray(cam.get("look_at", [0.0, 0.0, 0.0]), float)
+        fov = float(cam.get("fov_deg") or 0.0)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if not (0.1 <= fov <= 170.0):
+        return None
+    src = np.asarray(gray, dtype=np.float32)
+    if src.ndim != 2 or src.size == 0:
+        return None
+    ih, iw = src.shape
+    p, right, up, fwd = sensor_basis(pos, look, cam.get("up", (0, 0, 1)),
+                                     cam.get("roll_deg", 0.0))
+    fx = (w / 2.0) / math.tan(math.radians(fov) / 2.0)
+    px = (np.arange(w) + 0.5 - w / 2.0) / fx
+    py = -(np.arange(h) + 0.5 - h / 2.0) / fx
+    gx, gy = np.meshgrid(px, py)
+    dirs = fwd[None, None, :] + right[None, None, :] * gx[:, :, None] \
+        + up[None, None, :] * gy[:, :, None]
+    dz = dirs[:, :, 2]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = (0.0 - float(p[2])) / dz
+    ok = np.isfinite(t) & (t > 0.0)
+    if not ok.any():
+        return None
+    hit = p[None, None, :] + dirs * t[:, :, None]
+    uu = hit[:, :, 0] / span + off_u
+    vv = hit[:, :, 1] / span_y + off_v
+    # wrap by the tile, then bilinear: the plate repeats every span_m
+    uu = np.mod(uu, 1.0)
+    vv = np.mod(vv, 1.0)
+    x0 = np.floor(uu * (iw - 1)).astype(np.int64)
+    y0 = np.floor(vv * (ih - 1)).astype(np.int64)
+    x1 = np.clip(x0 + 1, 0, iw - 1)
+    y1 = np.clip(y0 + 1, 0, ih - 1)
+    ax = (uu * (iw - 1) - x0).astype(np.float32)
+    ay = (vv * (ih - 1) - y0).astype(np.float32)
+    out = ((src[y0, x0] * (1 - ax) + src[y0, x1] * ax) * (1 - ay)
+           + (src[y1, x0] * (1 - ax) + src[y1, x1] * ax) * ay)
+    out = np.where(ok, out, np.nan)
+    # _load_plate_gray hands back 0..255; the composite expects 0..1. Clipping
+    # the raw values to 0..1 turned the whole plate into solid white.
+    scale = 255.0 if float(np.nanmax(out)) > 1.5 else 1.0
+    return np.clip(out / scale, 0.0, 1.0).astype(np.float32)
+
+
+def _background_plate(path, w, h, cam=None, cfg=None):
     """Load an 8-bit plate and fit it to the frame: centre crop + resize.
 
     This is an unregistered approximation, deliberately: the IR camera is
@@ -678,6 +752,17 @@ def _background_plate(path, w, h, cam=None):
     if cam:
         _gw, _gh = gray.size
         _ratio = _gw / float(_gh) if _gh else 0.0
+    # A ground plate is terrain seen through a lens, so project it through the
+    # lens: pixels -> z=0 plane -> plate uv. Only fall through to the panorama
+    # path when the scene really is a sky panorama behind the target.
+    if cfg is not None:
+        ground = _plate_view_ground(gray, cam, cfg, w, h) if cam else None
+        if ground is not None:
+            ground = np.ascontiguousarray(ground, dtype=np.float32)
+            ground.setflags(write=False)
+            if cache_key is not None:
+                _BACKGROUND_PLATES[cache_key] = ground
+            return ground
     if cam and 1.85 <= _ratio <= 2.15:
         projected = _plate_view(gray, cam, w, h)
         if projected is not None:
@@ -713,7 +798,7 @@ def _background_plate(path, w, h, cam=None):
 
 
 def _composite_background(img, counts, preview, temperature, depth, cfg, band,
-                          gain, t0, t1, cam=None):
+                          gain, t0, t1, cam=None, obj_id=None):
     """Paste the background plate into pixels that saw no geometry.
 
     Only pixels whose depth is not finite (the rasteriser's miss marker) or
@@ -734,10 +819,17 @@ def _composite_background(img, counts, preview, temperature, depth, cfg, band,
         raise ValueError("红外背景图不存在或不是文件：%s" % path)
     depth = np.asarray(depth, dtype=np.float64)
     void = ~np.isfinite(depth) | (depth == 0.0)
+    # A terrain backdrop replaces the synthetic ground plane, not just the misses.
+    # The plate is a photograph of real terrain; the plane underneath it is a
+    # handful of giant triangles whose flat facets were what a top-down plate
+    # scene actually rendered, as a blocky grey checkerboard, while the photo
+    # only showed through the pixels where no ground hit at all.
+    if (cfg.get("ground") or {}).get("backdrop") and obj_id is not None:
+        void = void | (np.asarray(obj_id) == -1)
     if not void.any():
         return img, counts, preview, temperature
     H, W = depth.shape
-    plate = _background_plate(path, W, H, cam=cam)
+    plate = _background_plate(path, W, H, cam=cam, cfg=cfg)
     bg_temp_k = _background_temperature_k(cfg)
     # Linear radiometric mapping: grey 0 -> no radiance, grey 255 -> the band
     # radiance of a blackbody at bg_temp_k.  Since Planck radiance is monotonic
@@ -933,7 +1025,8 @@ def render(world, cfg, temps_k, cam=None):
     # pixels are touched, after blur/noise/AGC, so geometry pixels stay
     # bit-for-bit what they were without a background.
     img, counts, prev, t_img = _composite_background(
-        img, counts, prev, t_img, depth, cfg, band, gain, t0, t1, cam=cam)
+        img, counts, prev, t_img, depth, cfg, band, gain, t0, t1, cam=cam,
+        obj_id=pid)
     return dict(
         radiance=img,
         counts_u16=np.clip(counts, 0.0, 65535.0).astype(np.uint16),
