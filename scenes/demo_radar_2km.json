@@ -44,12 +44,17 @@
     0
    ],
    "vel": [
-    0,
-    0,
-    0
+    -6.0,
+    12.0,
+    0.0
    ],
    "mat": "painted_metal",
-   "rcs_db": -10
+   "rcs_db": -10,
+   "velocity": [
+    -6.0,
+    12.0,
+    0.0
+   ]
   }
  ],
  "sensors": {
@@ -69,7 +74,7 @@
    "el_span_deg": 0.12,
    "n_az": 80,
    "n_el": 12,
-   "n_samples": 1024,
+   "n_samples": 2048,
    "chirp_us": 50,
    "tx_power_dbm": 40,
    "noise_figure_db": 8,

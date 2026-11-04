@@ -1,0 +1,193 @@
+{
+ "schema": 1,
+ "count": 11,
+ "lookup": {
+  "军用地面车辆/主战坦克": {
+   "generic_name": "主战坦克",
+   "category": "军用地面车辆",
+   "types": [
+    {
+     "name": "M1A2 Abrams",
+     "confidence": "estimated",
+     "rcs_value_m2": 20.0,
+     "rcs_band": "X",
+     "real_span_m": 3.66,
+     "real_length_m": 9.77,
+     "sources": [
+      "无公开实测; 大型平板装甲车体, 数十 m2 量级"
+     ]
+    }
+   ]
+  },
+  "军用地面车辆/高机动越野车": {
+   "generic_name": "高机动越野车",
+   "category": "军用地面车辆",
+   "types": [
+    {
+     "name": "HMMWV M1151",
+     "confidence": "estimated",
+     "rcs_value_m2": 3.0,
+     "rcs_band": "X",
+     "real_span_m": 2.16,
+     "real_length_m": 4.57,
+     "sources": [
+      "无公开实测; 箱型轻型车体, 近似 3 m2 量级"
+     ]
+    }
+   ]
+  },
+  "军用飞机/单发战斗机": {
+   "generic_name": "单发战斗机",
+   "category": "军用飞机",
+   "types": [
+    {
+     "name": "F-16C Fighting Falcon",
+     "confidence": "literature",
+     "rcs_value_m2": 1.2,
+     "rcs_band": "X",
+     "real_span_m": 9.96,
+     "real_length_m": 15.06,
+     "sources": [
+      "公开值; 分波段 L 2-4 / S 1.5-2.5 / C 1.2-1.6 / Ku 0.9-1.3 (工程外推)"
+     ]
+    }
+   ]
+  },
+  "军用飞机/双发战斗机": {
+   "generic_name": "双发战斗机",
+   "category": "军用飞机",
+   "types": [
+    {
+     "name": "F-15C Eagle",
+     "confidence": "literature",
+     "rcs_value_m2": 25.0,
+     "rcs_band": "X",
+     "real_span_m": 13.06,
+     "real_length_m": 19.43,
+     "sources": [
+      "公开迎头值 25 m2; L 40-70 / S 25-35 / C 20-28 / Ku 18-25 (工程外推)"
+     ]
+    }
+   ]
+  },
+  "军用飞机/多用途战斗机": {
+   "generic_name": "多用途战斗机",
+   "category": "军用飞机",
+   "types": [
+    {
+     "name": "J-10C",
+     "confidence": "estimated",
+     "rcs_value_m2": 1.5,
+     "rcs_band": "X",
+     "real_span_m": 9.8,
+     "real_length_m": 16.9,
+     "sources": [
+      "公开估算; 尺寸与 F-16 同量级, 鸭式布局角反射略增"
+     ]
+    }
+   ]
+  },
+  "军用飞机/高速截击机": {
+   "generic_name": "高速截击机",
+   "category": "军用飞机",
+   "types": [
+    {
+     "name": "Su-27",
+     "confidence": "literature",
+     "rcs_value_m2": 15.0,
+     "rcs_band": "X",
+     "real_span_m": 14.7,
+     "real_length_m": 21.9,
+     "sources": [
+      "公开迎头值 15 m2; 大型双发机型, 进气道与垂尾构成强反射"
+     ]
+    }
+   ]
+  },
+  "固定翼无人机/中空长航时无人机": {
+   "generic_name": "中空长航时无人机",
+   "category": "固定翼无人机",
+   "types": [
+    {
+     "name": "MQ-9A Reaper",
+     "confidence": "estimated",
+     "rcs_value_m2": 1.29,
+     "rcs_band": "X",
+     "real_span_m": 20.12,
+     "real_length_m": 11.0,
+     "sources": [
+      "第三方推演数据库(CMO-DB DB3000 ID4536), 非实测; 前向 1.29 (S-Ku), 侧向 2.14, 后向 1.29"
+     ]
+    }
+   ]
+  },
+  "旋翼无人机/四旋翼无人机": {
+   "generic_name": "四旋翼无人机",
+   "category": "旋翼无人机",
+   "types": [
+    {
+     "name": "DJI Mavic 3 (Phantom 2 同族标定)",
+     "confidence": "measured",
+     "rcs_value_m2": 0.042,
+     "rcs_band": "Ku",
+     "real_span_m": 0.38,
+     "real_length_m": 0.3475,
+     "sources": [
+      "Li & Ling 2016, UT Austin 暗室, 12-15GHz VV EL=0, DJI Phantom 2: 前向 8deg 0.042 / 45deg 0.011 / 侧向 90deg 0.117 / 后向 172deg 0.023 m2; S 波段整体低约 12dB"
+     ]
+    }
+   ]
+  },
+  "旋翼无人机/多旋翼无人机": {
+   "generic_name": "多旋翼无人机",
+   "category": "旋翼无人机",
+   "types": [
+    {
+     "name": "DJI Matrice 350 RTK",
+     "confidence": "estimated",
+     "rcs_value_m2": 0.15,
+     "rcs_band": "Ku",
+     "real_span_m": 0.895,
+     "real_length_m": 0.81,
+     "sources": [
+      "按 Phantom 2 尺寸平方标度: 轴距 0.895 vs 0.350, 面积比 6.5; 同批 Inspire1(0.56m) 12-15GHz 最大 -3.0dBsm=0.50 m2 提供上界参照"
+     ]
+    }
+   ]
+  },
+  "旋翼无人机/小型四旋翼": {
+   "generic_name": "小型四旋翼",
+   "category": "旋翼无人机",
+   "types": [
+    {
+     "name": "DJI Mini 3",
+     "confidence": "estimated",
+     "rcs_value_m2": 0.015,
+     "rcs_band": "Ku",
+     "real_span_m": 0.247,
+     "real_length_m": 0.145,
+     "sources": [
+      "按 Phantom 2 实测尺寸平方标度: 轴距 0.247 vs 0.350, 面积比 0.50, 前向 0.042 x 0.5"
+     ]
+    }
+   ]
+  },
+  "直升机/武装直升机": {
+   "generic_name": "武装直升机",
+   "category": "直升机",
+   "types": [
+    {
+     "name": "AH-64D Apache",
+     "confidence": "estimated",
+     "rcs_value_m2": 6.0,
+     "rcs_band": "X",
+     "real_span_m": 14.63,
+     "real_length_m": 17.73,
+     "sources": [
+      "无公开实测; 旋翼旋转部件与短翼构成本征强散射, 按同级旋翼机估算"
+     ]
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,287 @@
+{
+  "ground": {
+    "enabled": false
+  },
+  "weather": {
+    "mode": "per_clip",
+    "pool": [
+      "clear",
+      "cloudy"
+    ]
+  },
+  "sun": {
+    "elev_deg": 38,
+    "az_deg": 120,
+    "irradiance": 900,
+    "on": true
+  },
+  "air": {
+    "temp_c": -22,
+    "rh": 0.15,
+    "wind_mps": 18
+  },
+  "ir": {
+    "bands": [
+      "mwir"
+    ],
+    "netd_mk": 28,
+    "psf_px": 1.3,
+    "nuc": {
+      "enabled": true,
+      "prnu": 0.008,
+      "dsnu_counts": 25,
+      "column_fpn_counts": 6,
+      "dead_px": 0.0002,
+      "seed": 12345
+    }
+  },
+  "optical": {
+    "samples": 16,
+    "exposure": -0.6,
+    "export_geometry": true
+  },
+  "frames": {
+    "n": 120,
+    "dt": 0.1
+  },
+  "seed": 1103,
+  "objects": [
+    {
+      "name": "fighter_01",
+      "cls": "fighter",
+      "shape": "obj",
+      "model": "../assets/models/军用飞机/双发战斗机.obj",
+      "pos": [
+        0,
+        0,
+        3000
+      ],
+      "vel": [
+        200,
+        0,
+        0
+      ],
+      "rot": 0,
+      "mat": "painted_metal",
+      "temp_c": 35,
+      "rcs_db": 8,
+      "attitude_mode": "coordinated",
+      "kinematics": {
+        "min_speed_mps": 100,
+        "max_speed_mps": 350,
+        "max_accel_mps2": 25,
+        "max_climb_mps": 50,
+        "min_altitude_m": 500,
+        "max_bank_deg": 65
+      }
+    }
+  ],
+  "sensors": {
+    "ir_camera": {
+      "pos": [
+        -500,
+        -1400,
+        3100
+      ],
+      "look_at": [
+        0,
+        0,
+        3000
+      ],
+      "fov_deg": 2.2,
+      "width": 768,
+      "height": 576
+    },
+    "optical": {
+      "pos": [
+        -500,
+        -1400,
+        3100
+      ],
+      "look_at": [
+        0,
+        0,
+        3000
+      ],
+      "fov_deg": 2.2,
+      "width": 768,
+      "height": 576
+    },
+    "radar": {
+      "band": "Ku",
+      "az_span_deg": 2.0,
+      "el_span_deg": 1.6,
+      "n_az": 40,
+      "n_el": 28,
+      "bandwidth_mhz": 50,
+      "n_samples": 2048,
+      "chirp_us": 40,
+      "pri_us": 50,
+      "beamwidth_el_deg": 6.0,
+      "n_chirps": 64,
+      "tx_power_dbm": 43,
+      "noise_figure_db": 8,
+      "clutter_density": 0.0,
+      "mti_min_vr_mps": 0.8,
+      "pfa": 1e-06,
+      "swerling": "I",
+      "clutter_db": -12.0,
+      "ground_clutter_db": -35.0,
+      "pos": [
+        -500,
+        -1400,
+        3100
+      ],
+      "look_at": [
+        0,
+        0,
+        3000
+      ],
+      "up": [
+        0,
+        0,
+        1
+      ]
+    },
+    "lidar": {
+      "pos": [
+        -500,
+        -1400,
+        3100
+      ],
+      "look_at": [
+        0,
+        0,
+        3000
+      ],
+      "fov_deg": 2.2,
+      "width": 768,
+      "height": 576,
+      "n_az": 256,
+      "n_el": 192,
+      "max_range_m": 3000,
+      "range_spec_m": 1800,
+      "pulse_energy_nj": 4000,
+      "aperture_mm": 50
+    }
+  },
+  "clip": {
+    "frames_per_clip": 120,
+    "camera": "ir_camera",
+    "trajectory": {
+      "mode": "arc",
+      "centre": [
+        0,
+        5000,
+        3000
+      ],
+      "origin": [
+        0,
+        0,
+        3000
+      ],
+      "radius_m": 5000,
+      "speed_mps": 200,
+      "phase": -1.5707963267948966
+    },
+    "observer_trajectory": {
+      "mode": "line",
+      "origin": [
+        -500,
+        -1400,
+        3100
+      ],
+      "vel": [
+        190,
+        0,
+        0
+      ]
+    },
+    "rig": {
+      "lag_s": 0.02
+    },
+    "observer_kinematics": {
+      "max_speed_mps": 300,
+      "max_accel_mps2": 25,
+      "min_altitude_m": 500
+    }
+  },
+  "name": "minimal_fighter_image_interference",
+  "research_baseline": {
+    "purpose": "10-frame pipeline and motion validation; not a training corpus",
+    "geometry": "shared OBJ, independent optical and infrared instance/depth passes",
+    "kinematics": "coordinated level turn; no aerodynamic force integration",
+    "sensor_calibration": "nominal simulation settings, not measured sensor calibration"
+  },
+  "interference": {
+    "enabled": true,
+    "seed": 7,
+    "events": [
+      {
+        "id": "noise",
+        "kind": "additive_noise",
+        "strength": 0.035,
+        "start_s": 0.1,
+        "end_s": 0.9,
+        "fade_s": 0.1
+      },
+      {
+        "id": "glare",
+        "kind": "glare",
+        "modalities": [
+          "optical",
+          "ir"
+        ],
+        "strength": 0.5,
+        "center_uv": [
+          0.6,
+          0.45
+        ],
+        "size_uv": [
+          0.14,
+          0.14
+        ],
+        "drift_uv_s": [
+          0.015,
+          0
+        ],
+        "start_s": 0.2,
+        "end_s": 0.9,
+        "fade_s": 0.1
+      },
+      {
+        "id": "contrast",
+        "kind": "contrast_loss",
+        "strength": 0.2,
+        "start_s": 0.1,
+        "end_s": 0.9,
+        "fade_s": 0.1
+      },
+      {
+        "id": "screen",
+        "kind": "occlusion",
+        "modalities": [
+          "optical",
+          "ir",
+          "lidar"
+        ],
+        "strength": 1.0,
+        "center_uv": [
+          0.51,
+          0.5
+        ],
+        "size_uv": [
+          0.12,
+          0.45
+        ],
+        "drift_uv_s": [
+          0.02,
+          0
+        ],
+        "start_s": 0.3,
+        "end_s": 0.9,
+        "fade_s": 0.1
+      }
+    ]
+  }
+}

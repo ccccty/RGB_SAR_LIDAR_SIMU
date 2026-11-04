@@ -3,7 +3,14 @@ import numpy as np
 
 
 class BVH:
-    def __init__(self, verts, faces, leaf_size=8):
+    # Build leaf size. 16 measured faster end-to-end than 8 or 4 on a 38k-face
+    # scene in both ray workloads tried (thermal shadow rays and isotropic
+    # lidar-style rays): the shallower tree builds in 100 ms instead of 165 ms
+    # and casts faster, and the larger leaves only add triangle tests that the
+    # 10-wide gather absorbs. The hit/miss answer is identical for every leaf
+    # size (verified on three scenes), because the leaf size only changes the
+    # acceleration structure.
+    def __init__(self, verts, faces, leaf_size=16):
         v0 = verts[faces[:, 0]]
         v1 = verts[faces[:, 1]]
         v2 = verts[faces[:, 2]]
@@ -15,6 +22,7 @@ class BVH:
         self.tri_min, self.tri_max = tri_min, tri_max
 
         n = len(faces)
+        self.leaf_size = int(leaf_size)
         self.order = np.arange(n)
         self.bmin, self.bmax = [], []
         self.left, self.right, self.start, self.count = [], [], [], []
@@ -28,6 +36,19 @@ class BVH:
         self.right = np.array(self.right, np.int32)
         self.start = np.array(self.start, np.int32)
         self.count = np.array(self.count, np.int32)
+
+        # Edge vectors are per-triangle constants: _hit_tris_rays rebuilt
+        # v1-v0 and v2-v0 for every gathered triangle of every ray. They cost
+        # 2*F*3 doubles (1.8 MB at 38k faces) and hold exactly the doubles the
+        # old expressions produced, so gathering them changes nothing.
+        self.e1 = self.v1 - self.v0
+        self.e2 = self.v2 - self.v0
+        # A leaf never holds more than leaf_size triangles, and the split rule
+        # can leave fewer (8 requested -> 5 observed on a 38k-face scene).
+        # Traversal must gather at least the real maximum or it would silently
+        # skip the tail of a leaf, but widening to leaf_size also tests slots
+        # that are only padding. max_leaf is both correct and smaller.
+        self.max_leaf = int(self.count.max()) if len(self.count) else 0
 
     def _node_bounds(self, lo, hi):
         idx = self.order[lo:hi]
@@ -67,7 +88,7 @@ class BVH:
         origin = np.broadcast_to(origin, dirs.shape).copy()
         return self.ray_cast_batch(origin, dirs)
 
-    def ray_cast_batch(self, origins, dirs, leaf_size=8, max_stack=128):
+    def ray_cast_batch(self, origins, dirs, leaf_size=None, max_stack=128, chunk=None):
         """origins (N,3), dirs (N,3). One ray per row, all traversed together.
 
         The scalar implementation below cost one Python-level traversal per ray,
@@ -75,6 +96,17 @@ class BVH:
         45 s in the thermal shadow pass alone). Traversing every ray at once,
         with a per-ray explicit stack, removes that constant factor without
         changing a single hit.
+
+        leaf_size defaults to None, meaning "the tree's own maximum leaf
+        occupancy". Passing a number is still accepted, but the gather is never
+        allowed to be narrower than the real maximum (that would silently drop
+        triangles from the tail of a leaf).
+
+        Splitting the batch into cache-sized blocks was measured on the 38k-face
+        thermal shadow pass and is kept OUT: at 19k rays it made the cast 25%
+        slower (each block re-pays the per-iteration numpy call overhead while
+        the traversal only runs a few dozen iterations), and bigger blocks were
+        monotonically better. A single batch is both simpler and faster here.
         """
         origins = np.ascontiguousarray(origins, dtype=float)
         dirs = np.ascontiguousarray(dirs, dtype=float)
@@ -83,7 +115,14 @@ class BVH:
             z = np.zeros(0)
             return {"t": z, "tri": np.zeros(0, np.int64), "hit": np.zeros(0, bool),
                     "point": np.zeros((0, 3))}
-        origins = np.broadcast_to(origins, dirs.shape).copy()
+        width = self.max_leaf if leaf_size is None else max(int(leaf_size), self.max_leaf)
+        return self._cast_block(origins, dirs, width, max_stack)
+
+    def _cast_block(self, origins, dirs, K, max_stack):
+        """Traverse the whole ray batch; the traversal stack lives here."""
+        if origins.shape != dirs.shape:
+            origins = np.broadcast_to(origins, dirs.shape).copy()
+        N = len(dirs)
 
         bmin, bmax = self.bmin, self.bmax
         left, right, start, count = self.left, self.right, self.start, self.count
@@ -96,7 +135,6 @@ class BVH:
         sp = np.zeros(N, np.int32)
         node = np.zeros(N, np.int32)
         alive = np.ones(N, bool)
-        K = leaf_size
 
         while True:
             idx = np.nonzero(alive)[0]
@@ -160,21 +198,35 @@ class BVH:
         return {"t": best, "tri": best_tri, "hit": hit, "point": pts}
 
     def _hit_tris_rays(self, idx, o, d):
-        """idx (M,K), o (M,3), d (M,3) -> (M,K) distances and hits."""
+        """idx (M,K), o (M,3), d (M,3) -> (M,K) distances and hits.
+
+        Written one vector component at a time. np.cross builds each component
+        as a1*b2 - a2*b1 and (x*y).sum(axis=2) reduces three terms left to
+        right, so this is the same sequence of IEEE operations as the previous
+        version -- it just no longer materialises four (M,K,3) temporaries,
+        which measured 1.5x faster at the leaf widths this tree produces.
+        """
         v0 = self.v0[idx]
-        e1 = self.v1[idx] - v0
-        e2 = self.v2[idx] - v0
-        oo = o[:, None, :]
-        dd = d[:, None, :]
-        p = np.cross(dd, e2)
-        det = (e1 * p).sum(axis=2)
+        e1 = self.e1[idx]
+        e2 = self.e2[idx]
+        dx = d[:, None, 0]
+        dy = d[:, None, 1]
+        dz = d[:, None, 2]
+        px = dy * e2[..., 2] - dz * e2[..., 1]
+        py = dz * e2[..., 0] - dx * e2[..., 2]
+        pz = dx * e2[..., 1] - dy * e2[..., 0]
+        det = e1[..., 0] * px + e1[..., 1] * py + e1[..., 2] * pz
         ok = np.abs(det) > 1e-12
         inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
-        tv = oo - v0
-        u = (tv * p).sum(axis=2) * inv
-        qv = np.cross(tv, e1)
-        v = (qv * dd).sum(axis=2) * inv
-        tt = (e2 * qv).sum(axis=2) * inv
+        t0 = o[:, None, 0] - v0[..., 0]
+        t1 = o[:, None, 1] - v0[..., 1]
+        t2 = o[:, None, 2] - v0[..., 2]
+        u = (t0 * px + t1 * py + t2 * pz) * inv
+        qx = t1 * e1[..., 2] - t2 * e1[..., 1]
+        qy = t2 * e1[..., 0] - t0 * e1[..., 2]
+        qz = t0 * e1[..., 1] - t1 * e1[..., 0]
+        v = (qx * dx + qy * dy + qz * dz) * inv
+        tt = (e2[..., 0] * qx + e2[..., 1] * qy + e2[..., 2] * qz) * inv
         ok &= (u >= 0) & (u <= 1) & (v >= 0) & (u + v <= 1) & (tt > 1e-9)
         return np.where(ok, tt, np.inf), ok
 

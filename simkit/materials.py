@@ -8,6 +8,9 @@ emissivity_lwir: 8-12 um emissivity (defaults to emissivity if absent)
 alpha_solar   : solar absorptivity
 albedo        : visible RGB 0..1
 h_int         : internal heat flux W/m^2 (engines, electronics, bodies)
+emissive      : optional (r, g, b, strength) self-emission in the OPTICAL band.
+                A burning flare is among the brightest objects in a visible scene;
+                rendered as a plain grey ball it teaches the wrong thing.
 
 Values are literature ranges for engineering estimates, not measurements.
 Metal is the case where the band really matters: polished aluminium is a poor
@@ -55,9 +58,50 @@ MATERIALS = {
     "skin": dict(rf_rho=0.20, rough_m=0.0050, emissivity=0.98,
                  emissivity_mwir=0.97, emissivity_lwir=0.98,
                  alpha_solar=0.60, albedo=(0.62, 0.48, 0.40), h_int=0.0),
+    # ---- Painted surfaces, one per platform family ----------------------------
+    # One shared painted_metal (0.22/0.24/0.28) used to stand in for all sixty
+    # models, but real paint families differ by up to 50x in linear albedo: a
+    # white airliner fuselage measured 2.6x brighter than the shared value, and
+    # a warship measured darker AND with R>G>B, the opposite channel order.
+    # Values below are the reference-photo medians (configs/refs_params.json),
+    # +-35% absolute; only differences of 1.5x or more are worth trusting.
+    "paint_civil_air": dict(rf_rho=0.55, rough_m=0.0020, emissivity=0.92,
+                            emissivity_mwir=0.85, emissivity_lwir=0.92,
+                            alpha_solar=0.28, albedo=(0.498, 0.509, 0.571),
+                            h_int=0.0),
+    "paint_uav_fixed": dict(rf_rho=0.55, rough_m=0.0020, emissivity=0.92,
+                            emissivity_mwir=0.85, emissivity_lwir=0.92,
+                            alpha_solar=0.35, albedo=(0.306, 0.260, 0.252),
+                            h_int=0.0),
+    "paint_uav_rotor": dict(rf_rho=0.55, rough_m=0.0020, emissivity=0.92,
+                            emissivity_mwir=0.85, emissivity_lwir=0.92,
+                            alpha_solar=0.40, albedo=(0.108, 0.130, 0.129),
+                            h_int=0.0),
+    "paint_warship": dict(rf_rho=0.55, rough_m=0.0020, emissivity=0.92,
+                          emissivity_mwir=0.85, emissivity_lwir=0.92,
+                          alpha_solar=0.40, albedo=(0.188, 0.150, 0.123),
+                          h_int=0.0),
+    "paint_vessel": dict(rf_rho=0.55, rough_m=0.0020, emissivity=0.92,
+                         emissivity_mwir=0.85, emissivity_lwir=0.92,
+                         alpha_solar=0.42, albedo=(0.140, 0.092, 0.104),
+                         h_int=0.0),
+    "paint_scenery": dict(rf_rho=0.45, rough_m=0.0080, emissivity=0.93,
+                          emissivity_mwir=0.90, emissivity_lwir=0.93,
+                          alpha_solar=0.50, albedo=(0.169, 0.155, 0.144),
+                          h_int=0.0),
+    # A chaff bloom is a volume of thin metal strips, not a polished solid. With
+    # metal_bare it rendered as a chrome ball -- a hard mirror highlight that says
+    # "modelling prop", not "countermeasure". Strips scatter in every direction,
+    # so the cloud reads as a diffuse, slightly translucent grey.
+    "chaff_cloud": dict(rf_rho=0.85, rough_m=0.0100, emissivity=0.35,
+                        emissivity_mwir=0.30, emissivity_lwir=0.35,
+                        alpha_solar=0.45, albedo=(0.55, 0.55, 0.56), h_int=0.0),
     "engine_hot": dict(rf_rho=0.60, rough_m=0.0020, emissivity=0.90,
                        emissivity_mwir=0.85, emissivity_lwir=0.90,
-                       alpha_solar=0.40, albedo=(0.20, 0.20, 0.22), h_int=900.0),
+                       alpha_solar=0.40, albedo=(0.20, 0.20, 0.22), h_int=900.0,
+                       # magnesium/PTFE flare: a near-white emitter far brighter
+                       # than any sunlit surface in the frame
+                       emissive=(1.0, 0.86, 0.62, 60.0)),
     "seawater": dict(rf_rho=0.35, rough_m=0.0500, emissivity=0.96,
                      emissivity_mwir=0.96, emissivity_lwir=0.96,
                      alpha_solar=0.94, albedo=(0.04, 0.07, 0.10), h_int=0.0),

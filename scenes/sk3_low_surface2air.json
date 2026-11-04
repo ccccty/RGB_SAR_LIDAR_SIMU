@@ -187,6 +187,8 @@
   "seeker": {
    "mode": "platform",
    "platform": {
+    "_why_flight_class": "235 m/s at 300 m is a jet, not a MALE drone; without this the envelope clips the approach speed and the standoff never closes",
+    "flight_class": "fighter",
     "origin": [
      0,
      -7999.591309328117,

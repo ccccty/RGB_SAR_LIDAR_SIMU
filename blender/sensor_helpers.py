@@ -88,7 +88,8 @@ def configure_exposure(scene, camera, meshes, frame, view, dt, enabled):
                 continue
             ob = meshes[name]["ob"]
             ob.location = Vector(pose["pos"])
-            ob.rotation_euler = (0, 0, np.radians(pose["yaw"]))
+            ob.rotation_euler = (np.radians(pose.get("roll", 0)),
+                                 -np.radians(pose.get("pitch", 0)), np.radians(pose["yaw"]))
             ob.keyframe_insert("location", frame=key)
             ob.keyframe_insert("rotation_euler", frame=key)
     for ob in [camera]+[info["ob"] for info in meshes.values()]:

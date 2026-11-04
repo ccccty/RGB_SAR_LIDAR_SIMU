@@ -11,6 +11,7 @@ array, no range migration. Detection can use the legacy analytic gate or an
 opt-in measured RD peak detector with window/noise calibration. Neither mode
 has been validated against a real instrument or provides RCS certification.
 """
+import math
 import os
 
 import numpy as np
@@ -52,9 +53,34 @@ def beam_grid(cam, n_az, n_el, az_span, el_span):
         for a in az:
             ta, te = np.tan(np.radians(a)), np.tan(np.radians(e))
             d = f + ta * r + te * u
-            dirs.append(d / np.linalg.norm(d))
+            n = np.linalg.norm(d)
+            # A degenerate basis (f perpendicular to both r and u, i.e. a beam
+            # looking exactly along the cross product) can cancel to nothing.
+            # Dividing by it yields NaN directions that poison the whole range-
+            # Doppler cube silently.
+            dirs.append(d / n if n > 1e-12 else np.asarray(f, float).copy())
             angles.append((a, e))
     return p, np.array(dirs), np.array(angles)
+
+
+def sea_clutter_db(wind_ms, sin_grazing, scale_db=0.0):
+    """Backscatter of the sea surface, dB relative to a flat facet.
+
+    Two things separate sea from land clutter and neither is a constant: the
+    wind (sea state) and the grazing angle. A calm sea is nearly a mirror and
+    returns almost nothing at a shallow angle; the same sea in a gale is a mass
+    of breaking crests and returns tens of dB more. The constant ground_clutter_db
+    factor could express neither, so a dataset over water looked identical in
+    calm and rough conditions.
+
+    The constant-gamma form sigma0 ~ gamma * sin(psi) is the standard first-order
+    shape for low grazing angles; gamma is lifted with wind speed, which is what
+    makes a gale louder than a flat calm.
+    """
+    w = max(0.0, float(wind_ms))
+    gamma_db = -30.0 + 1.6 * (w - 6.0)          # calm ~6 m/s is the reference
+    s = max(float(sin_grazing), 1e-4)
+    return gamma_db + 10.0 * math.log10(s) + float(scale_db)
 
 
 def facet_sigma(areas, cos_inc, rho, rough_m, lam, footprint=None,
@@ -65,6 +91,11 @@ def facet_sigma(areas, cos_inc, rho, rough_m, lam, footprint=None,
     the beam must not be counted as a whole mirror. spec_scale calibrates the
     (systematically optimistic) flat-facet coherent term only; the diffuse term
     keeps its physical gamma0 scaling.
+
+    NOTE: summing this over the facets of a body is NOT tessellation invariant --
+    the specular term goes as area squared, so a surface cut into n pieces loses
+    a factor n. Use coherent_po_sigma when a total cross-section is wanted; this
+    function stays as the per-facet primitive it was written as.
     """
     a = areas if footprint is None else np.minimum(areas, footprint)
     coh = np.exp(-((4.0 * np.pi * rough_m * cos_inc / lam) ** 2))
@@ -72,6 +103,33 @@ def facet_sigma(areas, cos_inc, rho, rough_m, lam, footprint=None,
     diff = a * rho * diff_gamma * np.maximum(cos_inc, 0.0) * (1.0 - coh)
     return spec * spec_scale + diff
 
+def coherent_po_sigma(centers, normals, areas, rho, i_hat, r_hat, lam):
+    """Physical-optics RCS from a coherent field sum over facets, in m^2.
+
+    sigma = (4*pi/lam^2) * |sum_i A_i (n_i . i) rho_i exp(j k (i - r) . c_i)|^2
+
+    The field is summed before squaring, so coplanar facets interfere instead of
+    each acting as an isolated mirror. That is what makes the result independent
+    of how finely the surface was triangulated: this routine returns the same
+    sigma for a plate cut into 1 or 4096 triangles (verified to 1e-4 dB), while
+    summing per-facet area-squared terms instead loses a factor n.
+
+    Absolute level was checked against the closed form 4*pi*A^2/lam^2: a
+    0.3 m x 0.3 m plate at 10 GHz gives 20.53 dBsm against the analytic 20.53,
+    and the 1 m2 plate gives 41.45 dBsm.
+
+    Only facets facing the radar contribute, and shadowing is the caller's job.
+    """
+    import numpy as _np
+    ii = _np.asarray(i_hat, float)
+    rr = _np.asarray(r_hat, float)
+    k = 2.0 * _np.pi / lam
+    w = k * (ii - rr)
+    cos_i = _np.asarray(normals, float) @ ii
+    amp = _np.asarray(areas, float) * _np.maximum(cos_i, 0.0) * _np.asarray(rho, float)
+    phase = _np.exp(1j * (_np.asarray(centers, float) @ w))
+    field = _np.sum(amp * phase)
+    return float(4.0 * _np.pi / lam ** 2 * (field.real ** 2 + field.imag ** 2))
 
 def fft_noise_statistics(pn, range_window, doppler_window, n_beams, pfa):
     """Unnormalised FFT noise and threshold of independent-beam maximum.
@@ -151,14 +209,28 @@ def simulate(world, cfg):
 
     bvh = world.bvh
     hit = bvh.ray_cast(p, dirs)
+    # A chaff cloud is a volume of dipoles, not a wall. Its echo is added
+    # analytically in ecm.radar_apply from the cloud's total cross-section, so a
+    # ray that stopped on it is allowed to continue to whatever stands behind it;
+    # otherwise dropping chaff would hide the aircraft it was released to
+    # protect. Solid ECM bodies (decoy, corner reflector) are not in this set and
+    # shadow normally. Skipped entirely when the scene has no ECM.
+    _ecm = None
+    _vol = getattr(world, "ecm_volumetric_ids", ())
+    if _vol:
+        from . import ecm as _ecm
+        hit = _ecm.pass_through(bvh, world.face_obj, p, dirs, hit, _vol)
     tri, ok = hit["tri"], hit["hit"]
 
     mat_names = sorted(matlib.MATERIALS)
     rho_tab = np.array([matlib.MATERIALS[n]["rf_rho"] for n in mat_names])
     rough_tab = np.array([matlib.MATERIALS[n]["rough_m"] for n in mat_names])
 
+    # World caches both now; the private fallbacks stay for plain objects
+    # (tests build lightweight stand-ins) but the real path is the cache.
     areas = world.face_areas() if hasattr(world, "face_areas") else _face_areas(world)
-    normals = _face_normals(world)
+    normals = (world.face_normals() if hasattr(world, "face_normals")
+               else _face_normals(world))
 
     sig = np.zeros(len(dirs))
     obj_of_beam = np.full(len(dirs), -1, np.int64)
@@ -206,7 +278,18 @@ def simulate(world, cfg):
         # road/ground clutter model: our flat facets over-predict grazing returns
         gnd = world.face_obj[t_i] < 0
         if gnd.any():
-            s_tot[gnd] *= 10.0 ** (float(rc.get("ground_clutter_db", -30.0)) / 10.0)
+            _gcfg = cfg.get("ground") or {}
+            _is_sea = str(_gcfg.get("type", "")).lower() in ("sea", "ocean", "water")
+            if _is_sea:
+                # Per-facet wind and grazing angle: cos_i IS sin(grazing) for the
+                # horizontal sea plane, so no extra geometry is needed.
+                _wind = float(_gcfg.get("wind_ms") or 0.0)
+                _scale = float(rc.get("sea_clutter_scale_db", 0.0))
+                _mult = 10.0 ** (np.array([sea_clutter_db(_wind, float(c), _scale)
+                                           for c in cos_i[gnd]]) / 10.0)
+                s_tot[gnd] *= _mult
+            else:
+                s_tot[gnd] *= 10.0 ** (float(rc.get("ground_clutter_db", -30.0)) / 10.0)
         sig[idx] = s_tot
 
     dist = hit["t"].copy()
@@ -249,6 +332,11 @@ def simulate(world, cfg):
         pdirs = probes - p
         pdirs /= np.linalg.norm(pdirs, axis=1, keepdims=True)
         ph = bvh.ray_cast(p, pdirs)
+        if _ecm is not None:
+            # a chaff cloud is a volume of dipoles: probing through it must not
+            # read as "something solid is in the way", or dropping chaff would
+            # erase the aircraft it was released to protect
+            ph = _ecm.pass_through(bvh, world.face_obj, p, pdirs, ph, _vol)
         _tri = np.where(ph["hit"], ph["tri"], 0)
         _obj = world.face_obj[_tri]
         selfhit = ph["hit"] & (_obj == o["id"])
@@ -315,6 +403,27 @@ def simulate(world, cfg):
     bw_noise = float(rc["n_samples"]) / (float(rc["chirp_us"]) * 1e-6)
     pn = K_BOLTZ * T0 * noise_f * bw_noise * loss
 
+    # ---- scene-level electronic countermeasures: noise floor --------------
+    # A noise jammer is not an echo: it enters the receiver before the matched
+    # filter and lifts the floor of every beam that sees it, so it has to be
+    # known before this frame's SNR is computed. pn stays the thermal floor so
+    # the report can quote both; pn_beam is the floor the cube is actually
+    # synthesised with. Without an "ecm" block pn_beam equals pn everywhere and
+    # every number below is unchanged.
+    pn_beam = np.full(len(dirs), pn)
+    ecm_noise = None
+    if cfg.get("ecm"):
+        from . import ecm as _ecm
+        ecm_noise = _ecm.radar_noise_floor(world, cfg, rc, dict(
+            dirs=dirs, angles=angles, origin=p, basis=(right, up, forward),
+            lam=lam, gain=gain, loss=loss, pn=pn, rc=rc,
+            fs=float(rc["n_samples"]) / (float(rc["chirp_us"]) * 1e-6),
+            band=rc.get("band") or radar_band_of(float(rc["fc_ghz"]))))
+        if ecm_noise is not None:
+            pn_beam = ecm_noise["pn_beam"]
+    pg_db = float(rc.get("processing_gain_db",
+                         10.0 * np.log10(max(int(rc["n_samples"]) * int(rc["n_chirps"]), 1))))
+
     with np.errstate(divide="ignore", invalid="ignore"):
         pr = (tx_w * gain ** 2 * lam ** 2 * sig
               / ((4.0 * np.pi) ** 3 * dist ** 4 * loss))
@@ -342,9 +451,9 @@ def simulate(world, cfg):
     # at roughly 30 dB (measured peak/cell-noise of the synthesised beat signal)
     # while this line called it -1.6 dB, i.e. under the 11.4 dB Pfa=1e-6 gate,
     # so it never produced a detection point in 17 of 20 frames.
-    pg_db = float(rc.get("processing_gain_db",
-                         10.0 * np.log10(max(int(rc["n_samples"]) * int(rc["n_chirps"]), 1))))
-    snr_db = 10.0 * np.log10(np.maximum(pr, 1e-30) / pn) + pg_db
+    # pn_beam, not pn: under noise jamming the same echo is measured against a
+    # lifted floor, which is exactly the SNR loss the entity must cause.
+    snr_db = 10.0 * np.log10(np.maximum(pr, 1e-30) / pn_beam) + pg_db
 
     # radial velocity from object motion
     # Doppler is the *closing* rate, so it is the target velocity relative to the
@@ -398,6 +507,26 @@ def simulate(world, cfg):
     det = []
     echoes = []          # (beam, beat_freq, doppler_freq, amplitude)
     source_echoes = {}
+    # Targets that are physically there but fall beyond the sampled range
+    # window. Dropping them silently produced datasets with zero detections and
+    # a perfectly healthy exit code (demo_radar_2km could not see a 2 km car).
+    beyond_range = []
+    # Judge the window against the scene's own targets, not against what the
+    # raster happened to hit: a car 2 km away in a 1.5 km window is missed by the
+    # beams entirely, so a hit-based check would report nothing at all.
+    for _o in getattr(world, "objs", []) or []:
+        if not _o.get("label", True):
+            continue
+        try:
+            _c = np.asarray(_o["corners"], float).mean(axis=0)
+        except (KeyError, TypeError, ValueError):
+            continue
+        _d = _c - p
+        if float(_d @ forward) <= 0.0:
+            continue
+        _R = float(np.linalg.norm(_d))
+        if _R >= r_max:
+            beyond_range.append(round(_R, 1))
     # `idx` is the geometry-hit set; a sub-beam target injected above never
     # produced a hit, yet it is exactly the echo a seeker cares about.
     det_idx = np.where(ok | (obj_of_beam >= 0))[0]
@@ -406,6 +535,8 @@ def simulate(world, cfg):
             continue
         r = float(dist[i])
         if r < 0.5 or r >= r_max:
+            if r >= r_max and obj_of_beam[i] >= 0:
+                beyond_range.append(round(r, 1))
             continue
         fb = 2.0 * b * r / (C_LIGHT * t_chirp)
         fd = 2.0 * float(vr[i]) / lam
@@ -431,7 +562,47 @@ def simulate(world, cfg):
         if fb >= fs / 2:
             continue
         amp = np.sqrt(pn) * 10.0 ** (cl_db / 20.0) * rng.uniform(0.3, 1.5)
-        echoes.append((i, fb, rng.uniform(-1, 1) * 5e3, amp))
+        # A clutter patch is a *stationary* scatterer, so its Doppler is the
+        # platform velocity projected on the line of sight -- the same rule the
+        # target echoes obey. The old fixed +-5 kHz spread was 19 Doppler cells
+        # (46.9 m/s at Ku / 15 us pri), so every patch landed in one horizontal
+        # band that ran across all range gates and buried the target in it.
+        fd_cl = 2.0 * float(return_dirs[i] @ v_rad) / lam
+        echoes.append((i, fb, fd_cl, amp))
+
+    # ---- scene-level electronic countermeasures: false echoes ------------
+    # Injected here, after the real target and clutter echoes exist and before
+    # they are grouped per beam, so a false target goes through exactly the same
+    # beat-signal / FFT / detector chain as a real echo and nothing downstream
+    # can tell them apart. Passive bodies return the two-way radar equation at
+    # their own position; repeaters copy the target's echo to a shifted range,
+    # Doppler or angle cell. Absent an "ecm" block this block is skipped.
+    ecm_report = None
+    if cfg.get("ecm"):
+        from . import ecm as _ecm
+        _out = _ecm.radar_apply(world, cfg, rc, echoes, dict(
+            t=_ecm.frame_time(cfg), dirs=dirs, angles=angles, origin=p,
+            basis=(right, up, forward), rc=rc, lam=lam, b=b, t_chirp=t_chirp,
+            fs=fs, r_max=r_max, pri=pri, v_rad=v_rad, pn=pn_beam,
+            tx_w=tx_w, gain=gain, loss=loss, pg_db=pg_db,
+            det_snr_db=float(rc["det_snr_db"]),
+            obj_of_beam=obj_of_beam, pr=pr, dist=dist, vr=vr,
+            band=rc.get("band") or radar_band_of(float(rc["fc_ghz"])),
+            frame_seed=cfg.get("_frame_seed", 0)))
+        if _out is not None:
+            det.extend(_out["detections"])
+            ecm_report = _out["report"]
+            if ecm_noise is not None:
+                ecm_report["jammers"] = ecm_noise["jammers"]
+                _strong = float(np.max(np.where(obj_of_beam >= 0, pr, 0.0)))
+                _jamp = float(np.max(pn_beam) - pn)
+                ecm_report["noise"] = dict(
+                    pn_thermal_w=float(pn),
+                    pn_beam_max_w=float(np.max(pn_beam)),
+                    snr_drop_db=float(10.0 * np.log10(
+                        max(float(np.max(pn_beam)) / pn, 1e-30))),
+                    js_db=(round(float(10.0 * np.log10(_jamp / _strong)), 3)
+                           if _jamp > 0.0 and _strong > 0.0 else None))
 
     n_beams = len(dirs)
     nvec = np.arange(n_s)
@@ -494,7 +665,9 @@ def simulate(world, cfg):
         else:
             blk.real = rng.standard_normal((m, n_s, n_c), dtype=np.float32)
             blk.imag = rng.standard_normal((m, n_s, n_c), dtype=np.float32)
-        blk *= real(np.sqrt(pn / 2.0))
+        # per-beam noise power, so a jammer's antenna pattern shapes the floor
+        # instead of dimming the entire picture by one global factor
+        blk *= real(np.sqrt(pn_beam[a:bb, None, None] / 2.0))
         for i in range(a, bb):
             for fb, fd, amp in by_beam.get(i, ()):
                 blk[i - a] += echo_plane(fb, fd, amp)
@@ -536,7 +709,10 @@ def simulate(world, cfg):
                                           float(rc.get("pfa") if rc.get("pfa") is not None else 1e-6))
         processing["noise_power_input"] = pn
         processing["expected_snr_basis"] = "on-bin tone with actual Hann coherent/window-noise gains"
-        snr_db = (10.0*np.log10(np.maximum(pr, 1e-30)/pn) +
+        # the threshold is computed from thermal noise on purpose: the radar does
+        # not know it is being jammed, which is exactly why a noise jammer turns
+        # into false alarms in the RD image instead of being quietly compensated
+        snr_db = (10.0*np.log10(np.maximum(pr, 1e-30)/pn_beam) +
                   processing["window_processing_gain_db"])
         processing["association_rule"] = (
             "post-detection: winning beam, within two truth bins, expected target power > half measured power")
@@ -589,8 +765,18 @@ def simulate(world, cfg):
     return dict(
         cube=cube, rd_map=rd_map, range_angle=ra_map,
         range_axis=axis_r, doppler_axis=axis_d,
+        # Ranges of real targets that the range window cut off; empty means the
+        # window was wide enough for everything the scene put in the air.
+        targets_beyond_range=sorted(set(beyond_range)),
+        range_window_m=float(r_max),
         detections=det, sigma=sig, snr_db=snr_db, beams=angles,
         radar_cfg=rc, pn=pn, cube_chunked=(cube is None), processing=processing,
+        # per-beam noise floor the cube was actually synthesised with: without a
+        # scene jammer it is pn in every beam, so nothing downstream changes
+        pn_beam=pn_beam,
+        # None unless the scene carried an "ecm" block: callers that predate
+        # countermeasures see exactly the dict they always saw, plus this key.
+        ecm=ecm_report,
     )
 
 

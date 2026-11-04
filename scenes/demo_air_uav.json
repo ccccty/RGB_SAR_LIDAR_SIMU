@@ -49,10 +49,19 @@
     0,
     0
    ],
-   "rot": 15,
+   "rot": 0,
    "internal_heat": 25,
    "rcs_db": -12,
-   "shape": "obj"
+   "shape": "obj",
+   "attitude_mode": "coordinated",
+   "kinematics": {
+    "min_speed_mps": 2,
+    "max_speed_mps": 25,
+    "max_accel_mps2": 4,
+    "max_climb_mps": 6,
+    "min_altitude_m": 20,
+    "max_bank_deg": 30
+   }
   }
  ],
  "sensors": {
@@ -132,12 +141,39 @@
   "exposure": 0.35
  },
  "frames": {
-  "n": 6,
+  "n": 10,
   "dt": 0.4
  },
  "randomize": {
   "enabled": true,
   "pose_jitter_xy_m": 0.3,
   "pose_jitter_yaw_deg": 3
+ },
+ "clip": {
+  "_why_trajectory": "one manoeuvre, not ten poses: roll in, turn 60 deg right, climb at 1.5 m/s, roll out. The bank is solved from the point-mass equations of a coordinated turn, so 4 m/s and a 15 m radius give the 11 deg of bank a small UAV would really hold; the old scene set an independent 4 m/s velocity vector and never changed heading once in six frames.",
+  "camera": "ir_camera",
+  "trajectory": {
+   "mode": "flight",
+   "origin": [
+    0,
+    0,
+    60
+   ],
+   "heading_deg": 0,
+   "speed_mps": 4,
+   "duration_s": 4,
+   "turn_deg": 60,
+   "climb_mps": 1.5,
+   "accel_mps2": 0.3,
+   "bank_max_deg": 30,
+   "knots": 32,
+   "flight_class": "uav_rotor"
+  },
+  "rig": {
+   "mode": "track",
+   "lag_s": 0.3,
+   "vibration_m": 0.05
+  },
+  "_why_rig": "the mount follows the aircraft with a 0.3 s lag, so the pan is one continuous motion instead of the target sliding out of a fixed 9 deg field of view by frame 4"
  }
 }

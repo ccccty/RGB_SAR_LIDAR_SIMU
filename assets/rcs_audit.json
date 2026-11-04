@@ -1,0 +1,258 @@
+{
+ "band_ghz": 15.0,
+ "rows": [
+  {
+   "asset": "军用地面车辆/主战坦克",
+   "profile": "M1A2 Abrams",
+   "band_ghz": 15.0,
+   "scale": 0.853298,
+   "model_bbox": [
+    9.8,
+    5.5947,
+    2.5613
+   ],
+   "footprint": [
+    9.8,
+    5.5947
+   ],
+   "computed_median_m2": 420.68213860815445,
+   "computed_min_m2": 238.17160049637573,
+   "computed_max_m2": 559.8709007192169,
+   "reference_m2": 20.0,
+   "delta_db": [
+    10.8,
+    14.5
+   ]
+  },
+  {
+   "asset": "军用地面车辆/高机动越野车",
+   "profile": "HMMWV M1151",
+   "band_ghz": 15.0,
+   "scale": 0.910208,
+   "model_bbox": [
+    4.6002,
+    2.654,
+    1.9621
+   ],
+   "footprint": [
+    4.6002,
+    2.654
+   ],
+   "computed_median_m2": 32.17094559918051,
+   "computed_min_m2": 17.90765392570016,
+   "computed_max_m2": 47.458879433650935,
+   "reference_m2": 3.0,
+   "delta_db": [
+    7.8,
+    12.0
+   ]
+  },
+  {
+   "asset": "军用飞机/单发战斗机",
+   "profile": "F-16C Fighting Falcon",
+   "band_ghz": 15.0,
+   "scale": 0.931451,
+   "model_bbox": [
+    15.0,
+    16.6797,
+    3.6203
+   ],
+   "footprint": [
+    16.6797,
+    15.0
+   ],
+   "computed_median_m2": 1330.4675577072865,
+   "computed_min_m2": 509.73386829923584,
+   "computed_max_m2": 1399.8693116989625,
+   "reference_m2": 1.2,
+   "delta_db": [
+    26.3,
+    30.7
+   ]
+  },
+  {
+   "asset": "军用飞机/双发战斗机",
+   "profile": "F-15C Eagle",
+   "band_ghz": 15.0,
+   "scale": 0.972698,
+   "model_bbox": [
+    19.0,
+    20.013,
+    5.7946
+   ],
+   "footprint": [
+    16.4779,
+    16.2868
+   ],
+   "computed_median_m2": 713.7798733188515,
+   "computed_min_m2": 374.6196311562957,
+   "computed_max_m2": 965.5626243446397,
+   "reference_m2": 25.0,
+   "delta_db": [
+    11.8,
+    15.9
+   ]
+  },
+  {
+   "asset": "军用飞机/多用途战斗机",
+   "profile": "J-10C",
+   "band_ghz": 15.0,
+   "scale": 1.153194,
+   "model_bbox": [
+    16.0,
+    18.1709,
+    2.7155
+   ],
+   "footprint": [
+    15.4157,
+    14.7051
+   ],
+   "computed_median_m2": 2638.3981453102583,
+   "computed_min_m2": 1517.1984377992765,
+   "computed_max_m2": 3886.2565682209597,
+   "reference_m2": 1.5,
+   "delta_db": [
+    30.0,
+    34.1
+   ]
+  },
+  {
+   "asset": "军用飞机/高速截击机",
+   "profile": "Su-27",
+   "band_ghz": 15.0,
+   "scale": 1.162754,
+   "model_bbox": [
+    18.0,
+    18.2053,
+    5.1853
+   ],
+   "footprint": [
+    15.1662,
+    15.4159
+   ],
+   "computed_median_m2": 2694.310368630822,
+   "computed_min_m2": 1032.0354234755077,
+   "computed_max_m2": 3414.201124170685,
+   "reference_m2": 15.0,
+   "delta_db": [
+    18.4,
+    23.6
+   ]
+  },
+  {
+   "asset": "固定翼无人机/中空长航时无人机",
+   "profile": "MQ-9A Reaper",
+   "band_ghz": 15.0,
+   "scale": 1.918579,
+   "model_bbox": [
+    8.22,
+    8.4663,
+    2.4504
+   ],
+   "footprint": [
+    7.043,
+    6.9185
+   ],
+   "computed_median_m2": 1196.7578536400565,
+   "computed_min_m2": 663.1455595815748,
+   "computed_max_m2": 1380.7241444503347,
+   "reference_m2": 1.29,
+   "delta_db": [
+    27.1,
+    30.3
+   ]
+  },
+  {
+   "asset": "旋翼无人机/四旋翼无人机",
+   "profile": "DJI Mavic 3 (Phantom 2 同族标定)",
+   "band_ghz": 15.0,
+   "scale": 1.193657,
+   "model_bbox": [
+    0.35,
+    0.2569,
+    0.093
+   ],
+   "footprint": [
+    0.35,
+    0.2569
+   ],
+   "computed_median_m2": 0.0001395542478013005,
+   "computed_min_m2": 0.00011697623630848423,
+   "computed_max_m2": 0.0001624665550893534,
+   "reference_m2": 0.042,
+   "delta_db": [
+    -25.6,
+    -24.1
+   ]
+  },
+  {
+   "asset": "旋翼无人机/多旋翼无人机",
+   "profile": "DJI Matrice 350 RTK",
+   "band_ghz": 15.0,
+   "scale": 1.452568,
+   "model_bbox": [
+    0.6,
+    0.5603,
+    0.3027
+   ],
+   "footprint": [
+    0.5603,
+    0.5997
+   ],
+   "computed_median_m2": 0.008528184941286033,
+   "computed_min_m2": 0.0063099389814724755,
+   "computed_max_m2": 0.011504432880956641,
+   "reference_m2": 0.15,
+   "delta_db": [
+    -13.8,
+    -11.2
+   ]
+  },
+  {
+   "asset": "旋翼无人机/小型四旋翼",
+   "profile": "DJI Mini 3",
+   "band_ghz": 15.0,
+   "scale": 0.938053,
+   "model_bbox": [
+    0.25,
+    0.1522,
+    0.0707
+   ],
+   "footprint": [
+    0.25,
+    0.1522
+   ],
+   "computed_median_m2": 0.000332357476020227,
+   "computed_min_m2": 0.00017876521897153773,
+   "computed_max_m2": 0.0003687796764652726,
+   "reference_m2": 0.015,
+   "delta_db": [
+    -19.2,
+    -16.1
+   ]
+  },
+  {
+   "asset": "直升机/武装直升机",
+   "profile": "AH-64D Apache",
+   "band_ghz": 15.0,
+   "scale": 1.201115,
+   "model_bbox": [
+    14.5,
+    15.8541,
+    4.0036
+   ],
+   "footprint": [
+    12.029,
+    12.029
+   ],
+   "computed_median_m2": 547.4601113717217,
+   "computed_min_m2": 145.2502358132772,
+   "computed_max_m2": 585.0724282825026,
+   "reference_m2": 6.0,
+   "delta_db": [
+    13.8,
+    19.9
+   ]
+  }
+ ]
+}

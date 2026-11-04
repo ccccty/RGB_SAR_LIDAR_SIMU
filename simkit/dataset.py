@@ -1,11 +1,18 @@
 """Dataset generator: frames -> images + annotations, with domain randomisation."""
 import json
 import os
+import subprocess
+import sys
 import time
 
 import numpy as np
 
-from . import ir, labels, lidar, png, radar, scene, thermal, weather
+from . import interference, ir, labels, lidar, png, radar, scene, thermal, weather
+
+
+def _read_json(path):
+    with open(path, encoding="utf-8") as stream:
+        return json.load(stream)
 
 
 def _rng(seed):
@@ -120,7 +127,13 @@ def _visible_from(world, cam, obj):
             return True
         t = float(hit["t"][0])
         return t >= L - 1.0
-    except Exception:
+    except (KeyError, AttributeError, TypeError, ValueError):
+        # No bvh, no corners, malformed geometry: treat as visible, but only for
+        # the shapes of failure that mean "this world cannot answer", not for
+        # every exception. A blanket except Exception also hid numerical faults
+        # and silently scored occluded targets as positive samples with no log.
+        if os.environ.get("SIMKIT_STRICT_VISIBILITY"):
+            raise
         return True
 
 
@@ -163,6 +176,56 @@ def _boxes_for(world, obj_id, cam, width, height, min_px=1, seen=None):
     return out
 
 
+#: Metres of airframe one tile of the plate covers.
+_SKIN_SPAN_M = 20.0
+
+
+def _skin_plate(cfg, out_dir):
+    """Bake albedo x modulation into a colour plate; return its path or None.
+
+    The plate carries the FINAL surface colour, so the renderer only has to
+    connect an image texture straight into Base Color.  A minimal Blender repro
+    proved that path renders (a checkerboard cube showed the pattern) while the
+    multiply-node chain used before did not, so the simplest verified wiring is
+    the one that ships.
+
+    Off unless the scene sets optical.skin.
+    """
+    opt = cfg.get("optical") or {}
+    # A scene may point at its own plate (a checkerboard while wiring, a baked
+    # texture later); baking over it silently replaced whatever was supplied.
+    given = opt.get("skin_patch")
+    if given and os.path.isfile(str(given)):
+        return os.path.abspath(str(given))
+    if not opt.get("skin"):
+        return None
+    mat = None
+    for spec in cfg.get("objects", []):
+        name = str(spec.get("mat") or "")
+        if name == "painted_metal" or name.startswith("paint_"):
+            mat = name
+            break
+    if mat is None:
+        return None
+    try:
+        from . import materials as matlib
+        from . import skin
+        albedo = np.asarray(matlib.get(mat)["albedo"], float)
+        px_m = float(opt.get("skin_px_m", 0.04))
+        field = skin.SkinField(mat, seed=int(cfg.get("seed", 0)),
+                               pixel_scale_m=px_m,
+                               contrast=float(opt.get("skin_contrast", 1.0)))
+        mod = np.asarray(field.patch(_SKIN_SPAN_M * 0.6, _SKIN_SPAN_M,
+                                     shape=(512, 512), pixel_scale_m=px_m), float)
+        rgb = np.clip(mod[..., None] * albedo[None, None, :], 0.0, 1.0)
+        path = os.path.abspath(os.path.join(out_dir, "_skin_plate.png"))
+        from PIL import Image as _Image
+        _Image.fromarray((rgb * 255.0 + 0.5).astype(np.uint8), mode="RGB").save(path)
+        return path
+    except Exception:
+        return None
+
+
 def _render_config(cfg, views, out_dir, part=None):
     """Side-car scene config for the Blender pass.
 
@@ -180,6 +243,14 @@ def _render_config(cfg, views, out_dir, part=None):
         material_source = spec.get("optical_material_source")
         if material_source and not os.path.isabs(material_source):
             spec["optical_material_source"] = os.path.abspath(os.path.join(base, material_source))
+    # Decoys and jammers are physical bodies for radar/IR/lidar, but this side-car
+    # is what the Blender pass builds from, so they have to be listed here too.
+    from . import ecm as _ecmlib
+    for spec in _ecmlib.render_objects(cfg):
+        rc.setdefault("objects", []).append(spec)
+    plate = _skin_plate(cfg, out_dir)
+    if plate:
+        rc.setdefault("optical", {})["skin_patch"] = plate
     rc["_base_dir"] = os.path.abspath(base)
     rc.setdefault("optical", {})["views"] = [
         dict(name=v["name"], tag=v["tag"], fov_deg=v.get("fov_deg"),
@@ -217,6 +288,11 @@ def _sensors_on_disk(out_dir):
                 continue
         except OSError:
             continue
+        # "ir_preview_lwir" also starts with "ir", so a preview-only run would
+        # claim a sensor it cannot actually produce 16-bit data for. The preview
+        # tree is a derived view of images/ir_*, never a product in its own right.
+        if d.startswith("ir_preview"):
+            continue
         if d.startswith("optical"):
             have.add("optical")
         elif d.startswith("ir"):
@@ -234,12 +310,205 @@ def _sensors_on_disk(out_dir):
     return sorted(have)
 
 
+# --------------------------------------------------------------------------
+# Optional JPEG product
+# --------------------------------------------------------------------------
+#: Quality used when output.jpeg is switched on without an explicit number.
+JPEG_DEFAULT_QUALITY = 90
+
+
+def _jpeg_settings(cfg):
+    """Parse the optional output.jpeg block; None when switched off.
+
+    The switch deliberately lives under output and not under
+    optical.camera.jpeg: the latter is the sensor model evaluated inside
+    Blender, whose bundled Python has no Pillow.  This one runs in dataset.py
+    after the render, where the project interpreter (and Pillow) is present.
+    Absent/False keeps the historical PNG-only output byte for byte.
+    """
+    raw = (cfg.get("output") or {}).get("jpeg")
+    if raw is None or raw is False:
+        return None
+    if isinstance(raw, dict):
+        if not raw.get("enabled", True):
+            return None
+        quality = raw.get("quality", JPEG_DEFAULT_QUALITY)
+        span = raw.get("quality_range")
+    elif isinstance(raw, bool):                    # True: just switch it on
+        quality, span = JPEG_DEFAULT_QUALITY, None
+    elif isinstance(raw, int):                     # "jpeg": 90
+        quality, span = raw, None
+    else:
+        raise ValueError("output.jpeg must be a boolean, an integer quality, or an object")
+    try:
+        quality = int(quality)
+    except (TypeError, ValueError):
+        raise ValueError("output.jpeg.quality must be an integer in 1..100")
+    if not 1 <= quality <= 100:
+        raise ValueError("output.jpeg.quality must be an integer in 1..100")
+    if span is not None:
+        try:
+            low, high = (int(v) for v in span)
+        except (TypeError, ValueError):
+            raise ValueError("output.jpeg.quality_range must be [low, high]")
+        if not 1 <= low <= high <= 100:
+            raise ValueError("output.jpeg.quality_range must satisfy "
+                             "1 <= low <= high <= 100")
+        span = (low, high)
+    return dict(quality=quality, quality_range=span)
+
+
+def _jpeg_quality(settings, base_seed, frame):
+    """Quality for one frame, drawn from quality_range when it is set.
+
+    Seeding on (run seed, frame) makes a quality_range run reproducible: the
+    same dataset config always produces the same quantisation tables, which is
+    what lets someone re-render one frame and compare it.
+    """
+    span = settings.get("quality_range")
+    if span is None:
+        return int(settings["quality"])
+    low, high = span
+    rng = np.random.default_rng([int(base_seed), int(frame)])
+    return int(rng.integers(low, high + 1))
+
+
+def _mark_label_jpeg(out_dir, tag, frame, filename, quality):
+    """Record the JPEG copy in the frame label (geometry labels are untouched)."""
+    path = os.path.join(out_dir, "labels", "optical" + tag, "%06d.json" % int(frame))
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            label = json.load(stream)
+    except (OSError, ValueError):
+        return
+    label["jpeg"] = dict(image=filename, quality=int(quality))
+    labels.write_json(path, label)
+
+
+def _write_jpeg_copies(out_dir, settings, views, frame_ids, base_seed, quiet=False):
+    """Write a JPEG copy beside every optical PNG the renderer produced.
+
+    The PNG remains the canonical product.  Every downstream consumer here
+    (COCO file_name, YOLO export, contact sheets, consistency checks) resolves
+    the '.png' and deleting it would silently break them, so the JPEG is an
+    additional product and the COCO references keep pointing at the PNG that
+    still exists.  Callers that want JPEG-only storage can prune the PNGs
+    afterwards, once they have verified their own consumers.
+
+    Returns a small accounting dict for meta.json, or None when switched off.
+    """
+    if settings is None:
+        return None
+    from PIL import Image
+    from . import camera
+    written = missing = 0
+    png_bytes = jpeg_bytes = 0
+    qualities = {}
+    for view in views:
+        tag = view.get("tag", "") or ""
+        for frame in frame_ids:
+            stem = "%06d" % int(frame)
+            source = os.path.join(out_dir, "images", "optical" + tag, stem + ".png")
+            if not os.path.exists(source):
+                missing += 1
+                continue
+            quality = _jpeg_quality(settings, base_seed, frame)
+            target = os.path.join(out_dir, "images", "optical" + tag, stem + ".jpg")
+            with Image.open(source) as image:
+                rgb = np.asarray(image.convert("RGB"), np.uint8)
+            camera.write_jpeg(target, rgb, quality)
+            written += 1
+            png_bytes += os.path.getsize(source)
+            jpeg_bytes += os.path.getsize(target)
+            key = str(quality)
+            qualities[key] = qualities.get(key, 0) + 1
+            _mark_label_jpeg(out_dir, tag, frame, stem + ".jpg", quality)
+    report = dict(enabled=True, quality=int(settings["quality"]),
+                  quality_range=(None if settings.get("quality_range") is None
+                                 else list(settings["quality_range"])),
+                  files=written, missing=missing,
+                  png_bytes=png_bytes, jpeg_bytes=jpeg_bytes, qualities=qualities)
+    if png_bytes:
+        report["ratio"] = round(jpeg_bytes / float(png_bytes), 4)
+    if missing and not quiet:
+        print("WARN jpeg: %d optical PNG(s) missing, skipped" % missing, flush=True)
+    return report
+
+
+def _jpeg_inventory(out_dir, settings):
+    """Summarise the JPEG copies already on disk.
+
+    A chunked run writes its own frames and then returns before meta.json
+    exists; merge_parts is the only place that can describe the whole run.
+    """
+    images = os.path.join(out_dir, "images")
+    if not os.path.isdir(images):
+        return None
+    files = png_bytes = jpeg_bytes = 0
+    for name in sorted(os.listdir(images)):
+        folder = os.path.join(images, name)
+        if not name.startswith("optical") or not os.path.isdir(folder):
+            continue
+        for fn in sorted(os.listdir(folder)):
+            if not fn.endswith(".jpg"):
+                continue
+            target = os.path.join(folder, fn)
+            files += 1
+            jpeg_bytes += os.path.getsize(target)
+            source = os.path.join(folder, fn[:-4] + ".png")
+            if os.path.exists(source):
+                png_bytes += os.path.getsize(source)
+    if not files:
+        return None
+    report = dict(enabled=True, quality=int(settings["quality"]),
+                  quality_range=(None if settings.get("quality_range") is None
+                                 else list(settings["quality_range"])),
+                  files=files, png_bytes=png_bytes, jpeg_bytes=jpeg_bytes)
+    if png_bytes:
+        report["ratio"] = round(jpeg_bytes / float(png_bytes), 4)
+    return report
+
+
+def _ecm_summary(cfg, frames):
+    """Condense per-frame ECM reports into what a consumer needs to know.
+
+    A dataset that carries jamming must say so, and must say it in numbers a
+    reader can check: which entities were present, how far the noise floor was
+    pushed, and how many detections the jammers themselves contributed.  The
+    per-frame detail is kept next to the summary so nothing is rounded away.
+    """
+    spec = cfg.get("ecm") or {}
+    rises = [float((f.get("noise") or {}).get("snr_drop_db") or 0.0) for f in frames]
+    js = [float((f.get("noise") or {}).get("js_db") or -999.0) for f in frames]
+    injected = [int(f.get("injected_echoes") or 0) for f in frames]
+    return dict(
+        domain="rf",
+        model="simkit.ecm",
+        entities=[dict(id=e.get("id"), kind=e.get("kind"), mode=e.get("mode"),
+                       pos=e.get("pos"), vel=e.get("vel"))
+                  for e in (spec.get("entities") or [])],
+        frames=len(frames),
+        noise_rise_db=dict(min=round(min(rises), 3), max=round(max(rises), 3)),
+        js_db=dict(min=round(min(js), 3), max=round(max(js), 3)),
+        injected_echoes=sum(injected),
+        per_frame=frames,
+    )
+
+
 def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, quiet=False,
         frame_offset=0, part=None, total_frames=None):
     cfg = scene.load_config(cfg_path)
+    jpeg_settings = _jpeg_settings(cfg)
+    disturbances = interference.validate(cfg.get("interference"))
+    if disturbances["enabled"]:
+        from PIL import Image  # Fail before rendering if the optional dependency is missing.
     sensors = tuple(sensors)
     if "all" in sensors:
         sensors = ("optical", "ir", "radar", "lidar", "sar")
+    if jpeg_settings is not None and "optical" in sensors:
+        # Fail before a multi-hour render: the JPEG pass runs here, in the
+        # project interpreter, and needs the one dependency Blender lacks.
+        from PIL import Image  # noqa: F401
     r = cfg.get("randomize", {})
     base_seed = int(seed if seed is not None else cfg.get("seed", 0))
     n_frames = int(n_frames if n_frames is not None else cfg.get("frames", {}).get("n", 1))
@@ -308,10 +577,27 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
     coco_sar = coco_shell("simkit synthetic dataset (SAR stripmap)")
     radar_frames = []
     sar_frames = []
+    # Per-frame ECM effect, kept so a dataset says whether it was generated
+    # with scene-level jamming and exactly what that jamming measured.
+    ecm_frames = []
+    jpeg_report = None
 
     t_start = time.time()
 
     if "optical" in sensors:
+        # A scene may legitimately have no optical camera at all (demo_ir only
+        # declares ir_camera). Asking for one anyway used to die deep inside the
+        # Blender script with a bare KeyError: 'optical'; say what is actually
+        # available instead, because the fix is to change -s, not to debug.
+        _views = ((cfg.get("clip") or {}).get("views") or cfg.get("views") or [])
+        _sm = cfg.get("sensors") or {}
+        if not _views and not _sm.get("optical"):
+            _have = sorted(_sm.keys()) or ["(无)"]
+            _hint = {"ir_camera": "ir", "radar": "radar", "sar": "sar",
+                     "lidar": "lidar"}.get(_have[0], "ir")
+            raise RuntimeError(
+                "该场景没有可见光相机，无法渲染 optical。场景声明的传感器：%s。"
+                "请改用 -s %s。" % ("、".join(_have), _hint))
         from . import external
         backend = (cfg.get("optical") or {}).get("backend", "blender")
         manifest = external.write_manifest(cfg, states, out_dir, part=part)
@@ -331,6 +617,12 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                                   view_tags=[v["tag"] for v in views])
         else:
             external.run(cfg, out_dir, manifest, backend, quiet=quiet)
+        # The renderer wrote PNGs (and, in Blender, cannot see Pillow).  The
+        # optional lossy product is written here, after the render, beside the
+        # lossless one.  COCO keeps naming the .png that still exists.
+        jpeg_report = _write_jpeg_copies(
+            out_dir, jpeg_settings, views, [int(s["frame"]) for s in states],
+            base_seed, quiet=quiet)
 
     for si, s in enumerate(states):
         # plan_frames already applied frame_offset, so f is the global frame id
@@ -340,6 +632,14 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
         t, jit = s["t"], s["jitter"]
         fr_cfg = s["cfg"]
         if set(sensors) & {"ir", "radar", "lidar", "sar", "optical"}:
+            # Scene-level ECM is time-parameterised, so the frame clock has to be
+            # on the config BEFORE the world is built: build_world attaches the
+            # entity triangles at their t-th pose, and a chaff cloud that is
+            # read at t=0 for every frame would never bloom or drift. The radar
+            # branch below re-assigns the same key for its own clarity; setting
+            # it here is what makes the geometry, the optics and the radar agree
+            # on which instant this frame is.
+            fr_cfg["_ecm_t"] = float(t)
             w = scene.build_world(fr_cfg, t=0.0, jitter=jit)
             for o in w.objs:
                 # scenery objects carry no dataset class (they are geometry only)
@@ -358,7 +658,22 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                     continue
                 blk = fr_cfg.setdefault("sensors", {}).setdefault(_sen, {})
                 blk["pos"] = [float(x) for x in vp0["pos"]]
-                blk["look_at"] = [float(x) for x in vp0["look_at"]]
+                # Aim at the target itself, not at the optical gimbal's LAGGED
+                # aim point. The optical chain deliberately trails the target by
+                # lag_s; a 2 deg radar beam tied to that trail misses whenever the
+                # geometry is steep. In a look-down scene (40 deg depression) the
+                # lag cost 3.5 deg of pointing error -- four times the beam half
+                # width -- and every ground frame came back with zero detections.
+                _aim = None
+                for _o in getattr(w, "objs", None) or []:
+                    if _o.get("label", True):
+                        try:
+                            _aim = [float(v) for v in
+                                    np.asarray(_o["corners"], float).mean(axis=0)]
+                        except (KeyError, TypeError, ValueError):
+                            _aim = None
+                        break
+                blk["look_at"] = _aim or [float(x) for x in vp0["look_at"]]
                 blk["vel"] = list(s["sensor_velocity_mps"])
 
         if cfg.get("research_baseline"):
@@ -415,7 +730,20 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                                                     for o in w.objs]))
 
         if "radar" in sensors:
+            # Scene-level ECM needs the frame clock: a chaff cloud blooms and a
+            # gate pull-off walks away over time, so "which instant is this"
+            # has to reach the radar. ecm.frame_time reads _ecm_t first; _frame_t
+            # is kept because the SAR branch below zeroes it for its own anchor.
+            fr_cfg["_ecm_t"] = float(t)
+            fr_cfg["_frame_t"] = float(t)
+            fr_cfg["_frame_index"] = int(f)
             out = radar.simulate(w, fr_cfg)
+            # The forward model already returns what the jammers did to this
+            # frame.  Dropping it here made a dataset that was generated WITH
+            # scene-level ECM indistinguishable from one generated without, so
+            # the numbers a consumer needs to know which is which are kept.
+            if out.get("ecm"):
+                ecm_frames.append(dict(frame=int(f), t=float(t), **out["ecm"]))
             if cfg.get("research_baseline"):
                 raw_dir = os.path.join(out_dir, "raw", "radar")
                 os.makedirs(raw_dir, exist_ok=True)
@@ -455,16 +783,35 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
             # label file makes the YOLO export either skip it (class unknown) or,
             # worse, teach the detector that fences are targets
             name_of = {o["id"]: o["name"] for o in w.objs if o.get("label", True)}
+            # ECM echoes carry obj == -1: they are not world geometry, they are
+            # returns the jammer synthesised. Dropping them here made the file
+            # say "1 detection" while the radar had actually found five peaks,
+            # so a deception set looked identical to a clean one.
+            ecm_name_of = {}
+            ecm_rep = out.get("ecm") or {}
+            for ent in ecm_rep.get("entities") or []:
+                for k, _inj in enumerate(ent.get("injected") or []):
+                    ecm_name_of.setdefault("ecm:" + str(ent.get("id")), []).append(k)
+            ecm_hits = {}
             boxes_rd = {}
             for det in out["detections"]:
-                nm = name_of.get(int(det["obj"]))
+                oid = int(det["obj"])
+                if oid < 0:
+                    # label the deception by the entity that created it, in
+                    # order, so the RD file still says which peak is which
+                    hit = ecm_hits.get("n", 0)
+                    ecm_hits["n"] = hit + 1
+                    nm = "ecm#%02d" % hit
+                else:
+                    nm = name_of.get(oid)
                 if nm is None:
                     continue
                 ix = int(np.argmin(np.abs(r_ax - float(det["range"]))))
                 iy = int(np.argmin(np.abs(d_ax - float(det["v_r"]))))
                 b = dict(x0=max(0.0, ix - 1.0), y0=max(0.0, iy - 1.0),
                          x1=min(float(rd_w), ix + 2.0), y1=min(float(rd_h), iy + 2.0),
-                         pixels=1, source="detection", visible=True)
+                         pixels=1, visible=True,
+                         source=("ecm" if oid < 0 else "detection"))
                 prev = boxes_rd.get(nm)
                 if prev:                      # several cells can hit one object
                     b["x0"] = min(prev["x0"], b["x0"]); b["y0"] = min(prev["y0"], b["y0"])
@@ -485,7 +832,26 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
             rlab["ra_peak"] = dict(px=int(ix), py=int(iy),
                                    db=round(float(ra_db.max()), 1),
                                    w=int(ra_img.shape[1]), h=int(ra_img.shape[0]))
+            if out.get("targets_beyond_range"):
+                # Silence is the worst outcome here: the dataset looks fine, the
+                # labels are empty, and nothing on screen says why.
+                _far = out["targets_beyond_range"]
+                print("  [警告] 雷达距离窗 %.0f m 小于目标斜距 %s m，目标不会被检测到。"
+                      "请调大 sensors.radar.n_samples 或减小带宽。"
+                      % (float(out.get("range_window_m") or 0),
+                         "/".join("%.0f" % r for r in _far[:4])), file=sys.stderr)
             rlab["boxes_rd"] = boxes_rd
+            # Same world the radar saw, and the radar own position: a target
+            # beyond the window returns nothing and the frame exits 0, so a
+            # silent zero here would look exactly like a clean miss.
+            _rwin = float(out.get("range_window_m") or 0.0)
+            _labeled = [o for o in (getattr(w, "objs", None) or [])
+                        if o.get("label", True)]
+            rlab["range_window_m"] = _rwin or None
+            if _labeled and not out["detections"]:
+                print("  [警告] 该帧雷达零检测，但场景有 %d 个标注目标；"
+                      "距离窗 %.0f m，请检查 sensors.radar.n_samples 是否足够。"
+                      % (len(_labeled), _rwin), file=sys.stderr)
             rlab["processing"] = out.get("processing")
             rlab["unassociated_detections"] = [d for d in out["detections"] if d["obj"] < 0]
             rlab["axes"] = dict(range_m=out["range_axis"].tolist(),
@@ -619,7 +985,12 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                         continue
                     # image ids stay global per view: two views of one instant
                     # are two images, not one image with double the boxes
-                    anns.append(dict(id=fid * 10000 + vidx * 1000 + aid, image_id=fid,
+                    # Same allocator every other modality uses. The arithmetic
+                    # is identical to the fid*10000 + vidx*1000 + aid it replaces
+                    # (annotation_id multiplies by stride*10 and adds view*stride),
+                    # but it now raises instead of silently aliasing ids when one
+                    # frame carries more than ANNOTATION_ID_STRIDE boxes.
+                    anns.append(dict(id=labels.annotation_id(fid, aid, vidx), image_id=fid,
                                      category_id=cls_id[spec.get("cls", "target")],
                                      bbox=[b["x0"], b["y0"], round(b["x1"] - b["x0"], 2),
                                            round(b["y1"] - b["y0"], 2)],
@@ -659,6 +1030,8 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
     # modality's label files, and reviewers get one file that says what the run
     # actually contains frame by frame.
     idx_rows = [dict(frame=int(s["frame"]), t=round(float(s["t"]), 4), clip=s.get("clip"),
+                     sequence_start=s.get("sequence_start", False),
+                     sequence_timestamp_s=s.get("sequence_timestamp_s"),
                      range_m=s.get("range_m"), target_px=s.get("target_px"),
                      view_px=s.get("view_px"),
                      sensor_velocity_mps=s.get("sensor_velocity_mps"),
@@ -693,7 +1066,7 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
     stats = {}
     if os.path.exists(stats_path):
         try:
-            stats = json.load(open(stats_path, encoding="utf-8"))
+            stats = _read_json(stats_path)
         except (OSError, ValueError):
             stats = {}
     stats["frames"] = n_frames
@@ -702,7 +1075,7 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
         if not os.path.exists(path):
             return 0, 0
         try:
-            d = json.load(open(path, encoding="utf-8"))
+            d = _read_json(path)
         except (OSError, ValueError):
             return 0, 0
         return len(d.get("images", [])), len(d.get("annotations", []))
@@ -761,7 +1134,7 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
         if not (fn.startswith("annotations_") and fn.endswith("_coco.json")):
             continue
         try:
-            d = json.load(open(os.path.join(out_dir, fn), encoding="utf-8"))
+            d = _read_json(os.path.join(out_dir, fn))
         except (OSError, ValueError):
             continue
         names = {c["id"]: c["name"] for c in d.get("categories", [])}
@@ -778,18 +1151,77 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
     # back to the argument only when nothing was written.
     meta = dict(config=os.path.abspath(cfg_path), frames=n_frames,
                 sensors=_sensors_on_disk(out_dir) or list(sensors),
-                seed=base_seed, seconds=round(time.time() - t_start, 2),
+                seed=base_seed,
+                seconds=round(time.time() - t_start, 2) if t_start else 0.0,
                 categories=cats, generated_by="simkit 0.2",
                 ir_bands=[b or "lwir" for b in ir_bands],
                 views=[dict(name=v["name"], tag=v["tag"], fov_deg=v.get("fov_deg"),
-                            width=v.get("width"), height=v.get("height")) for v in views],
+                            width=v.get("width"), height=v.get("height"))
+                       for v in _views_of(states, cfg)],
                 radar_band=(cfg.get("sensors", {}).get("radar", {}) or {}).get("band"),
                 sar_band=(cfg.get("sensors", {}).get("sar", {}) or {}).get("band"),
                 weather=[dict(s["weather"]) for s in states])
+    if ecm_frames:
+        meta["ecm"] = _ecm_summary(cfg, ecm_frames)
+    if jpeg_report is not None:
+        meta["jpeg"] = jpeg_report
     labels.write_json(os.path.join(out_dir, "meta.json"), meta)
+    if disturbances["enabled"]:
+        interference.export(out_dir, os.path.join(out_dir, "interfered"), disturbances)
+        meta["interference"] = dict(variant="interfered", domain="image_codes")
+        labels.write_json(os.path.join(out_dir, "meta.json"), meta)
+    # ---- post-processing: composite preview, dataset README, YOLO export.
+    # None of this may lose the dataset that just took an hour to render, so a
+    # failure is recorded in meta["post"] instead of raised. Preview and README
+    # default to on: a dataset you can only review by opening twenty folders is
+    # one nobody reviews.
+    out_opts = cfg.get("output") or {}
+    post = {}
+    want_prev = bool(out_opts.get("preview", True))
+    want_doc = bool(out_opts.get("readme", True))
+    if want_prev or want_doc:
+        try:
+            from . import sheet as s_sheet
+            if want_prev:
+                made = s_sheet.triptych(out_dir, modalities=_preview_modalities(sensors))
+                post["preview_frames"] = len(made)
+                post["contact_sheet"] = os.path.basename(s_sheet.contact_sheet(out_dir))
+            if want_doc:
+                post["readme"] = os.path.basename(s_sheet.write_readme(out_dir, meta))
+        except ImportError:
+            post["note"] = "simkit.sheet 不可用，跳过拼接图与说明文档"
+        except Exception as exc:
+            post["error"] = "%s: %s" % (type(exc).__name__, exc)
+    if out_opts.get("yolo"):
+        try:
+            script = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "tools", "export_yolo.py")
+            run_name = os.path.basename(os.path.normpath(out_dir))
+            # --min-frames 1 defeats the tool's 60-frame default: a 20-frame
+            # validation set is a legitimate thing to export, and silently
+            # skipping it is how you end up with an empty datasets/ folder.
+            subprocess.run([sys.executable, script,
+                            "--runs", os.path.dirname(os.path.abspath(out_dir)),
+                            "--scenes", run_name, "--min-frames", "1"],
+                           cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           capture_output=True, timeout=900)
+            post["yolo"] = "datasets/yolo"
+        except Exception as exc:
+            post["yolo_error"] = "%s: %s" % (type(exc).__name__, exc)
+    if post:
+        meta["post"] = post
+        labels.write_json(os.path.join(out_dir, "meta.json"), meta)
     if not quiet:
         print("done: %d frames -> %s (%.1fs)" % (n_frames, out_dir, time.time() - t_start))
     return meta
+
+
+def _preview_modalities(sensors):
+    """Map requested sensors onto the directory names sheet.triptych expects."""
+    names = {"optical": "optical", "ir": "ir_mwir", "radar": "radar",
+             "sar": "sar", "lidar": "lidar_range"}
+    return [names[s] for s in sensors if s in names]
+
 
 MOD_SUFFIX = ("optical", "lidar", "ir", "ir_mwir", "ir_lwir", "ir_swir", "ir_lwir_only")
 
@@ -819,6 +1251,11 @@ def merge_parts(out_dir, cfg_path, n_frames=None, sensors=None, seed=None, quiet
     at the chunk's frame_offset), which keeps the merged file valid COCO.
     """
     cfg = scene.load_config(cfg_path)
+    jpeg_settings = _jpeg_settings(cfg)
+    # Interference is a dataset-level post-process: validate it from the merged
+    # config here and apply it once at the end. A per-chunk export would write N
+    # partial mirrors and the chunks would disagree about the event window.
+    disturbances = interference.validate(cfg.get("interference"))
     sensors = tuple(sensors or ("optical", "ir", "radar", "lidar", "sar"))
     if "all" in sensors:
         sensors = ("optical", "ir", "radar", "lidar", "sar")
@@ -831,7 +1268,7 @@ def merge_parts(out_dir, cfg_path, n_frames=None, sensors=None, seed=None, quiet
         acc = None
         for fn in files:
             try:
-                d = json.load(open(os.path.join(out_dir, fn), encoding="utf-8"))
+                d = _read_json(os.path.join(out_dir, fn))
             except (OSError, ValueError):
                 continue
             if acc is None:
@@ -852,7 +1289,7 @@ def merge_parts(out_dir, cfg_path, n_frames=None, sensors=None, seed=None, quiet
     for fn in sorted(os.listdir(out_dir)):
         if fn.startswith("radar_frames.part") and fn.endswith(".json"):
             try:
-                rf.extend(json.load(open(os.path.join(out_dir, fn), encoding="utf-8")))
+                rf.extend(_read_json(os.path.join(out_dir, fn)))
             except (OSError, ValueError):
                 pass
     rf.sort(key=lambda r: r.get("frame", 0))
@@ -864,7 +1301,7 @@ def merge_parts(out_dir, cfg_path, n_frames=None, sensors=None, seed=None, quiet
     for fn in sorted(os.listdir(out_dir)):
         if fn.startswith("sar_frames.part") and fn.endswith(".json"):
             try:
-                sf.extend(json.load(open(os.path.join(out_dir, fn), encoding="utf-8")))
+                sf.extend(_read_json(os.path.join(out_dir, fn)))
             except (OSError, ValueError):
                 pass
     sf.sort(key=lambda r: r.get("frame", 0))
@@ -876,7 +1313,7 @@ def merge_parts(out_dir, cfg_path, n_frames=None, sensors=None, seed=None, quiet
     for fn in sorted(os.listdir(out_dir)):
         if fn.startswith("frames.part") and fn.endswith(".json"):
             try:
-                fr_rows.extend(json.load(open(os.path.join(out_dir, fn), encoding="utf-8")))
+                fr_rows.extend(_read_json(os.path.join(out_dir, fn)))
             except (OSError, ValueError):
                 pass
     fr_rows.sort(key=lambda r: r.get("frame", 0))
@@ -901,7 +1338,7 @@ def merge_parts(out_dir, cfg_path, n_frames=None, sensors=None, seed=None, quiet
     stats = {}
     if os.path.exists(stats_path):
         try:
-            stats = json.load(open(stats_path, encoding="utf-8"))
+            stats = _read_json(stats_path)
         except (OSError, ValueError):
             stats = {}
     stats["frames"] = n_frames
@@ -913,7 +1350,7 @@ def merge_parts(out_dir, cfg_path, n_frames=None, sensors=None, seed=None, quiet
             if not os.path.exists(p):
                 return 0, 0
             try:
-                d = json.load(open(p, encoding="utf-8"))
+                d = _read_json(p)
             except (OSError, ValueError):
                 return 0, 0
         return len(d.get("images", [])), len(d.get("annotations", []))
@@ -997,7 +1434,20 @@ def merge_parts(out_dir, cfg_path, n_frames=None, sensors=None, seed=None, quiet
                 radar_band=(cfg.get("sensors", {}).get("radar", {}) or {}).get("band"),
                 sar_band=(cfg.get("sensors", {}).get("sar", {}) or {}).get("band"),
                 weather=[dict(s["weather"]) for s in states])
+    if jpeg_settings is not None:
+        jpeg_report = _jpeg_inventory(out_dir, jpeg_settings)
+        if jpeg_report is not None:
+            meta["jpeg"] = jpeg_report
     labels.write_json(os.path.join(out_dir, "meta.json"), meta)
+    # The interference mirror has to be built from the merged dataset, after
+    # meta.json exists: interference.export reads meta.json and frames.json to
+    # rebuild the COCO files, so exporting any earlier fails on a missing file.
+    # A chunked run never reaches run()'s own export (the part branch returns
+    # early), so this is the only place it can happen for a merged run.
+    if disturbances["enabled"]:
+        interference.export(out_dir, os.path.join(out_dir, "interfered"), disturbances)
+        meta["interference"] = dict(variant="interfered", domain="image_codes")
+        labels.write_json(os.path.join(out_dir, "meta.json"), meta)
     if not quiet:
         print("merged %d modalities, %d frames -> %s" % (len(merged), n_frames, out_dir))
     return meta

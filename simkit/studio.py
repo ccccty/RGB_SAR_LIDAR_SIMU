@@ -34,6 +34,7 @@ Nothing here touches the network, and the UI is plain ES5 so it works from a
 USB stick on an air-gapped machine.
 """
 import json
+import math
 import os
 import re
 import subprocess
@@ -49,6 +50,14 @@ SCENES = os.path.join(ROOT, "scenes")
 RUNS = os.path.join(ROOT, "out", "studio_runs")
 UI = os.path.join(ROOT, "studio")
 TMP = os.path.join(ROOT, "_tmp")
+# Saved recipes: a form state you can name, reload and hand to someone else.
+# Stored outside scenes/ on purpose -- a recipe is not a scene until scenegen
+# turns it into one, and mixing the two makes "pick a template" ambiguous.
+RECIPES = os.path.join(ROOT, "configs", "recipes")
+# Output folders the operator picked outside out/studio_runs. Remembered on disk
+# so the dataset browser still lists them after the server restarts.
+_KNOWN_OUT = os.path.join(ROOT, "configs", "known_outputs.json")
+_CUSTOM_OUT = set()
 
 # ---------------------------------------------------------------- option tables
 
@@ -109,6 +118,14 @@ LIM = dict(
     weave=(0.0, 500.0), weave_hz=(0.0, 5.0), standoff=(10.0, 50000.0),
     back=(0.0, 200000.0),
 )
+
+# Per-frame cost of each sensor, calibrated against the one full run we have
+# measured end to end: out/validation_ecm, 10 frames x 5 sensors = 140.29 s and
+# ~5.6 MB/frame once the raw complex cubes are excluded. These are estimates and
+# the UI labels them as such; they are only here to stop someone from starting a
+# 20000-frame all-sensor run on a laptop.
+COST_SEC_PER_FRAME = dict(optical=9.0, ir=2.5, radar=0.8, lidar=0.6, sar=1.6)
+COST_MB_PER_FRAME = dict(optical=2.4, ir=1.3, radar=0.15, lidar=0.05, sar=1.5)
 
 _JOBS = {}
 _LOCK = threading.Lock()
@@ -275,6 +292,529 @@ def _scenes():
 
 # --------------------------------------------------------------- body -> config
 
+# Chinese labels for the jamming entities. Kept next to the UI code because the
+# physics layer names them in English and the operator should not have to.
+_ECM_CN = {
+    "noise_jammer": "压制干扰机",
+    "false_target": "转发假目标",
+    "range_gate_pull_off": "距离门拖引",
+    "velocity_gate_pull_off": "速度门拖引",
+    "angle_deception": "角度欺骗",
+    "chaff_cloud": "箔条云",
+    "corner_reflector": "角反射器",
+    "decoy": "拖曳诱饵",
+    "infrared_flare": "红外诱饵弹",
+}
+
+
+def _recipe_to_form(rec):
+    """Flatten the recipe's nested blocks onto the flat form keys _parse reads."""
+    cap = rec.get("capture") or {}
+    view = rec.get("view") or {}
+    env = rec.get("environment") or {}
+    out = dict(
+        frames=cap.get("frames"), fps=cap.get("fps"),
+        sensors=cap.get("sensors"), seed=cap.get("seed"),
+        aspect=view.get("aspect"), weather=env.get("weather"),
+        narrow_fov=view.get("fov_deg"))
+    km = view.get("range_km")
+    if km:
+        lo = float(km) * 1000.0 * 0.85
+        hi = float(km) * 1000.0 * 1.15
+        out["range_m"] = [lo, hi]
+    # Keep the form's own units for fov: the wide view has to stay wider than
+    # the narrow one or _parse rejects the pair.
+    if out.get("narrow_fov"):
+        out["wide_fov"] = max(float(out["narrow_fov"]) * 6.0, 18.0)
+    return out
+
+
+def _trajectory_smooth(payload):
+    """Turn a hand-drawn polyline into a flyable route.
+
+    The operator clicks a few points on a top-down canvas; those points are not a
+    flight path -- the corners are instantaneous heading changes, which no
+    airframe survives. They are fitted with the same C1 cubic spline the planner
+    uses for authored waypoints (motion.Waypoints), and the result is measured so
+    the UI can say "this needs 1.2 g and 54 deg of bank" before anything renders.
+    """
+    from . import motion
+
+    raw = payload.get("points")
+    if not isinstance(raw, (list, tuple)):
+        raise BadRequest("轨迹点必须是 [[x, y], ...] 这样的数组")
+    pts = []
+    for item in raw:
+        if not isinstance(item, (list, tuple)) or len(item) < 2:
+            raise BadRequest("每个轨迹点必须是 [x, y] 两个坐标")
+        try:
+            x, y = float(item[0]), float(item[1])
+        except (TypeError, ValueError):
+            raise BadRequest("轨迹点坐标必须是数字") from None
+        if not (abs(x) <= 50000.0 and abs(y) <= 50000.0):
+            raise BadRequest("轨迹点超出范围（±50 km）")
+        if not pts or abs(x - pts[-1][0]) > 1.0 or abs(y - pts[-1][1]) > 1.0:
+            pts.append([x, y])
+    if len(pts) < 2:
+        raise BadRequest("至少需要两个不同的轨迹点")
+
+    try:
+        alt = float(payload.get("alt_m") or 2500.0)
+        speed = float(payload.get("speed_mps") or 250.0)
+    except (TypeError, ValueError):
+        raise BadRequest("高度与速度必须是数字") from None
+    if not (1.0 <= speed <= 1000.0):
+        raise BadRequest("速度必须在 1–1000 m/s 之间")
+    closed = bool(payload.get("closed"))
+    P = [[p[0], p[1], alt] for p in pts]
+
+    def _measure(pts3, spd):
+        """Fit the points and report length, time, worst load and worst bank."""
+        path = motion.Waypoints(pts3, speed=spd, loop=closed)
+        dur = max(float(path.duration), 1e-6)
+        steps = 96
+        sampled = []
+        wa = wb = ws = 0.0
+        for i in range(steps + 1):
+            t = dur * i / steps
+            pos, vel, acc = path.pos(t), path.vel(t), path.accel(t)
+            sampled.append([round(float(pos[0]), 2), round(float(pos[1]), 2),
+                            round(float(pos[2]), 2)])
+            # Load factor is the LATERAL acceleration (lift), not the total. An
+            # open route accelerates from rest along-track at the ends, and
+            # counting that as g made a dead-straight line report 25 g and get
+            # its speed cut to 50 m/s.
+            vn = math.sqrt(float(vel[0]) ** 2 + float(vel[1]) ** 2
+                           + float(vel[2]) ** 2)
+            if vn > 1e-6:
+                ah = [float(acc[i]) - (float(acc[0]) * float(vel[0])
+                                       + float(acc[1]) * float(vel[1])
+                                       + float(acc[2]) * float(vel[2])) / (vn * vn)
+                      * float(vel[i]) for i in range(3)]
+            else:
+                ah = [0.0, 0.0, 0.0]
+            wa = max(wa, math.sqrt(ah[0] ** 2 + ah[1] ** 2 + ah[2] ** 2))
+            ws = max(ws, vn)
+            try:
+                wb = max(wb, abs(float(motion.coordinated_bank_deg(vel, acc))))
+            except (ValueError, ZeroDivisionError):
+                pass
+        return path, sampled, wa, wb, ws
+
+    # Hand-drawn corners are instantaneous heading changes, so a drawn route at
+    # a fixed speed can need tens of g (a 7-point zigzag measured 37 g at
+    # 250 m/s). Rounding the corners outward barely helps -- the demand is
+    # v^2 * kappa, and it is the SPEED that sets it. So the optimiser solves for
+    # the fastest speed this exact geometry can be flown at inside the load
+    # limit, refits at that speed, and says what it did.
+    LIMIT_G = 1.5
+    MIN_SPEED = 25.0
+    P_work = [list(p) for p in P]
+    path, pts_out, worst_a, worst_bank, worst_speed = _measure(P_work, speed)
+    g = worst_a / 9.80665
+    g_at_request = g
+    speed_used = float(speed)
+    if g > LIMIT_G and g > 0.0:
+        wanted = speed * math.sqrt(LIMIT_G / g)
+        speed_used = max(MIN_SPEED, math.floor(wanted * 10.0) / 10.0)
+        if speed_used < speed:
+            try:
+                path, pts_out, worst_a, worst_bank, worst_speed = _measure(
+                    P_work, speed_used)
+                g = worst_a / 9.80665
+            except ValueError:
+                speed_used = float(speed)
+    tries = 1 if speed_used < float(speed) else 0
+    warnings = []
+    if g > 1.5:
+        warnings.append("最大过载 %.2f g 超过固定翼无人机常规机动上限（约 1.5 g），"
+                        "生成时会被包线判为不可飞；建议放大转弯半径" % g)
+    if worst_bank > 60.0:
+        warnings.append("最大坡度 %.0f° 偏大，真实机体通常不超过 60°" % worst_bank)
+    if float(path.length) < 200.0:
+        warnings.append("轨迹总长仅 %.0f m，帧数稍多就会飞出画面" % float(path.length))
+
+    if tries:
+        warnings.insert(0, "按 %.0f m/s 飞这条轨迹需要 %.1f g，已自动降到 %.1f m/s"
+                           "（%.1f g）使其可飞；想要更快请把转弯画得更大"
+                        % (float(speed), g_at_request, speed_used, g))
+    return dict(ok=True, points=pts_out, length_m=round(float(path.length), 1),
+                duration_s=round(float(path.duration), 2), max_g=round(g, 3),
+                max_bank_deg=round(worst_bank, 1),
+                max_speed_mps=round(worst_speed, 1),
+                speed_requested=round(float(speed), 1),
+                speed_used=round(speed_used, 1),
+                relaxed=tries, closed=closed, warnings=warnings)
+
+
+# ------------------------------------------------------- output destination
+
+# Source and configuration folders a dataset must never be written into: a typo
+# in the path box would scatter generated frames through the tree, where git and
+# the asset scans would pick them up.
+#
+# "datasets" is deliberately NOT here. It is the YOLO export target and the
+# obvious place an operator puts a dataset; refusing it was over-protection and
+# made the natural choice ("...\datasets\1103") fail.
+_PROTECTED_OUT = ("simkit", "scenes", "assets", "docs", "tools", "tests",
+                  "blender", "studio", "configs", "env", "third_party",
+                  "data", "rcs_refs")
+
+
+def _safe_out_dir(raw):
+    """Absolute, checked output folder, or None to use the default runs area."""
+    if raw in (None, ""):
+        return None
+    p = os.path.expanduser(str(raw).strip().strip('"').strip("'"))
+    if not p:
+        return None
+    if not os.path.isabs(p):
+        p = os.path.join(ROOT, p)
+    p = os.path.normpath(p)
+    low, root_low = p.lower(), ROOT.lower()
+    if low == root_low:
+        raise BadRequest("输出目录不能是项目根目录本身")
+    if os.path.dirname(p) == p:
+        raise BadRequest("输出目录不能是磁盘根目录")
+    for d in _PROTECTED_OUT:
+        walk = os.path.join(root_low, d)
+        if low == walk or low.startswith(walk + os.sep):
+            raise BadRequest("输出目录不能放在 %s/ 里（那是源码或配置目录）：%s"
+                             % (d, p))
+    return p
+
+
+def _unique_out_dir(base):
+    """Do not mix two generations, and never write into someone else's folder."""
+    if not os.path.exists(base):
+        return base
+    if os.path.isfile(os.path.join(base, "meta.json")):
+        for i in range(2, 1000):
+            cand = "%s_%d" % (base, i)
+            if not os.path.exists(cand):
+                return cand
+        raise BadRequest("同名目录太多，请换一个输出目录：%s" % base)
+    if os.path.isdir(base) and not os.listdir(base):
+        return base
+    raise BadRequest("目录已存在、非空，且不是本工具生成的数据集，拒绝写入：%s" % base)
+
+
+def _writable_ancestor(path):
+    """True when the nearest EXISTING ancestor is writable.
+
+    A brand-new nested path such as D:/work/new/run01 has a parent that does not
+    exist yet; testing the parent directly reported "not writable" and refused a
+    perfectly legal destination. makedirs creates the chain, so the only thing
+    that matters is whether the closest real folder accepts children.
+    """
+    p = os.path.dirname(os.path.normpath(path)) or "."
+    while p and not os.path.exists(p):
+        nxt = os.path.dirname(p)
+        if nxt == p:
+            return False
+        p = nxt
+    return bool(p) and os.path.isdir(p) and os.access(p, os.W_OK)
+
+
+def _subdirs(path, cap=300):
+    try:
+        names = []
+        with os.scandir(path) as it:
+            for e in it:
+                try:
+                    if e.is_dir(follow_symlinks=False) and not e.name.startswith("."):
+                        names.append(e.name)
+                except OSError:
+                    continue
+        return sorted(names)[:cap]
+    except OSError:
+        return []
+
+
+def _assets_payload():
+    """Model library: every .obj under assets/models, grouped by its folder.
+
+    The form needs a list it can show as a picker, with a relative path it can
+    put straight into spec["model"]; absolute paths would leak this machine's
+    layout into the recipe.
+    """
+    base = os.path.join(ROOT, "assets", "models")
+    if not os.path.isdir(base):
+        return dict(assets=[], error="资产库暂不可用：assets/models 不存在")
+    # scenegen already resolves each model's class, size and triangle count. A
+    # hand-rolled scan here dropped those three fields and the damage was not
+    # cosmetic: the UI writes asset["cls"] into recipe.objects[0].cls, so without
+    # it every tank and ship was annotated as "fighter".
+    from . import scenegen
+    try:
+        rows = scenegen.list_assets()
+    except Exception as exc:
+        return dict(assets=[], error="资产库读取失败：%s: %s" % (type(exc).__name__, exc))
+    out = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["size_kb"] = round(
+                os.path.getsize(os.path.join(base, str(row["path"]))) / 1024.0, 1)
+        except (OSError, KeyError, TypeError):
+            item["size_kb"] = 0.0
+        out.append(item)
+    if not out:
+        return dict(assets=[], error="资产库暂不可用：assets/models 下没有扫描到模型")
+    return dict(assets=out)
+
+
+BACKDROP_LABELS = {"forest": "森林", "city": "城市", "port": "港口",
+                   "island": "岛屿", "open": "开阔海面"}
+
+
+def _backdrops_payload():
+    """Real photograph plates collected under assets/backdrops.
+
+    Served to the workbench so the operator picks a category (and the engine
+    rotates through the files by seed) instead of memorising file paths.
+    """
+    from . import scenegen
+    lib = scenegen.backdrop_library()
+    out = []
+    for key in scenegen.BACKDROP_CATEGORIES:
+        files = lib.get(key) or []
+        out.append(dict(key=key, label=BACKDROP_LABELS.get(key, key),
+                        count=len(files),
+                        files=files[:40],
+                        cover=("/api/backdrop/%s/%s" % (key, files[0])) if files else ""))
+    total = sum(c["count"] for c in out)
+    return dict(categories=out, total=total,
+                error="" if total else "背景库为空：assets/backdrops 下没有图片")
+
+
+def _browse_payload(raw):
+    """List folders so the UI can offer a picker instead of a blind text box."""
+    p = os.path.expanduser(str(raw or "").strip().strip('"').strip("'"))
+    if not p:
+        p = ROOT
+    if not os.path.isabs(p):
+        p = os.path.join(ROOT, p)
+    p = os.path.normpath(p)
+    if os.path.isdir(p):
+        return dict(path=p, requested=p, exists=True, isdir=True,
+                    parent=os.path.dirname(p), dirs=_subdirs(p),
+                    writable=os.access(p, os.W_OK))
+    parent = os.path.dirname(p)
+    if os.path.isdir(parent):
+        # A folder that does not exist yet is a legitimate choice: the platform
+        # creates it. Report the parent so the UI can still navigate.
+        return dict(path=parent, requested=p, exists=False, isdir=False,
+                    parent=os.path.dirname(parent), dirs=_subdirs(parent),
+                    writable=os.access(parent, os.W_OK))
+    raise BadRequest("目录不存在：%s" % p)
+
+
+# ------------------------------------------------------------ recipes & checks
+
+def _recipes_dir():
+    os.makedirs(RECIPES, exist_ok=True)
+    return RECIPES
+
+
+def _recipe_path(name):
+    stem = _safe_name(name)
+    if not stem:
+        raise BadRequest("配方需要一个名字（字母、数字、下划线或短横线）")
+    return os.path.join(_recipes_dir(), stem + ".json")
+
+
+def _list_recipes():
+    out = []
+    d = _recipes_dir()
+    for fn in sorted(os.listdir(d)):
+        if not fn.lower().endswith(".json"):
+            continue
+        p = os.path.join(d, fn)
+        try:
+            with open(p, "r", encoding="utf-8") as fh:
+                rec = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        out.append(dict(name=fn[:-5], path=p,
+                        title=rec.get("title") or rec.get("name") or fn[:-5],
+                        saved_at=rec.get("_saved_at")))
+    return out
+
+
+def _load_recipe(name):
+    p = _recipe_path(name)
+    if not os.path.isfile(p):
+        raise BadRequest("没有这个配方：" + str(name))
+    try:
+        with open(p, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except ValueError as exc:
+        raise BadRequest("配方文件不是合法 JSON：" + str(exc)) from exc
+
+
+def _save_recipe(name, recipe):
+    if not isinstance(recipe, dict):
+        raise BadRequest("配方必须是 JSON 对象")
+    p = _recipe_path(name)
+    rec = json.loads(json.dumps(recipe))
+    rec["_saved_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    with open(p, "w", encoding="utf-8") as fh:
+        json.dump(rec, fh, ensure_ascii=False, indent=1)
+    return p
+
+
+def _write_tmp_scene(cfg, name):
+    """Materialise a built scene so the existing plan/generate path can load it.
+
+    The generator reads a config from disk, so a recipe has to become a file
+    before it can run. The token keeps concurrent previews from colliding.
+    """
+    os.makedirs(TMP, exist_ok=True)
+    tok = _safe_name(name) or "recipe"
+    path = os.path.join(TMP, "scene_%s_%d.json" % (tok, int(time.time() * 1000) % 10 ** 9))
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, ensure_ascii=False, indent=1)
+    return path
+
+
+def _ecm_kinds_payload():
+    """Every jamming/infrared entity the physics layer knows, with its defaults."""
+    from . import ecm as s_ecm
+    kinds = []
+    for k in s_ecm.KINDS:
+        kinds.append(dict(key=k, group=s_ecm.GROUP_OF.get(k, "passive"),
+                          label=_ECM_CN.get(k, k),
+                          defaults=s_ecm.DEFAULTS.get(k, {})))
+    return dict(kinds=kinds,
+                groups=[dict(key="active", label="有源"),
+                        dict(key="passive", label="无源")])
+
+
+def _estimate_payload(q):
+    """Rough time and disk, so nobody starts a 20000-frame run by accident."""
+    sensors = [s for s in q["sensors"]]
+    frames = int(q["frames"])
+    sec = sum(COST_SEC_PER_FRAME.get(s, 1.0) for s in sensors) * frames
+    mb = sum(COST_MB_PER_FRAME.get(s, 0.5) for s in sensors) * frames
+    return dict(frames=frames, sensors=sensors,
+                seconds=round(sec, 1), megabytes=round(mb, 1),
+                note="按实测 140.29 s / 10 帧 / 5 模态标定，仅供参考")
+
+
+def _preflight_payload(q):
+    """Cheap geometric and physical sanity checks. Never renders."""
+    errors, warnings = [], []
+    sensors = list(q["sensors"])
+    if not sensors:
+        errors.append("至少选一个模态")
+    if "optical" in sensors:
+        try:
+            from . import optical as s_opt
+            if not s_opt.available(q.get("cfg") or {}):
+                warnings.append("可见光需要 Blender；当前没找到，将只产出其它模态")
+        except Exception:
+            pass
+
+    # Contradictory aspect and closing: head-on means the target comes at the
+    # camera, so an "out" closing rate describes the opposite geometry.
+    aspect = str(q.get("aspect") or "")
+    closing = str(q.get("closing") or "")
+    if aspect == "head_on" and closing == "out":
+        warnings.append("迎头拍摄却设为远离：几何自相矛盾，建议把接近方式改成「接近」")
+    if aspect == "pursuit" and closing == "in":
+        warnings.append("追击拍摄却设为接近：目标会倒着飞，建议改成「远离」")
+
+    # Sub-pixel target: the pixel budget is the honest way to say "you asked for
+    # a 500 m target at 40 km through a 2 deg lens and you will get three dots".
+    try:
+        fov = float(q["narrow"]["fov_deg"])
+        width = int(q["narrow"]["width"])
+        px_lo = float(q["target_px"][0])
+        rng = q.get("range_m")
+        if rng:
+            f_px = width / (2.0 * math.tan(math.radians(fov) / 2.0))
+            # Measure the actual target. Guessing 4 m made a 20 m aircraft at
+            # 9 km read as 11 px and raised a warning that was simply wrong;
+            # prepare_mesh is cached per process, so looking it up is cheap.
+            size_m = 4.0
+            try:
+                from . import plan as s_plan, scene as s_scene
+                sc = s_scene.load_config(q["scene_path"])
+                tgt = next((o for o in sc.get("objects") or [] if o.get("label", True)), None)
+                if tgt is not None:
+                    size_m = float(s_plan.object_size_m(
+                        tgt, os.path.dirname(q["scene_path"])))
+            except Exception:
+                pass
+            px = size_m * f_px / max(float(rng[1]), 1e-6)
+            if px < px_lo:
+                warnings.append("最远 %.1f km 处目标仅约 %.1f px，低于你设的下限 %.0f px；"
+                                "建议拉近距离或缩小视场角" % (float(rng[1]) / 1000.0, px, px_lo))
+    except (KeyError, TypeError, ValueError, ZeroDivisionError):
+        pass
+
+    # A jammer that cannot beat the noise floor changes nothing, and a run that
+    # silently contains no jamming is worse than a run that refuses.
+    ecm_cfg = q.get("ecm")
+    if isinstance(ecm_cfg, dict) and ecm_cfg.get("entities"):
+        act = [e for e in ecm_cfg["entities"] if e.get("kind") == "noise_jammer"]
+        total = sum(float(e.get("erp_w") or 0.0) for e in act)
+        if act and total < 50.0:
+            warnings.append("有源干扰总 ERP 仅 %.1f W；实测 Ku 波段 500 m 下 200 W 才到 "
+                            "J/S +10 dB，低于 50 W 基本压不住" % total)
+
+    # Doppler aliasing. A single-PRF radar folds |v| > lam/(4*PRI), so a fighter
+    # closing at 250 m/s lands in the wrong Doppler cell and the RD image teaches
+    # a velocity that is not the true one. The label already says "aliased"; the
+    # operator still deserves to know before spending an hour on the run.
+    try:
+        from . import scene as s_scene
+        sc = s_scene.load_config(q["scene_path"])
+        rb = (sc.get("sensors") or {}).get("radar") or {}
+        pri = float(rb.get("pri_us") or 0.0) * 1e-6
+        fc_ghz = {"X": 9.6, "Ku": 15.5, "K": 24.0, "Ka": 35.0, "W": 94.0}.get(
+            str(rb.get("band") or "Ku"), 15.5)
+        sk = (sc.get("clip") or {}).get("seeker") or {}
+        v = abs(float(sk.get("closing_mps") or 0.0))
+        if pri > 0.0 and v > 0.0:
+            lam = 2.998e8 / (fc_ghz * 1e9)
+            v_nyq = lam / (4.0 * pri)
+            if v > v_nyq:
+                warnings.append(
+                    "接近率 %.0f m/s 超过 %s 波段的多普勒不模糊速度 ±%.1f m/s"
+                    "（PRI %s µs），雷达距离-多普勒图的多普勒轴会回绕；"
+                    "标注已标记 single-PRF aliased，若要正确速度需改用更短 PRI 的波形"
+                    % (v, str(rb.get("band") or "Ku"), v_nyq, rb.get("pri_us")))
+    except (OSError, ValueError, TypeError, KeyError, ZeroDivisionError):
+        pass
+
+    # The destination is checked again at generate time; saying it now saves the
+    # operator from configuring a whole run that will be refused at the end.
+    od = q.get("out_dir")
+    if od:
+        if os.path.isdir(od) and os.path.isfile(os.path.join(od, "meta.json")):
+            warnings.append("输出目录已有一份数据集，本次会自动改名到「%s_2」，不会覆盖"
+                            % os.path.basename(os.path.normpath(od)))
+        elif os.path.isdir(od) and os.listdir(od):
+            errors.append("输出目录已存在且非空，也不是本工具生成的数据集，写入会被拒绝：%s"
+                          % od)
+        elif not _writable_ancestor(od):
+            errors.append("输出目录所在位置不可写：%s" % od)
+
+    est = _estimate_payload(q)
+    if est["megabytes"] > 5000:
+        errors.append("预计 %.0f GB，超出单次运行建议上限；请减少帧数或模态"
+                      % (est["megabytes"] / 1024.0))
+    elif est["megabytes"] > 1500:
+        warnings.append("预计 %.0f GB，生成时间较长" % (est["megabytes"] / 1024.0))
+
+    return dict(errors=errors, warnings=warnings,
+                ok=not errors, level=("error" if errors else
+                                      "warn" if warnings else "ok"),
+                estimate=est)
+
+
 def _parse(body):
     """Validate the whole form and return a normalised dict. Raises BadRequest."""
     if not isinstance(body, dict):
@@ -282,15 +822,51 @@ def _parse(body):
 
     q = {}
     q["_present"] = set(body.keys())
-    q["scene_path"] = _scene_file(body.get("scene") or body.get("preset"))
-    q["scene"] = os.path.basename(q["scene_path"])[:-5]
+    # Two ways in, on purpose: a saved recipe (build the scene from the form) and
+    # a preset scene from scenes/ (overlay the form on a curated file). The
+    # preset path stays because those 32 files encode engagement geometry that
+    # took measurement to get right, and nobody should have to retype it.
+    recipe = body.get("recipe")
+    if isinstance(recipe, str) and recipe.strip():
+        recipe = _load_recipe(recipe.strip())
+    if isinstance(recipe, dict):
+        from . import scenegen
+        try:
+            q["recipe"] = scenegen.validate_recipe(recipe)
+            built = scenegen.build_scene(q["recipe"])
+        except ValueError as exc:
+            raise BadRequest("配方无效：" + str(exc)) from exc
+        # A recipe is the source of truth for a recipe-originated run, but the
+        # rest of _parse reads the flat form. Fold the recipe into the form
+        # first, without overwriting anything the caller sent explicitly, or a
+        # recipe asking for 20 frames would silently generate 240.
+        for k, v in _recipe_to_form(q["recipe"]).items():
+            if body.get(k) in (None, "", []) and v is not None:
+                body[k] = v
+        q["scene_path"] = _write_tmp_scene(built, q["recipe"].get("name") or "recipe")
+        q["scene"] = _safe_name(q["recipe"].get("name")) or "recipe"
+    else:
+        q["recipe"] = None
+        q["scene_path"] = _scene_file(body.get("scene") or body.get("preset"))
+        q["scene"] = os.path.basename(q["scene_path"])[:-5]
     q["name"] = _safe_name(body.get("name"))
     q["frames"] = _inum(body, "frames", "帧数", LIM["frames"], 240)
     q["fps"] = _fnum(body, "fps", "帧率", LIM["fps"], 10.0)
     q["fpc"] = _inum(body, "frames_per_clip", "每段帧数", LIM["fpc"], 120)
     q["fpc"] = max(1, min(q["fpc"], q["frames"]))
     q["seed"] = _inum(body, "seed", "随机种子", LIM["seed"], 7)
+    # Parallel frame ranges. 1 keeps the old single-process path; the UI fills
+    # this from the benchmark's recommendation, and the operator can override it.
+    q["workers"] = _inum(body, "workers", "并行度", (1, 16), 1)
     q["weather"] = _choice(body, "weather", "天气", WEATHER_MODES, "mixed")
+    from . import interference
+    mode = _choice(body, "interference_mode", "干扰增广",
+                   {"inherit": 1, "off": 1, "active": 1, "passive": 1, "mixed": 1}, "inherit")
+    try:
+        q["interference"] = (interference.validate(body["interference"]) if "interference" in body else
+                             interference.preset(mode) if mode != "inherit" else None)
+    except ValueError as exc:
+        raise BadRequest("干扰配置无效："+str(exc)) from exc
 
     want = body.get("sensors")
     if want in (None, "", []):
@@ -328,6 +904,23 @@ def _parse(body):
         if body.get("closing_mps") not in (None, "") else None
     q["range_m"] = _pair(body, "range_m", "视线距离区间", LIM["range_m"]) \
         if body.get("range_m") not in (None, "", []) else None
+    # Aspect is the operator-facing word for what the geometry actually is:
+    # whether the target comes at the camera or runs away from it. Closing rate
+    # alone does not say this -- a receding target can still be filmed head-on.
+    q["aspect"] = _choice(body, "aspect", "拍摄方位",
+                          {"": 1, "head_on": 1, "pursuit": 1}, "")
+    # Where the dataset lands. Blank keeps the default out/studio_runs/<id>.
+    q["out_dir"] = _safe_out_dir(body.get("output_dir"))
+    raw_ecm = body.get("ecm")
+    q["ecm"] = None
+    if raw_ecm not in (None, "", [], {}):
+        from . import ecm as s_ecm
+        ents = raw_ecm.get("entities") if isinstance(raw_ecm, dict) else raw_ecm
+        if ents:
+            try:
+                q["ecm"] = s_ecm.load(dict(enabled=True, entities=ents))
+            except (ValueError, KeyError, TypeError) as exc:
+                raise BadRequest("干扰实体无效：" + str(exc)) from exc
 
     q["traj_mode"] = _choice(body, "traj_mode", "轨迹模式", TRAJ_MODES, "platform")
     q["platform"] = dict(
@@ -419,7 +1012,15 @@ def _compose(q, cfg):
             return value != ref
 
     # ---- trajectory
-    if q["traj_mode"] == "world":
+    # A curated scene that already drives its own camera (observer_trajectory or
+    # trajectory) must not get a seeker block injected from the form's default:
+    # the planner would then have two motion sources and the run would stop
+    # matching the scene it claims to be. Only an explicit traj_mode overrides.
+    scene_drives_camera = bool(clip.get("observer_trajectory") or clip.get("trajectory"))
+    if scene_drives_camera and "traj_mode" not in q["_present"]:
+        clip.pop("seeker", None)
+        cfg.pop("seeker", None)
+    elif q["traj_mode"] == "world":
         clip.pop("seeker", None)
         cfg.pop("seeker", None)
     else:
@@ -555,6 +1156,10 @@ def _compose(q, cfg):
     # by 230 m and changed the whole clip).
     if "seed" in q["_present"] or "seed" not in cfg:
         cfg["seed"] = int(q["seed"])
+    # Interference augmentation: preset or fully specified events, validated in
+    # _parse. Without this the form's choice never reached the scene.
+    if q.get("interference") is not None:
+        cfg["interference"] = q["interference"]
     return cfg
 
 
@@ -575,6 +1180,8 @@ class Job:
         self.log = []
         self.error = None
         self.proc = None
+        # Parallel runs own several children; cancel has to reach all of them.
+        self.procs = []
         self.meta = {}
 
     def push(self, line):
@@ -663,25 +1270,265 @@ def _spawn(job, argv):
     t.start()
 
 
-def start_job(body, preview=False):
+
+
+def _spawn_parts(job, base_argv, merge_argv, workers, sensors):
+    """Render one dataset as N concurrent frame ranges, then merge them.
+
+    The engine already speaks "gen --part i/K" plus "merge", so a dataset can be
+    cut into independent frame ranges without touching the renderer. Each part
+    writes its own pass files into the same output directory.
+
+    Every part gets its own reader thread: a pipe nobody drains fills up and
+    deadlocks the child, which is the classic way this kind of fan-out hangs
+    halfway through a batch.
+    """
+    def run():
+        job.state = "running"
+        try:
+            env = dict(os.environ)
+            env["PYTHONPATH"] = ROOT
+            env.setdefault("PYTHONIOENCODING", "utf-8")
+            # cli.py splits the range the same way: the remainder goes to the
+            # first chunks, so each part knows its global frame offset.
+            total = max(1, int(job.total))
+            per = [total // workers + (1 if i < total % workers else 0)
+                   for i in range(workers)]
+            offs = [sum(per[:i]) for i in range(workers)]
+            procs = []
+            for i in range(workers):
+                cmd = list(base_argv) + ["--part", "%d/%d" % (i, workers)]
+                p = subprocess.Popen(cmd, cwd=ROOT, env=env,
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.STDOUT, bufsize=0)
+                procs.append(p)
+            # Keep every child, not just the first: a cancel that kills only one
+            # part leaves the rest rendering and the merge never runs.
+            job.procs = procs
+            job.push("[studio] 并行 %d 路分帧渲染" % workers)
+
+            def pump(part_idx):
+                """Relay a part's log with its frame numbers made global.
+
+                Each child reports "frame 1/2" against its own range; pushing
+                that verbatim overwrote job.total with the chunk size and the
+                UI showed "4 / 2".
+                """
+                off = offs[part_idx]
+                for raw in procs[part_idx].stdout:
+                    line = _decode(raw)
+                    m = _RE_PROG.search(line)
+                    if m:
+                        line = _RE_PROG.sub(
+                            "frame %d/%d" % (off + int(m.group(1)), total), line, count=1)
+                    job.push(line)
+
+            readers = [threading.Thread(target=pump, args=(i,), daemon=True)
+                       for i in range(len(procs))]
+            for t in readers:
+                t.start()
+            job.proc = procs[0] if procs else None
+            codes = [p.wait() for p in procs]
+            for t in readers:
+                t.join(timeout=5)
+            bad = [(i, rc) for i, rc in enumerate(codes) if rc != 0]
+            if job.state == "cancelled":
+                return
+            if bad:
+                job.state = "failed"
+                job.error = "分帧渲染失败：" + "，".join(
+                    "第 %d 路退出码 %d" % (i, rc) for i, rc in bad)
+                return
+            job.push("[studio] 合并分块")
+            m = subprocess.Popen(list(merge_argv), cwd=ROOT, env=env,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, bufsize=0)
+            job.proc = m
+            for raw in m.stdout:
+                job.push(_decode(raw))
+            rc = m.wait()
+            if job.state == "cancelled":
+                return
+            if rc == 0:
+                # merge_parts leaves the per-part JSON behind; on disk they look
+                # like stale annotations and quietly accumulate.
+                try:
+                    for fn in os.listdir(job.out):
+                        if ".part" in fn and fn.endswith(".json"):
+                            os.remove(os.path.join(job.out, fn))
+                except OSError:
+                    pass
+                job.done = job.total
+                job.state = "done"
+            else:
+                job.state = "failed"
+                job.error = "合并退出码 %d" % rc
+        except Exception as exc:                      # pragma: no cover
+            job.state = "failed"
+            job.error = "%s: %s" % (type(exc).__name__, exc)
+            job.log.append(traceback.format_exc()[-800:])
+        finally:
+            job.finished = time.time()
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+
+
+def _remember_out_dir(path):
+    """Remember a folder the operator actually generated into.
+
+    The picker should offer the folders that are in use, not every directory on
+    the disk; the list is small, JSON and lives next to the recipes.
+    """
+    try:
+        p = os.path.normpath(os.path.abspath(path))
+        known = _load_known_out_dirs()
+        if p not in known:
+            known.insert(0, p)
+        known = known[:20]
+        os.makedirs(os.path.dirname(_KNOWN_OUT), exist_ok=True)
+        with open(_KNOWN_OUT, "w", encoding="utf-8") as fh:
+            json.dump(known, fh, ensure_ascii=False, indent=1)
+    except OSError:
+        pass
+
+
+def _load_known_out_dirs():
+    try:
+        with open(_KNOWN_OUT, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, list):
+            return [str(x) for x in data if isinstance(x, str)]
+    except (OSError, ValueError):
+        pass
+    return []
+
+def _place_preview(body):
+    """Render one fast frame of a target placed on a backdrop plate.
+
+    This is what makes placement interactive: the operator clicks, the server
+    returns a 320x240 frame in about two seconds. It reuses the normal engine
+    path so what they see is what a full run will produce, not a separate
+    approximation that drifts from it.
+    """
+    from . import scenegen
+    q = _parse_place(body)
+    rec = scenegen.default_recipe()
+    rec["name"] = "placement_preview"
+    rec["environment"].update(kind=q["env"], weather="clear",
+                              background=({"mode": "library", "category": q["category"]}
+                                          if q["category"] else {"mode": "none"}))
+    rec["objects"] = [dict(asset=q["asset"], cls=q["cls"], scale=1.0,
+                           count=1, uv=[q["u"], q["v"]])]
+    rec["view"].update(aspect="top_down", ground_span_m=q["span_m"],
+                       fov_deg=q["fov_deg"])
+    rec["capture"].update(sensors=[q["sensor"]], frames=1, seed=7)
+    cfg = scenegen.build_scene(scenegen.validate_recipe(rec))
+    # The scene file is written into a deep run folder, and the recipe's model
+    # paths are relative to it ('../assets/models/...'). Resolve them to absolute
+    # once, here, or every preview dies with FileNotFoundError.
+    _abs_models(cfg)
+    # Cheap render: a quarter of the pixels and a quarter of the samples is
+    # what turns ten seconds into two.
+    for v in (cfg.get("clip") or {}).get("views") or []:
+        v["width"] = int(q["width"])
+        v["height"] = int(round(q["width"] * 0.75))
+    opt = cfg.setdefault("optical", {})
+    opt["samples"] = int(q["samples"])
+    out_dir = os.path.join(RUNS, "_place_preview")
+    if os.path.isdir(out_dir):
+        for nm in os.listdir(out_dir):
+            fp = os.path.join(out_dir, nm)
+            if os.path.isfile(fp):
+                os.remove(fp)
+    os.makedirs(out_dir, exist_ok=True)
+    cfg_path = os.path.join(out_dir, "scene.json")
+    with open(cfg_path, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, ensure_ascii=False, indent=1)
+    argv = [sys.executable, "-m", "simkit", "gen", "-c", cfg_path,
+            "-o", out_dir, "-n", "1", "-s", q["sensor"], "--seed", "7"]
+    env = dict(os.environ)
+    env["PYTHONPATH"] = ROOT
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    t0 = time.time()
+    proc = subprocess.run(argv, cwd=ROOT, env=env, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE)
+    if proc.returncode != 0:
+        tail = (proc.stderr or b"").decode("utf-8", "replace").strip().splitlines()
+        raise BadRequest("预览渲染失败：" + " | ".join(tail[-3:]))
+    sub = "ir_mwir" if q["sensor"] == "ir" else q["sensor"]
+    rel = "images/%s/000000.png" % sub
+    if not os.path.isfile(os.path.join(out_dir, rel)):
+        raise BadRequest("预览没有产出图像：%s" % rel)
+    return dict(ok=True,
+                url="/api/img/_place_preview/" + rel,
+                world=[round((q["u"] - 0.5) * q["span_m"], 2),
+                       round((0.5 - q["v"]) * q["span_m"] * 0.75, 2)],
+                seconds=round(time.time() - t0, 2),
+                span_y_m=round(q["span_m"] * 0.75, 2))
+
+
+def _parse_place(body):
+    if not isinstance(body, dict):
+        raise BadRequest("请求体必须是 JSON 对象")
+    def uv(name, default):
+        v = body.get(name, default)
+        try:
+            return max(0.0, min(1.0, float(v)))
+        except (TypeError, ValueError):
+            raise BadRequest("%s 必须是 0..1 的数字" % name)
+    cat = str(body.get("category") or "").strip()
+    from . import scenegen
+    if cat and cat not in scenegen.BACKDROP_CATEGORIES:
+        raise BadRequest("未知背景类别：%s" % cat)
+    env = str(body.get("env") or ("sea" if cat in ("port", "island", "open") else "ground"))
+    if env not in ("ground", "sea"):
+        raise BadRequest("env 只能是 ground 或 sea")
+    asset = str(body.get("asset") or "军用地面车辆/主战坦克.obj").strip()
+    return dict(u=uv("u", 0.5), v=uv("v", 0.5),
+                span_m=float(body.get("span_m") or 600.0),
+                fov_deg=float(body.get("fov_deg") or 10.0),
+                width=int(body.get("width") or 320),
+                samples=int(body.get("samples") or 16),
+                sensor=str(body.get("sensor") or "optical"),
+                category=cat, env=env, asset=asset,
+                cls=str(body.get("cls") or "vehicle"))
+
+
+def start_job(body, preview=False, still=False):
     q = _parse(body)
     cfg = _compose(q, _load_scene(q["scene_path"]))
     stamp = time.strftime("%Y%m%d_%H%M%S")
-    tag = "preview_" if preview else "ds_"
+    tag = "still_" if still else ("preview_" if preview else "ds_")
     jid = "%s%s_%s" % (tag, stamp, q["scene"])
     if q["name"]:
         jid += "_" + q["name"]
     jid = _safe_name(jid, "run")
-    out_dir = os.path.normpath(os.path.join(RUNS, jid))
-    if os.path.dirname(out_dir) != os.path.normpath(RUNS):
-        raise BadRequest("输出目录越界：%s" % out_dir)
-    os.makedirs(out_dir, exist_ok=True)
+    if q.get("out_dir"):
+        # The operator chose the folder. A preview must not overwrite the full
+        # run they are about to make, so previews get their own suffix.
+        wanted = q["out_dir"]
+        if preview:
+            wanted = wanted + "_preview"
+        out_dir = _unique_out_dir(wanted)
+    else:
+        out_dir = os.path.normpath(os.path.join(RUNS, jid))
+        if os.path.dirname(out_dir) != os.path.normpath(RUNS):
+            raise BadRequest("输出目录越界：%s" % out_dir)
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+    except OSError as exc:
+        raise BadRequest("无法创建输出目录 %s：%s" % (out_dir, exc)) from exc
+    if q.get("out_dir"):
+        _remember_out_dir(out_dir)
     cfg_path = os.path.join(out_dir, "scene.json")
     with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(cfg, fh, ensure_ascii=False, indent=1)
 
     frames = q["frames"]
-    if preview:
+    if still:
+        frames = 1
+    elif preview:
         frames = max(2, min(frames, 8))
     sensors = [s for s in q["sensors"] if s in ("optical", "ir", "radar", "lidar", "sar")]
     argv = [sys.executable, "-m", "simkit", "gen", "-c", cfg_path, "-o", out_dir,
@@ -698,7 +1545,16 @@ def start_job(body, preview=False):
         job.push("[studio] " + note)
     with _LOCK:
         _JOBS[jid] = job
-    _spawn(job, argv)
+    workers = 1 if (still or preview) else int(q.get("workers") or 1)
+    workers = max(1, min(workers, max(1, frames)))
+    if workers > 1:
+        merge_argv = [sys.executable, "-m", "simkit", "merge", "-c", cfg_path,
+                      "-o", out_dir, "-n", str(frames),
+                      "-s", ",".join(sensors) or "ir",
+                      "--seed", str(int(q["seed"]))]
+        _spawn_parts(job, argv, merge_argv, workers, sensors)
+    else:
+        _spawn(job, argv)
     return job
 
 
@@ -904,6 +1760,11 @@ def _label_meta(base, mod, fname, ldirs=None):
         return {}
     boxes = d.get("boxes") or []
     bw = bh = None
+    if isinstance(boxes, dict):
+        # The optical/IR labels key boxes by object name; only the radar labels
+        # use a list. Indexing [0] on a dict raised KeyError and the whole
+        # gallery request died with a closed connection.
+        boxes = list(boxes.values())
     if boxes:
         b = boxes[0]
         try:
@@ -989,13 +1850,35 @@ def _list_datasets():
     return out
 
 
-def _dataset_info(jid):
+def _variant_dirs(base):
+    """Interference variants live in subdirectories that carry their own images.
+
+    "clean" is the dataset itself; any child directory with an images/ folder is
+    a variant an interference export produced.
+    """
+    out = []
+    try:
+        for nm in sorted(os.listdir(base)):
+            d = os.path.join(base, nm)
+            if os.path.isdir(d) and os.path.isdir(os.path.join(d, "images")):
+                out.append(nm)
+    except OSError:
+        pass
+    return out
+
+
+def _dataset_info(jid, variant=None):
     base = _run_dir(jid)
     if not base:
         return None
-    info = dict(id=jid, dir=base, stats={}, meta={}, samples={}, cards=[], views=[])
+    variants = ["clean"] + _variant_dirs(base)
+    chosen = variant if variant in variants else "clean"
+    prefix = "" if chosen == "clean" else chosen + "/"
+    vroot = base if chosen == "clean" else os.path.join(base, chosen)
+    info = dict(id=jid, dir=base, variant=chosen, variants=variants,
+                stats={}, meta={}, samples={}, cards=[], views=[])
     for nm, key in (("stats.json", "stats"), ("meta.json", "meta")):
-        fp = os.path.join(base, nm)
+        fp = os.path.join(vroot, nm)
         if os.path.exists(fp):
             try:
                 with open(fp, "r", encoding="utf-8") as fh:
@@ -1004,8 +1887,8 @@ def _dataset_info(jid):
                 pass
     seen = set()
     order = []
-    ldirs = _label_dirs(base)
-    img_root = os.path.join(base, "images")
+    ldirs = _label_dirs(vroot)
+    img_root = os.path.join(vroot, "images")
     cand = []
     if os.path.isdir(img_root):
         for nm in os.listdir(img_root):
@@ -1044,7 +1927,8 @@ def _dataset_info(jid):
             if ref and w:
                 ratio = round(100.0 * float(ref) / w, 2)
             info["cards"].append(dict(
-                mod=mod, label=label, file=fn, url="/api/img/%s/%s/%s" % (jid, rel, fn),
+                mod=mod, label=label, file=fn,
+                url="/api/img/%s/%s%s/%s" % (jid, prefix, rel, fn),
                 w=w, h=h, frame=_frame_no(fn), target_px=px, box=box, ratio=ratio,
                 range_m=meta.get("range_m"), clip=meta.get("clip"),
                 fov_deg=meta.get("fov_deg"), peak_db=meta.get("peak_db"),
@@ -1117,16 +2001,36 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def _body(self):
+        """Read and cache the request body.
+
+        Cached because every branch must consume it: a POST that returns without
+        reading leaves the bytes in the socket, and on a keep-alive connection
+        the next request line is parsed from them ("501 Unsupported method
+        ('{}GET')" -- measured). Caching also lets drain() run at the top of
+        do_POST without the handlers seeing an empty body.
+        """
+        if getattr(self, "_cached_body", None) is not None:
+            return self._cached_body
         n = int(self.headers.get("Content-Length") or 0)
         if not n:
+            self._cached_body = {}
             return {}
         if n > 1 << 20:
+            self.rfile.read(n)          # drain before refusing
             raise BadRequest("请求体过大（%d 字节）" % n)
         raw = self.rfile.read(n)
         try:
-            return json.loads(raw.decode("utf-8"))
+            self._cached_body = json.loads(raw.decode("utf-8"))
         except ValueError:
+            self._cached_body = {}
             raise BadRequest("请求体不是合法 JSON")
+        return self._cached_body
+
+    def _drain_body(self):
+        try:
+            self._body()
+        except BadRequest:
+            pass
 
     def _get_presets(self):
         return dict(
@@ -1138,9 +2042,33 @@ class Handler(BaseHTTPRequestHandler):
             radar_bands=["X", "Ku", "K", "Ka", "W", "W94"],
             views=dict(narrow=VIEW_NARROW, wide=VIEW_WIDE),
             size_px=SIZE_PX, closing=CLOSING, traj_modes=TRAJ_MODES,
-            limits=LIM, runs=RUNS)
+            limits=LIM, runs=RUNS,
+            # The form reads these from the presets payload. They were lost when
+            # this block was restored from an older revision, and the visible
+            # damage was severe: without ecm.kinds the interference panel
+            # rendered "table not loaded" and no entity could be added at all.
+            ecm=_ecm_kinds_payload(),
+            env_kinds=[dict(key=k, label=v) for k, v in
+                       __import__("simkit.scenegen", fromlist=["x"]).ENV_LABELS.items()],
+            aspects=[dict(key="head_on", label="迎头"), dict(key="pursuit", label="追击")],
+            cost=dict(sec=COST_SEC_PER_FRAME, mb=COST_MB_PER_FRAME),
+            default_out=RUNS, project_root=ROOT, recipes=_list_recipes())
 
     def do_GET(self):
+        # GET used to run without a catch: a BadRequest from a helper (a bad
+        # output path, a malformed dataset id) escaped to socketserver, the
+        # connection closed with NO response, and the browser's ajax.onerror
+        # turned the whole page into "backend offline". A 400 is infinitely
+        # more useful than a dropped socket.
+        try:
+            return self._get()
+        except BadRequest as exc:
+            return self._send(400, dict(error=str(exc)))
+        except Exception as exc:
+            return self._send(500, dict(error="%s: %s" % (type(exc).__name__, exc),
+                                        trace=traceback.format_exc()[-1200:]))
+
+    def _get(self):
         u = urlparse(self.path)
         p = u.path
         if p == "/favicon.ico":
@@ -1169,6 +2097,31 @@ class Handler(BaseHTTPRequestHandler):
             with _LOCK:
                 js = [j.as_dict() for j in _JOBS.values()]
             return self._send(200, dict(jobs=sorted(js, key=lambda j: j["id"], reverse=True)))
+        if p == "/api/recipes":
+            return self._send(200, dict(recipes=_list_recipes()))
+        if p == "/api/ecm-kinds":
+            return self._send(200, _ecm_kinds_payload())
+        if p == "/api/assets":
+            return self._send(200, _assets_payload())
+        if p == "/api/backdrops":
+            return self._send(200, _backdrops_payload())
+        if p.startswith("/api/backdrop/"):
+            rest = p[len("/api/backdrop/"):]
+            cat, _, fn = rest.partition("/")
+            from . import scenegen as _sg
+            if cat not in _sg.BACKDROP_CATEGORIES or not fn:
+                return self._send(404, dict(error="没有这个背景"))
+            fp = _safe_join(os.path.join(_sg.BACKDROP_DIR, cat), fn)
+            if not fp or not os.path.isfile(fp):
+                return self._send(404, dict(error="没有这个背景文件"))
+            ext = os.path.splitext(fp)[1].lower()
+            ctype = {".png": "image/png", ".jpg": "image/jpeg",
+                     ".jpeg": "image/jpeg"}.get(ext, "application/octet-stream")
+            with open(fp, "rb") as fh:
+                return self._send(200, fh.read(), ctype)
+        if p == "/api/browse":
+            raw = (parse_qs(u.query).get("path") or [""])[0]
+            return self._send(200, _browse_payload(raw))
         if p.startswith("/api/job/"):
             jid = p[len("/api/job/"):].strip("/")
             j = _JOBS.get(jid)
@@ -1194,7 +2147,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, dict(clips=[], error="%s: %s" % (type(exc).__name__, exc)))
         if p.startswith("/api/dataset/"):
             jid = p[len("/api/dataset/"):].strip("/")
-            info = _dataset_info(jid)
+            info = _dataset_info(jid, (parse_qs(u.query).get("variant") or [None])[0])
             if info is None:
                 return self._send(404, dict(error="没有这个数据集"))
             return self._send(200, info)
@@ -1214,11 +2167,44 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         u = urlparse(self.path)
+        # Consume the body before any branch can return early, so a keep-alive
+        # connection is never left with unread bytes in its buffer.
+        self._drain_body()
         try:
             if u.path == "/api/plan":
                 q = _parse(self._body())
                 return self._send(200, _plan_payload(
                     q, _compose(q, _load_scene(q["scene_path"]))))
+            if u.path == "/api/preflight":
+                q = _parse(self._body())
+                return self._send(200, _preflight_payload(q))
+            if u.path == "/api/estimate":
+                q = _parse(self._body())
+                return self._send(200, _estimate_payload(q))
+            if u.path == "/api/trajectory/smooth":
+                return self._send(200, _trajectory_smooth(self._body()))
+            if u.path == "/api/still":
+                # One frame is the cheapest way to answer "does this look right",
+                # and it still shows multi-object scenes and decoys.
+                return self._send(200, start_job(self._body(), preview=True,
+                                                 still=True).as_dict())
+            if u.path == "/api/place":
+                return self._send(200, _place_preview(self._body()))
+            if u.path == "/api/bench":
+                from . import bench as _bench
+                b = self._body()
+                sensor = (b.get("sensor") or "optical").strip()
+                ladder = tuple(int(x) for x in (b.get("workers") or []) if int(x) > 0) or (1, 2, 4)
+                return self._send(200, _bench.recommend(
+                    bench=_bench.measure(workers=ladder, sensor=sensor), sensor=sensor))
+            if u.path == "/api/recipe/save":
+                b = self._body()
+                name = b.get("name") or (b.get("recipe") or {}).get("name")
+                p = _save_recipe(name, b.get("recipe") or b)
+                return self._send(200, dict(saved=True, name=_safe_name(name), path=p))
+            if u.path == "/api/recipe/load":
+                b = self._body()
+                return self._send(200, dict(recipe=_load_recipe(b.get("name"))))
             if u.path == "/api/generate":
                 return self._send(200, start_job(self._body(), preview=False).as_dict())
             if u.path == "/api/preview":
@@ -1233,8 +2219,15 @@ class Handler(BaseHTTPRequestHandler):
             j = _JOBS.get(jid)
             if not j:
                 return self._send(404, dict(error="没有这个任务"))
-            if j.proc and j.proc.poll() is None:
-                j.proc.terminate()
+            # A parallel job owns one child per frame range; killing only the
+            # first leaves the rest rendering and the merge never runs.
+            killed = False
+            for p in (list(getattr(j, "procs", None) or []) +
+                      ([j.proc] if j.proc else [])):
+                if p is not None and p.poll() is None:
+                    p.terminate()
+                    killed = True
+            if killed or j.state == "running":
                 j.state = "cancelled"
             return self._send(200, j.as_dict())
         return self._send(404, dict(error="未知端点"))

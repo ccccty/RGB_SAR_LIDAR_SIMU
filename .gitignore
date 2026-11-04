@@ -21,8 +21,15 @@ third_party/
 docs/_local/
 
 # scratch
+_src/
+_tmpgen_*.py
 _tmp/
+_tmp_iso/
 _lidar/
+
+# vision-router side files
+.dsh-vision-router/
+
 .DS_Store
 Thumbs.db
 
@@ -30,3 +37,6 @@ Thumbs.db
 assets/_cache/
 # intermediate preview renders; the shipped copies live beside each .obj
 assets/models/previews/
+
+# scratch probe folders from ad-hoc testing
+sgprobe_*/

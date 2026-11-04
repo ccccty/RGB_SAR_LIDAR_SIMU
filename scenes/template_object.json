@@ -2,7 +2,7 @@
   "_comment": "单目标数据集模板：把 model 换成你的 OBJ，turntable 会绕目标转一圈，三种传感器同一套位姿。",
   "name": "my_object_turntable",
   "seed": 11,
-  "frames": { "n": 72, "dt": 0.0 },
+  "frames": { "n": 72, "dt": 0.05 },
   "motion": { "mode": "turntable", "center": [0.0, 0.0, 0.0], "_comment": "每帧绕 Z 轴转 360/n 度" },
 
   "air": { "temp_c": 25.0, "rh": 0.5, "wind_mps": 2.0 },
@@ -12,7 +12,7 @@
   "objects": [
     { "name": "target", "cls": "target",
       "shape": "obj",
-      "model": "assets/models/vehicle_demo.obj",
+      "model": "../assets/models/vehicle_demo.obj",
       "_comment_model": "相对 scenes 目录或绝对路径；也支持 shape=box / cylinder",
       "pos": [0.0, 0.0, 0.0],
       "rot": 0.0,

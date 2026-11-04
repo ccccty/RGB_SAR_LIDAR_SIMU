@@ -1,4 +1,7 @@
 """Thermal infrared forward model: Planck radiance, atmosphere, sensor, raster."""
+import math
+import os
+
 import numpy as np
 
 from . import materials as matlib
@@ -12,20 +15,132 @@ C_LIGHT = 2.99792458e8
 K_BOLTZ = 1.380649e-23
 
 
+_C1 = 2.0 * H_PLANCK * C_LIGHT ** 2
+_C2 = H_PLANCK * C_LIGHT / K_BOLTZ
+
+# Everything that depends only on the spectral grid is a pure function of
+# (lambda1, lambda2, n): one frame calls planck_band nine times with the same
+# band but different temperature arrays, so rebuilding linspace/lam**5/diff on
+# every call is pure overhead. The tables are immutable once built and keyed by
+# the band, so a dataset that alternates MWIR and LWIR keeps one per band.
+_PLANCK_TABLES = {}
+
+# Row block for the big calls (the per-pixel dL/dT needs ~7e5 rows x 48 lambdas).
+# The whole-array form materialises several 265 MB temporaries per call, once
+# per frame; a block keeps the working set in L2/L3 instead. Each row is
+# computed independently of the others, so blocking changes speed, not values.
+_PLANCK_CHUNK = 384
+
+
+def _planck_table(lam1_um, lam2_um, n):
+    key = (float(lam1_um), float(lam2_um), int(n))
+    table = _PLANCK_TABLES.get(key)
+    if table is None:
+        lam = np.linspace(lam1_um, lam2_um, n)[None, :] * 1e-6
+        lam1d = lam[0]
+        table = dict(lam=lam,                       # (1, n) metres
+                     lam1d=lam1d,
+                     inv_lam5=_C1 / lam ** 5,        # (1, n)
+                     weight=np.diff(lam1d))          # (n-1,) trapezoid edges
+        table["inv_lam5"].setflags(write=False)
+        table["lam1d"].setflags(write=False)
+        table["weight"].setflags(write=False)
+        _PLANCK_TABLES[key] = table
+    return table
+
+
+def _trapezoid_uniform(B, weight):
+    """Trapezoidal band integral on the table's own wavelength grid.
+
+    numpy spells the same sum as (diff(x) * (B[:, 1:] + B[:, :-1]) / 2.0)
+    .sum(axis=1); caching the edge widths turns it into two array ops plus one
+    reduction. Multiplication is commutative in IEEE 754, so the result is the
+    same double for every row.
+    """
+    return ((B[:, 1:] + B[:, :-1]) * weight / 2.0).sum(axis=1)
+
+
+def _planck_rows(T, table):
+    """Planck band integral of a (M, 1) block of temperatures."""
+    with np.errstate(over="ignore", invalid="ignore"):
+        B = table["inv_lam5"] / np.expm1(_C2 / (table["lam"] * T))
+    # Identical to np.nan_to_num(B, nan=0.0, posinf=0.0) for every physically
+    # reachable temperature: expm1 reaches +inf only for T -> 0, and the far
+    # field of the spectrum is then 0 either way. -inf needs a negative
+    # temperature, which is not a radiance: it also becomes 0 here.
+    bad = ~np.isfinite(B)
+    if bad.any():
+        B[bad] = 0.0
+    return _trapezoid_uniform(B, table["weight"])
+
+
 def planck_band(T, lam1_um, lam2_um, n=48):
     """In-band spectral radiance W/(m^2 sr) for temperature(s) T in Kelvin."""
     if n < 2 or not 0 < lam1_um < lam2_um:
         raise ValueError("Planck integration needs >=2 samples and 0 < lambda1 < lambda2")
-    lam = np.linspace(lam1_um, lam2_um, n)[None, :] * 1e-6
-    c1 = 2.0 * H_PLANCK * C_LIGHT ** 2
-    c2 = H_PLANCK * C_LIGHT / K_BOLTZ
+    table = _planck_table(lam1_um, lam2_um, n)
     T = np.asarray(T, float).reshape(-1, 1)
-    with np.errstate(over="ignore", invalid="ignore"):
-        B = c1 / lam ** 5 / (np.expm1(c2 / (lam * T)))
-    B = np.nan_to_num(B, nan=0.0, posinf=0.0)
+    rows = T.shape[0]
+    if rows <= _PLANCK_CHUNK:
+        return _planck_rows(T, table)
     # Endpoint rectangles over-counted the band radiance by about 2% at the
     # default 48 samples. A trapezoidal spectral integral has the right limits.
-    return np.trapezoid(B, lam[0], axis=1)
+    out = np.empty(rows, float)
+    for start in range(0, rows, _PLANCK_CHUNK):
+        stop = min(start + _PLANCK_CHUNK, rows)
+        out[start:stop] = _planck_rows(T[start:stop], table)
+    return out
+
+
+# ---- dL/dT: analytic derivative table ------------------------------------
+# The detector-noise term needs dL/dT at every pixel (~7e5 apparent
+# temperatures per 960x720 frame). The difference form evaluates the whole
+# 48-sample band integral twice per pixel -- 0.7 s of a 1.9 s frame on this
+# machine. dB/dT has a closed form, so one table per band (built once, ~10 ms)
+# plus an interpolation covers a frame in ~40 ms.
+_DLDT_TABLES = {}
+# 150..650 K comfortably contains radiance_to_temp's 200..450 K working window,
+# so np.interp never clamps inside a frame.
+_DLDT_RANGE = (150.0, 650.0, 4001)
+
+
+def dldt_table(lam1_um, lam2_um, n=48, t_lo=None, t_hi=None, points=None):
+    """(T grid, dL/dT) of a band, analytic and cached per (band, grid).
+
+    dB/dT for B = c1/lambda^5 / (exp(x) - 1) with x = c2/(lambda T) is
+
+        dB/dT = B * (x / T) * (1 + 1/(exp(x) - 1))
+
+    and the band value is the same trapezoid integral used by planck_band, so
+    the table is the exact derivative of the radiance model, not a secant.
+    """
+    t_lo = float(_DLDT_RANGE[0] if t_lo is None else t_lo)
+    t_hi = float(_DLDT_RANGE[1] if t_hi is None else t_hi)
+    points = int(_DLDT_RANGE[2] if points is None else points)
+    if not (points >= 2 and 0.0 < t_lo < t_hi):
+        raise ValueError("dL/dT table needs >=2 points and 0 < T_lo < T_hi")
+    key = (float(lam1_um), float(lam2_um), int(n), t_lo, t_hi, points)
+    grid = _DLDT_TABLES.get(key)
+    if grid is None:
+        table = _planck_table(lam1_um, lam2_um, n)
+        grid_t = np.linspace(t_lo, t_hi, points)
+        deriv = np.empty((points, table["lam1d"].size), float)
+        for start in range(0, points, _PLANCK_CHUNK):
+            stop = min(start + _PLANCK_CHUNK, points)
+            block = grid_t[start:stop, None]
+            with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+                x = _C2 / (table["lam"] * block)
+                em1 = np.expm1(x)
+                B = table["inv_lam5"] / em1
+                deriv[start:stop] = B * (x / block) * (1.0 + 1.0 / em1)
+        bad = ~np.isfinite(deriv)
+        if bad.any():
+            deriv[bad] = 0.0
+        grid = (grid_t, _trapezoid_uniform(deriv, table["weight"]))
+        grid[0].setflags(write=False)
+        grid[1].setflags(write=False)
+        _DLDT_TABLES[key] = grid
+    return grid
 
 
 def transmittance(range_m, tau_per_km):
@@ -84,6 +199,14 @@ def rasterize(world, cam, face_value, background=0.0, subpixel_mode="legacy"):
                            H/2-fy*piece[:, 1]/piece[:, 2], piece[:, 2])
 
     # draw far faces first is irrelevant (z-test), iterate all
+    face_obj = world.face_obj
+    # Pixel-centre coordinates for the whole frame, sliced per triangle: the
+    # arithmetic below is unchanged, only the two np.meshgrid (ny, nx) copies
+    # and the per-triangle np.arange are gone. A face-heavy scene calls this
+    # loop tens of thousands of times per frame, so those allocations were
+    # measurable; broadcast views produce the very same doubles.
+    px = np.arange(W) + 0.5
+    py = np.arange(H) + 0.5
     for i, uu, vv, zi in projected_triangles():
         x0 = max(int(np.floor(uu.min())), 0)
         x1 = min(int(np.ceil(uu.max())) + 1, W)
@@ -91,14 +214,19 @@ def rasterize(world, cam, face_value, background=0.0, subpixel_mode="legacy"):
         y1 = min(int(np.ceil(vv.max())) + 1, H)
         if x1 <= x0 or y1 <= y0:
             continue
-        xs = np.arange(x0, x1) + 0.5
-        ys = np.arange(y0, y1) + 0.5
-        gx, gy = np.meshgrid(xs, ys)
         denom = ((vv[1] - vv[2]) * (uu[0] - uu[2]) + (uu[2] - uu[1]) * (vv[0] - vv[2]))
         if abs(denom) < 1e-9:
             continue
-        l0 = ((vv[1] - vv[2]) * (gx - uu[2]) + (uu[2] - uu[1]) * (gy - vv[2])) / denom
-        l1 = ((vv[2] - vv[0]) * (gx - uu[2]) + (uu[0] - uu[2]) * (gy - vv[2])) / denom
+        gx = (px[x0:x1])[None, :]
+        gy = (py[y0:y1])[:, None]
+        a0 = vv[1] - vv[2]
+        a1 = uu[2] - uu[1]
+        a2 = vv[2] - vv[0]
+        a3 = uu[0] - uu[2]
+        gx0 = gx - uu[2]
+        gy0 = gy - vv[2]
+        l0 = (a0 * gx0 + a1 * gy0) / denom
+        l1 = (a2 * gx0 + a3 * gy0) / denom
         l2 = 1.0 - l0 - l1
         inside = (l0 >= -1e-6) & (l1 >= -1e-6) & (l2 >= -1e-6)
         if not inside.any():
@@ -112,7 +240,7 @@ def rasterize(world, cam, face_value, background=0.0, subpixel_mode="legacy"):
             continue
         sub_d[upd] = zpix[upd]
         img[y0:y1, x0:x1][upd] = face_value[i]
-        pid[y0:y1, x0:x1][upd] = world.face_obj[i]
+        pid[y0:y1, x0:x1][upd] = face_obj[i]
 
     # An object smaller than a pixel can fall between pixel centres and leave no
     # trace at all: at 8 km the aircraft is 2.6 px across in the search lens and
@@ -252,6 +380,48 @@ def radiance_to_temp(img, band, t_lo=200.0, t_hi=450.0, n=512):
     return np.interp(img, lg[order], tg[order])
 
 
+def preview_window(t_img, ircfg):
+    """Display window (kelvin) of the 8-bit thermal preview.
+
+    Three policies, in priority order:
+
+    * an explicit 'ir.preview_window_c' wins -- the operator pinned the window
+      and the frame must not move it;
+    * otherwise the frame's own 1..99.5 percentile span is used, which is what
+      an AGC does and what makes a hot target saturate to white.  A
+      near-isothermal frame holds 6 K so the preview is not all one code.
+    * 'ir.preview_span_c' caps that automatic span at N kelvin around the frame
+      median.  A real display runs a fixed-width window (+-10 K or so) instead
+      of stretching whatever the frame happens to span: a 40 K sky/target
+      range on 256 codes puts a 28 mK NETD on 0.18 of a grey level, so the
+      noise sits in the 16-bit product and is invisible in the preview
+      (measured).  Centring on the median -- not on the middle of the
+      percentile range -- keeps the sky mid-grey instead of clipping it to
+      black.  None keeps the historical percentile stretch bit for bit.
+
+    Returns (t_lo, t_hi) in kelvin.
+    """
+    win = ircfg.get("preview_window_c")
+    if win:
+        return win[0] + 273.15, win[1] + 273.15
+    lo_k, hi_k = np.percentile(t_img, [1.0, 99.5])
+    span = float(hi_k - lo_k)
+    if span < 6.0:                      # near-isothermal frame: hold 6 K
+        mid = 0.5 * (float(hi_k) + float(lo_k))
+        lo_k, hi_k = mid - 3.0, mid + 3.0
+    else:
+        lo_k, hi_k = float(lo_k), float(hi_k)
+    cap_c = ircfg.get("preview_span_c")
+    if cap_c is not None:
+        cap_c = float(cap_c)
+        if not np.isfinite(cap_c) or cap_c <= 0.0:
+            raise ValueError("ir.preview_span_c must be a positive number of kelvin")
+        if hi_k - lo_k > cap_c:
+            mid = float(np.median(t_img))
+            lo_k, hi_k = mid - 0.5*cap_c, mid + 0.5*cap_c
+    return lo_k, hi_k
+
+
 def _equalize(img, levels=512):
     """Histogram equalisation: what a thermal camera's AGC does for display."""
     lo, hi = np.percentile(img, [0.2, 99.8])
@@ -260,6 +430,337 @@ def _equalize(img, levels=512):
     cdf = np.cumsum(hist).astype(np.float64)
     cdf /= max(cdf[-1], 1.0)
     return np.interp(x, edges[:-1], cdf)
+
+
+def _background_image_path(cfg):
+    """Resolve ir.background_image (or top-level background_image) to a file.
+
+    Relative paths are resolved against the scene file's directory, matching
+    how object models are resolved.  Returns None when no plate is configured,
+    which keeps the no-background render path bit-for-bit identical.
+    """
+    ircfg = cfg.get("ir") or {}
+    raw = ircfg.get("background_image")
+    if raw is None:
+        raw = cfg.get("background_image")
+    if raw is None or str(raw).strip() == "":
+        return None
+    path = os.path.expanduser(str(raw))
+    if not os.path.isabs(path):
+        path = os.path.join(str(cfg.get("_base_dir") or "."), path)
+    return os.path.normpath(path)
+
+
+def _background_temperature_k(cfg):
+    """Kelvin anchor for the plate's radiometric scale (default 260 K).
+
+    A photographic plate is not a calibrated radiometer, so its 8-bit value is
+    interpreted as a fraction of the band radiance of a blackbody at this
+    temperature.  That keeps the background in the same radiometric order as
+    the scene instead of dumping raw 0..255 (or 0..65535) values into it.
+    """
+    ircfg = cfg.get("ir") or {}
+    raw = ircfg.get("background_temp_k", cfg.get("background_temp_k", 260.0))
+    value = float(raw)
+    if not np.isfinite(value) or value <= 0.0:
+        raise ValueError("红外背景温度必须为正的开尔文温度 ir.background_temp_k，收到 %r" % (raw,))
+    return value
+
+
+_BACKGROUND_PLATES = {}
+
+
+def _read_radiance_hdr(path):
+    """Decode a Radiance .hdr (RGBE) into a float32 (H, W, 3) luminance array.
+
+    Pillow cannot open Radiance HDR, yet that is the format every CC0 sky plate
+    ships in and the only one Blender takes as an environment texture. Refusing
+    the combination "HDRI sky + IR band" would make the background feature
+    unusable for exactly the case it was added for, so the RGBE pixels are read
+    here -- about forty lines, no new dependency.
+    """
+    with open(path, "rb") as fh:
+        data = fh.read()
+    if not data.startswith(b"#?"):
+        raise ValueError("不是 Radiance HDR 文件：%s" % path)
+    pos = 0
+    width = height = 0
+    while pos < len(data):
+        end = data.find(b"\n", pos)
+        if end < 0:
+            raise ValueError("Radiance 头不完整：%s" % path)
+        line = data[pos:end].strip()
+        pos = end + 1
+        if line:
+            continue
+        # the blank line ends the header; the resolution line follows
+        end = data.find(b"\n", pos)
+        if end < 0:
+            raise ValueError("Radiance 缺少分辨率行：%s" % path)
+        parts = data[pos:end].strip().split()
+        pos = end + 1
+        if len(parts) != 4 or not parts[1].isdigit() or not parts[3].isdigit():
+            raise ValueError("Radiance 分辨率行无法解析：%r"
+                             % data[pos:end].strip()[:40])
+        height, width = int(parts[1]), int(parts[3])
+        break
+    if width <= 0 or height <= 0:
+        raise ValueError("Radiance 分辨率无效：%s" % path)
+
+    out = np.zeros((height, width, 3), np.float32)
+    plane = np.zeros((4, width), np.uint8)
+    for y in range(height):
+        rle = (width >= 8 and width < 32768 and pos + 4 <= len(data)
+               and data[pos] == 2 and data[pos + 1] == 2
+               and ((data[pos + 2] << 8) | data[pos + 3]) == width)
+        if rle:
+            pos += 4
+            for ch in range(4):
+                x = 0
+                while x < width:
+                    if pos >= len(data):
+                        raise ValueError("Radiance 数据被截断：%s" % path)
+                    n = data[pos]
+                    pos += 1
+                    if n > 128:
+                        n -= 128
+                        if pos >= len(data):
+                            raise ValueError("Radiance 数据被截断：%s" % path)
+                        plane[ch, x:x + n] = data[pos]
+                        pos += 1
+                    else:
+                        if pos + n > len(data):
+                            raise ValueError("Radiance 数据被截断：%s" % path)
+                        plane[ch, x:x + n] = np.frombuffer(data, np.uint8, n, pos)
+                        pos += n
+                    x += n
+        else:
+            need = width * 4
+            if pos + need > len(data):
+                raise ValueError("Radiance 数据被截断：%s" % path)
+            plane[:] = np.frombuffer(data, np.uint8, need, pos).reshape(4, width)
+            pos += need
+        scale = np.where(plane[3] > 0,
+                         np.exp2(plane[3].astype(np.float32) - 136.0),
+                         0.0).astype(np.float32)
+        for c in range(3):
+            out[y, :, c] = plane[c].astype(np.float32) * scale
+    return out
+
+
+def _load_plate_gray(path):
+    """Open a plate as an 8-bit luminance image, Radiance HDR included."""
+    with open(path, "rb") as fh:
+        magic = fh.read(2)
+    if magic == b"#?":
+        hdr = _read_radiance_hdr(path)
+        # Reinhard tone map: unbounded radiance -> 0..1 without clipping the sky
+        # to white (a raw / max() would collapse every cloud to 255).
+        lum = (0.2126 * hdr[:, :, 0] + 0.7152 * hdr[:, :, 1]
+               + 0.0722 * hdr[:, :, 2])
+        mapped = lum / (1.0 + np.maximum(lum, 0.0))
+        from PIL import Image
+        return Image.fromarray(np.clip(mapped * 255.0, 0, 255).astype(np.uint8),
+                               mode="L")
+    from PIL import Image
+    with Image.open(path) as handle:
+        handle.load()
+        return handle.convert("L")
+
+
+def _plate_view(gray, cam, w, h):
+    """Sample the equirectangular plate through the camera's own lens.
+
+    The plate is a full 360x180 panorama. Pasting all of it into a 2.2 deg seeker
+    frame is what made a cloudy IR image sit next to a clear optical one: the
+    optical renderer projects the environment through the lens, so it shows a
+    tiny patch of sky, while this code showed the whole sky at once. Cropping the
+    window the lens actually covers puts the two bands back on the same weather.
+
+    Returns an (h, w) float32 array in 0..1, or None when the camera pose is not
+    usable (caller then falls back to a centre crop).
+    """
+    src = np.asarray(gray, dtype=np.float32)
+    if src.ndim != 2 or src.size == 0:
+        return None
+    ih, iw = src.shape
+    try:
+        fov = float(cam.get("fov_deg") or 0.0)
+        pos = np.asarray(cam.get("pos"), float)
+        look = np.asarray(cam.get("look_at", [0.0, 0.0, 0.0]), float)
+    except (TypeError, ValueError):
+        return None
+    if not (0.1 <= fov <= 170.0) or pos.shape != (3,) or look.shape != (3,):
+        return None
+    d = look - pos
+    n = float(np.linalg.norm(d))
+    if n < 1e-9:
+        return None
+    d = d / n
+    az = math.degrees(math.atan2(d[1], d[0]))
+    el = math.degrees(math.asin(float(np.clip(d[2], -1.0, 1.0))))
+    vfov = fov * (h / float(w)) if h else fov
+    # equirectangular convention: u runs with azimuth (0 at -180 deg), v runs
+    # from the zenith at row 0 to the nadir at the last row
+    u_c = (az + 180.0) / 360.0
+    v_c = (90.0 - el) / 180.0
+    half_u = 0.5 * fov / 360.0
+    half_v = 0.5 * vfov / 180.0
+    us = (u_c + np.linspace(-half_u, half_u, w, endpoint=False)
+          + 0.5 * fov / 360.0 / max(w, 1))
+    vs = (v_c + np.linspace(-half_v, half_v, h, endpoint=False)
+          + 0.5 * vfov / 180.0 / max(h, 1))
+    # Bilinear, not nearest: a 2.2 deg window covers barely a dozen texels of a
+    # 2048-wide panorama, and nearest-neighbour blew those up into visible tiles.
+    u_pix = np.mod(us, 1.0) * iw - 0.5
+    v_pix = np.clip(vs, 0.0, 1.0) * ih - 0.5
+    u0 = np.floor(u_pix).astype(np.int64)
+    v0 = np.floor(v_pix).astype(np.int64)
+    fu = (u_pix - u0)[None, :].astype(np.float32)
+    fv = (v_pix - v0)[:, None].astype(np.float32)
+    u1 = np.mod(u0 + 1, iw)
+    u0 = np.mod(u0, iw)
+    v1 = np.clip(v0 + 1, 0, ih - 1)
+    v0 = np.clip(v0, 0, ih - 1)
+    p00 = src[np.ix_(v0, u0)]
+    p01 = src[np.ix_(v0, u1)]
+    p10 = src[np.ix_(v1, u0)]
+    p11 = src[np.ix_(v1, u1)]
+    top = p00 * (1.0 - fu) + p01 * fu
+    bottom = p10 * (1.0 - fu) + p11 * fu
+    return (top * (1.0 - fv) + bottom * fv) / np.float32(255.0)
+
+
+def _background_plate(path, w, h, cam=None):
+    """Load an 8-bit plate and fit it to the frame: centre crop + resize.
+
+    This is an unregistered approximation, deliberately: the IR camera is
+    assumed to share the optical axis and (configured) field of view with the
+    plate, so there is no per-frame pose to solve.  The plate is centre-cropped
+    to the frame's aspect ratio and resampled to (h, w); camera motion, parallax
+    and lens distortion inside the plate are ignored.
+
+    Returns a float32 (h, w) array in 0..1 -- the 8-bit luminance divided by
+    255.  A missing or undecodable file is an explicit ValueError, never a
+    silently black frame.
+    """
+    w, h = int(w), int(h)
+    if w <= 0 or h <= 0:
+        raise ValueError("红外背景图的目标分辨率必须为正数，收到 %dx%d" % (w, h))
+    path = os.path.abspath(str(path))
+    if not os.path.isfile(path):
+        raise ValueError("红外背景图不存在或不是文件：%s" % path)
+    view_key = None
+    if cam:
+        try:
+            view_key = (round(float(cam.get("fov_deg") or 0.0), 4),
+                        tuple(round(float(v), 2) for v in cam.get("pos")),
+                        tuple(round(float(v), 2) for v in cam.get("look_at")))
+        except (TypeError, ValueError):
+            view_key = None
+    try:
+        stat = os.stat(path)
+        cache_key = (path, w, h, stat.st_mtime_ns, stat.st_size, view_key)
+    except OSError:
+        cache_key = None
+    if cache_key is not None:
+        cached = _BACKGROUND_PLATES.get(cache_key)
+        if cached is not None:
+            return cached
+    from PIL import Image
+    try:
+        gray = _load_plate_gray(path)
+    except Exception as exc:
+        raise ValueError("红外背景图无法解码：%s（%s）" % (path, exc)) from exc
+    # Only an equirectangular panorama (2:1) is projected through the lens. A
+    # 3:1 photo is still just a photo -- treating every wide image as a panorama
+    # put the horizon in the wrong place for ordinary plates.
+    if cam:
+        _gw, _gh = gray.size
+        _ratio = _gw / float(_gh) if _gh else 0.0
+    if cam and 1.85 <= _ratio <= 2.15:
+        projected = _plate_view(gray, cam, w, h)
+        if projected is not None:
+            projected = np.ascontiguousarray(projected, dtype=np.float32)
+            projected.setflags(write=False)
+            if cache_key is not None:
+                _BACKGROUND_PLATES[cache_key] = projected
+            return projected
+    iw, ih = gray.size
+    if iw <= 0 or ih <= 0:
+        raise ValueError("红外背景图尺寸无效：%s（%dx%d）" % (path, iw, ih))
+    target_aspect = w / float(h)
+    source_aspect = iw / float(ih)
+    if source_aspect > target_aspect:
+        crop_w = max(1, int(round(ih * target_aspect)))
+        crop_h = ih
+        left = max(0, (iw - crop_w) // 2)
+        box = (left, 0, left + crop_w, crop_h)
+    else:
+        crop_w = iw
+        crop_h = max(1, int(round(iw / target_aspect)))
+        top = max(0, (ih - crop_h) // 2)
+        box = (0, top, crop_w, top + crop_h)
+    plate = gray.crop(box)
+    if plate.size != (w, h):
+        resampling = getattr(Image, "Resampling", Image)
+        plate = plate.resize((w, h), resampling.BILINEAR)
+    result = np.asarray(plate, dtype=np.float32) / np.float32(255.0)
+    result.setflags(write=False)
+    if cache_key is not None:
+        _BACKGROUND_PLATES[cache_key] = result
+    return result
+
+
+def _composite_background(img, counts, preview, temperature, depth, cfg, band,
+                          gain, t0, t1, cam=None):
+    """Paste the background plate into pixels that saw no geometry.
+
+    Only pixels whose depth is not finite (the rasteriser's miss marker) or
+    exactly zero (the serialised no-return convention) are replaced.  Geometry
+    pixels are copied through untouched, so a target can never be painted over
+    by its background.
+
+    The paste happens after the sensor chain: the plate defines an image plane,
+    not a scattering surface, so blurring it into the target would produce a
+    halo exactly where the label is.  The display image keeps the plate's own
+    8-bit grey (that is what the caller uploaded to look at), while counts and
+    apparent temperature carry the radiometric proxy described below.
+    """
+    path = _background_image_path(cfg)
+    if path is None:
+        return img, counts, preview, temperature
+    if not os.path.isfile(path):
+        raise ValueError("红外背景图不存在或不是文件：%s" % path)
+    depth = np.asarray(depth, dtype=np.float64)
+    void = ~np.isfinite(depth) | (depth == 0.0)
+    if not void.any():
+        return img, counts, preview, temperature
+    H, W = depth.shape
+    plate = _background_plate(path, W, H, cam=cam)
+    bg_temp_k = _background_temperature_k(cfg)
+    # Linear radiometric mapping: grey 0 -> no radiance, grey 255 -> the band
+    # radiance of a blackbody at bg_temp_k.  Since Planck radiance is monotonic
+    # in temperature, the plate can never outshine a target hotter than
+    # bg_temp_k -- the order-of-magnitude blow-up this mapping avoids.
+    blackbody = float(planck_band([bg_temp_k], band[0], band[1])[0])
+    L_plate = plate.astype(np.float64) * blackbody
+    T_plate = np.asarray(radiance_to_temp(L_plate.ravel(), band), float).reshape(H, W)
+    counts_plate = np.round(np.clip((T_plate - t0) / (t1 - t0), 0.0, 1.0) * 65535.0 * gain)
+    # The plate is already a display image.  A thermal AGC would map 260 K to a
+    # dark grey, which would make an uploaded "sky" PNG look like a black frame
+    # and defeat the point of supplying it; the visible panel therefore keeps
+    # the plate's own grey level, while counts/temperature stay radiometric.
+    preview_plate = plate.astype(np.float64)
+    img = np.array(img, dtype=np.float64, copy=True)
+    counts = np.array(counts, dtype=np.float64, copy=True)
+    preview = np.array(preview, dtype=np.float64, copy=True)
+    temperature = np.array(temperature, dtype=np.float64, copy=True)
+    img[void] = L_plate[void]
+    counts[void] = counts_plate[void]
+    preview[void] = preview_plate[void]
+    temperature[void] = T_plate[void]
+    return img, counts, preview, temperature
 
 
 def render(world, cfg, temps_k, cam=None):
@@ -361,8 +862,26 @@ def render(world, cfg, temps_k, cam=None):
     # ones.
     t_map = np.asarray(radiance_to_temp(img, band), float).reshape(img.shape)
     flat = t_map.ravel()
-    dLdT = (planck_band(flat + 1.0, band[0], band[1]) -
-            planck_band(flat, band[0], band[1])).reshape(img.shape)
+    # "analytic" is the exact dL/dT from the per-band table: it removes the
+    # half-step bias of a 1 K secant and costs ~10 ms per frame instead of
+    # ~700 ms at 960x720. Its output change against the historical form is one
+    # detector count on ~4 % of pixels (radiance differs by <= 1.5e-5
+    # relative), because only the noise scale moves. "difference" reproduces
+    # the old numbers bit for bit and is what an existing dataset needs if it
+    # has to be regenerated exactly.
+    dldt_mode = ircfg.get("dldt_mode", "analytic")
+    if dldt_mode == "difference":
+        dLdT = (planck_band(flat + 1.0, band[0], band[1]) -
+                planck_band(flat, band[0], band[1])).reshape(img.shape)
+    elif dldt_mode == "analytic":
+        grid_t, grid_d = dldt_table(band[0], band[1])
+        dLdT = np.interp(flat, grid_t, grid_d).reshape(img.shape)
+        # The historical path mapped a non-finite temperature (it can only come
+        # from a malformed radiance) to a zero slope through nan_to_num; keep
+        # that behaviour instead of propagating NaN into the noise.
+        dLdT = np.where(np.isfinite(dLdT), dLdT, 0.0)
+    else:
+        raise ValueError("ir.dldt_mode must be difference or analytic")
     rng_noise = np.random.default_rng(int(cfg.get("_frame_seed", 0)))
     img = img + rng_noise.normal(0.0, 1.0, img.shape) * (dLdT * netd)
 
@@ -404,25 +923,17 @@ def render(world, cfg, temps_k, cam=None):
         prev = norm
     else:
         t_img = radiance_to_temp(img, band)
-        win = ircfg.get("preview_window_c")
-        if win:
-            tlo, thi = win[0] + 273.15, win[1] + 273.15
-        else:
-            # A fixed +-20 K window centred on the median is what a camera with no
-            # AGC would use, and on a sky-filled frame the sky's own gradient fills
-            # the window: a 1.5 K aircraft then landed on 9 of 255 grey levels and
-            # the thermal panel looked empty in every composite (measured).
-            # Stretch to the frame's own 1..99.5 percentile instead -- the same
-            # thing a real AGC does -- so a hot target saturates to white.
-            lo_k, hi_k = np.percentile(t_img, [1.0, 99.5])
-            span = float(hi_k - lo_k)
-            if span < 6.0:                      # near-isothermal frame: hold 6 K
-                mid = 0.5 * (float(hi_k) + float(lo_k))
-                lo_k, hi_k = mid - 3.0, mid + 3.0
-            else:
-                lo_k, hi_k = float(lo_k), float(hi_k)
-            tlo, thi = lo_k, hi_k
+        # One place decides the display window: a fixed operator window, the
+        # frame's own 1..99.5 percentile stretch (the historical AGC), or that
+        # stretch capped by ir.preview_span_c.  Nothing here touches the
+        # 16-bit product.
+        tlo, thi = preview_window(t_img, ircfg)
         prev = np.clip((t_img - tlo) / max(thi - tlo, 1e-6), 0, 1)
+    # The plate replaces the sky/void, not the target: only non-finite depth
+    # pixels are touched, after blur/noise/AGC, so geometry pixels stay
+    # bit-for-bit what they were without a background.
+    img, counts, prev, t_img = _composite_background(
+        img, counts, prev, t_img, depth, cfg, band, gain, t0, t1, cam=cam)
     return dict(
         radiance=img,
         counts_u16=np.clip(counts, 0.0, 65535.0).astype(np.uint16),

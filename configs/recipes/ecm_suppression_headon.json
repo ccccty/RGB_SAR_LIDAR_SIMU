@@ -1,0 +1,125 @@
+{
+ "name": "ecm_suppression_headon",
+ "title": "天空 · 双发战斗机 · 有源压制 + 箔条",
+ "environment": {
+  "kind": "sky",
+  "weather": "cloudy",
+  "background": {
+   "mode": "none"
+  }
+ },
+ "objects": [
+  {
+   "asset": "军用飞机/双发战斗机.obj",
+   "cls": "fighter",
+   "scale": 1,
+   "count": 1
+  }
+ ],
+ "ecm": {
+  "mode": "mixed",
+  "entities": [
+   {
+    "id": "escort_jammer",
+    "kind": "noise_jammer",
+    "pos": [
+     420,
+     260,
+     3080
+    ],
+    "vel": [
+     198,
+     2,
+     -1
+    ],
+    "erp_w": 200,
+    "jam_bandwidth_mhz": 200,
+    "mode": "barrage",
+    "band": "Ku",
+    "look_at_sensor": true,
+    "sidelobe_db": -25,
+    "rcs_m2": 0.2,
+    "mat": "painted_metal",
+    "life": {
+     "start_s": 0,
+     "fade_s": 0.05
+    }
+   },
+   {
+    "id": "repeater_01",
+    "kind": "false_target",
+    "pos": [
+     0,
+     0,
+     3000
+    ],
+    "vel": [
+     200,
+     0,
+     0
+    ],
+    "count": 4,
+    "range_step_m": 210,
+    "range_offset_m": 150,
+    "power_ratio": 1.6,
+    "band": "Ku",
+    "life": {
+     "start_s": 0,
+     "fade_s": 0.05
+    }
+   },
+   {
+    "id": "chaff_01",
+    "kind": "chaff_cloud",
+    "pos": [
+     -60,
+     -40,
+     2995
+    ],
+    "vel": [
+     190,
+     0,
+     -2
+    ],
+    "radius_m": 5,
+    "growth_mps": 7,
+    "rcs_m2": 140,
+    "decay_s": 6,
+    "fall_mps": 1.2,
+    "wind": [
+     6,
+     0,
+     0
+    ],
+    "band": "Ku",
+    "life": {
+     "start_s": 0,
+     "fade_s": 0.05
+    }
+   }
+  ]
+ },
+ "view": {
+  "range_km": 8,
+  "aspect": "head_on",
+  "fov_deg": 2.2,
+  "views": "single"
+ },
+ "capture": {
+  "sensors": [
+   "optical",
+   "ir",
+   "radar"
+  ],
+  "frames": 20,
+  "fps": 10,
+  "seed": 7
+ },
+ "output": {
+  "preview": true,
+  "coco": true,
+  "yolo": true,
+  "readme": true
+ },
+ "_saved_at": "seed"
+}

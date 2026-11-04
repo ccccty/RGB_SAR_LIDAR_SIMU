@@ -21,6 +21,8 @@ import os
 import shlex
 import subprocess
 
+import numpy as np
+
 
 def spec_for(cfg, name):
     return (cfg.get("backends", {}) or {}).get(name, {}) or {}
@@ -113,6 +115,40 @@ def write_manifest(cfg, states, out_dir, part=None):
                              tag=v.get("tag", ""),
                              roll_deg=float(v.get("roll_deg", 0.0) or 0.0))
         return out
+
+    # ECM bodies move too. The Blender pass builds its scene once and animates it
+    # from this manifest; without per-frame poses every dispensed body stayed
+    # frozen where it was at t=0 while radar/IR/lidar evaluated it per frame, so
+    # the same flare sat in two different places depending on the sensor.
+    try:
+        from . import ecm as _ecmlib
+        _espec = _ecmlib.load(cfg.get("ecm"))
+        if _espec["enabled"]:
+            for s in states:
+                anchors = {}
+                for nm, ps in (s.get("poses") or {}).items():
+                    try:
+                        anchors[nm] = (np.asarray(ps["pos"], float),
+                                       np.asarray(ps.get("velocity_mps")
+                                                  or [0.0, 0.0, 0.0], float))
+                    except (KeyError, TypeError):
+                        continue
+                poses = s.setdefault("poses", {})
+                # The planner's Tracks must win over the anchors: a released body
+                # drifts from its release point, so extrapolating it from one
+                # frame's anchor put it ~10 m away from where IR/radar/lidar had
+                # it in a turning-parent scene.
+                tracks = _ecmlib.tracks_of(s.get("cfg"))
+                for ent in _ecmlib.entities_at(_espec, s["t"], anchors=anchors,
+                                               tracks=tracks):
+                    poses[ent["id"]] = dict(
+                        pos=[round(float(v), 4) for v in ent["pos"]],
+                        yaw=round(float(ent.get("yaw", 0.0)), 3),
+                        pitch=float(ent.get("pitch", 0.0)),
+                        roll=float(ent.get("roll", 0.0)),
+                        velocity_mps=[round(float(v), 4) for v in ent["vel"]])
+    except Exception:                      # a broken ECM block must not stop a run
+        pass
 
     # "camera" is per frame because a seeker/gimbal mount moves: without it the
     # optical renderer would shoot every frame from the static config pose while

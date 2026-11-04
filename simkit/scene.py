@@ -7,7 +7,7 @@ import numpy as np
 from . import materials as matlib
 from .bvh import BVH
 from .mesh import (Mesh, box, cylinder, clean_faces, decimate, load_obj, normalize_to_height,
-                   plane, rot_z, sea)
+                   plane, rot_x, rot_y, rot_z, sea)
 
 SIGMA = 5.670374419e-8
 
@@ -29,6 +29,8 @@ class World:
         self.face_local_centers = (np.asarray(verts)[np.asarray(faces)].mean(axis=1)
                                    if face_local_centers is None else np.asarray(face_local_centers, float))
         self._bvh = None
+        self._face_normals = None
+        self._face_areas = None
 
     @property
     def bvh(self):
@@ -36,17 +38,55 @@ class World:
             self._bvh = BVH(self.verts, self.faces)
         return self._bvh
 
+    # Every sensor that needs geometry recomputed unit normals and triangle
+    # areas for itself, and radar/sar already probe for these methods with
+    # hasattr -- which could never succeed, so the same cross product ran once
+    # per sensor per frame.  Caching them here makes those probes work and
+    # makes the private copies redundant.
+    def face_normals(self):
+        """Unit normal of every triangle, cached for the world's lifetime."""
+        if self._face_normals is None:
+            tri = np.asarray(self.verts)[np.asarray(self.faces)]
+            n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+            length = np.linalg.norm(n, axis=1)
+            self._face_normals = n / np.maximum(length, 1e-12)[:, None]
+        return self._face_normals
+
+    def face_areas(self):
+        """Area of every triangle, cached; half the cross-product magnitude."""
+        if self._face_areas is None:
+            tri = np.asarray(self.verts)[np.asarray(self.faces)]
+            n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+            self._face_areas = 0.5 * np.linalg.norm(n, axis=1)
+        return self._face_areas
+
 
 def _reshape(shape, size, center):
     if shape == "box":
         return box(size, (0, 0, 0))
     if shape == "cylinder":
         return cylinder(size[0], size[2], (0, 0, 0))
+    if shape == "sphere":
+        # ECM bodies (a chaff bloom, a burning flare) are spheres. Imported here
+        # rather than at module scope because ecm itself imports scene.
+        from . import ecm as _ecmlib
+        radius = max(0.5 * float(min(size)), 1e-3)
+        # Level 2: a 2 m radius cloud rendered with the twenty-face level-1 ball
+        # reads as a golf ball, not a chaff bloom.
+        verts, faces = _ecmlib.icosphere(radius, 2)
+        return Mesh(verts, faces, name="sphere")
     raise ValueError("unknown shape " + shape)
 
 
 def load_object_mesh(spec, base_dir):
     shape = spec.get("shape", "box")
+    # A spec that names a model file but not shape="obj" used to fall through to
+    # the box branch, rendering a bounding box with the right size and the wrong
+    # radar return. That failure is silent, so it is refused here instead.
+    if "model" in spec and str(shape).lower() != "obj":
+        raise ValueError(
+            "object %r declares a model but shape is not 'obj' (got %r); "
+            "refusing to substitute a box" % (spec.get("name", "?"), shape))
     if shape == "obj":
         path = spec["model"]
         if not os.path.isabs(path):
@@ -57,13 +97,46 @@ def load_object_mesh(spec, base_dir):
     return _reshape(shape, spec.get("size", [1, 1, 1]), (0, 0, 0))
 
 
+# Prepared meshes keyed by everything that changes the result.  A scene that
+# jitters an object's pose reuse the same entry because pose is applied later,
+# in build_world, not here.
+_PREPARED_MESHES = {}
+
+
+def _prepare_key(spec, base_dir):
+    """Identity of a prepared mesh: the file plus every transform applied to it."""
+    model = spec.get("model")
+    if model and not os.path.isabs(str(model)):
+        model = os.path.normpath(os.path.join(base_dir, str(model)))
+    scale = spec.get("scale")
+    if isinstance(scale, (list, tuple)):
+        scale = tuple(float(v) for v in scale)
+    elif scale is not None:
+        scale = float(scale)
+    height = spec.get("height")
+    return (str(spec.get("shape", "box")), model,
+            int(spec["decimate"]) if spec.get("decimate") else None,
+            scale, float(height) if height is not None else None,
+            tuple(float(v) for v in spec.get("size", [1, 1, 1])),
+            str(spec.get("mat", "painted_metal")))
+
+
 def prepare_mesh(spec, base_dir):
     """Load a spec's mesh with decimation, scaling and height normalisation applied.
 
     Both the numpy world builder and the Blender renderer go through this, so the
     optical pass and the physics passes can never disagree about an object's size.
     Returns a mesh recentred on x/y with its base at z=0, plus its local bbox.
+
+    The result depends only on the model file plus decimate/scale/height, all of
+    which are fixed per scene, so it is cached per process.  Without the cache a
+    340-frame clip reloads and decimates every OBJ once per frame; a 20k-triangle
+    model made that the dominant cost of a render.
     """
+    key = _prepare_key(spec, base_dir)
+    hit = _PREPARED_MESHES.get(key)
+    if hit is not None:
+        return hit
     m = load_object_mesh(spec, base_dir)
     if spec.get("decimate"):
         m = decimate(m, target_tris=int(spec["decimate"]))
@@ -78,11 +151,19 @@ def prepare_mesh(spec, base_dir):
     shift = np.array([c_local[0], c_local[1], lo[2]])
     m = m.with_geometry(verts=m.v - shift)
     m = clean_faces(m)
-    return m, (lo - shift), (hi - shift)
+    out = (m, (lo - shift), (hi - shift))
+    _PREPARED_MESHES[key] = out
+    return out
 
 
 def build_world(cfg, t=0.0, jitter=None):
-    """Assemble the world at time t. jitter: optional dict of per-object pose offsets."""
+    """Assemble the world at time t. jitter: optional dict of per-object pose offsets.
+
+    Only geometry is built here. Sensor-side presentation keys -- notably
+    optical.sky_image and ir.background_image -- are never read, rewritten or
+    whitelisted away, so the renderers receive them unchanged in the same cfg
+    (path resolution lives in simkit/ir.py and blender/render_optical.py).
+    """
     mat_names = sorted(matlib.MATERIALS)
     mat_index = {n: i for i, n in enumerate(mat_names)}
 
@@ -128,18 +209,20 @@ def build_world(cfg, t=0.0, jitter=None):
         pos = np.array(spec.get("pos", [0, 0, 0]), float)
         vel = np.array(spec.get("vel", [0, 0, 0]), float)
         yaw = float(spec.get("rot", 0.0))
+        pitch, roll = float(spec.get("pitch", 0.0)), float(spec.get("roll", 0.0))
         pos = pos + vel * t
         if jitter and spec.get("name") in jitter:
             j = jitter[spec["name"]]
             pos = pos + np.array(j.get("dpos", [0, 0, 0]), float)
             yaw += float(j.get("dyaw", 0.0))
+            pitch, roll = float(j.get("pitch", pitch)), float(j.get("roll", roll))
             # A trajectory supplies the instantaneous velocity; without this the
             # Doppler shift and the MTI gate would use the static "vel" from the
             # config and contradict the path the target is actually flying.
             if "vel" in j:
                 vel = np.array(j["vel"], float)
 
-        R = rot_z(yaw)
+        R = rot_z(yaw) @ rot_y(-pitch) @ rot_x(roll)
         wm = m.transformed(R=R, t=pos)
         wm.name = spec.get("name", "obj%d" % i)
         wm.mat = spec.get("mat", "painted_metal")
@@ -151,7 +234,7 @@ def build_world(cfg, t=0.0, jitter=None):
         corners = corners @ R.T + pos
         objs.append(dict(
             id=i, name=spec.get("name", "obj%d" % i), cls=spec.get("cls", "target"),
-            mat=spec.get("mat", "painted_metal"), pos=pos, vel=vel, yaw=yaw,
+            mat=spec.get("mat", "painted_metal"), pos=pos, vel=vel, yaw=yaw, pitch=pitch, roll=roll,
             size=size_local, corners=corners,
             temp_c=spec.get("temp_c"), internal_heat=spec.get("internal_heat"),
             rcs_db=spec.get("rcs_db"), visible=bool(spec.get("visible", True)),
@@ -164,10 +247,19 @@ def build_world(cfg, t=0.0, jitter=None):
 
     verts = np.vstack(verts_all)
     faces = np.vstack(faces_all)
-    return World(verts, faces, np.concatenate(fobj), np.concatenate(fmat), objs,
-                 face_source_material=np.concatenate(source_mats),
-                 face_group=np.concatenate(source_groups),
-                 face_local_centers=np.vstack(local_centers))
+    world = World(verts, faces, np.concatenate(fobj), np.concatenate(fmat), objs,
+                  face_source_material=np.concatenate(source_mats),
+                  face_group=np.concatenate(source_groups),
+                  face_local_centers=np.vstack(local_centers))
+    # Scene-level countermeasure bodies are geometry, not a post-process: the
+    # chaff cloud, decoy and corner reflector have to occlude in the rasteriser,
+    # return lidar pulses and appear in the radar ray cast. They are appended
+    # here so every sensor sees one consistent world. Off unless the scene
+    # carries an "ecm" block, so existing scenes are untouched.
+    if (cfg.get("ecm") or {}).get("enabled"):
+        from . import ecm as _ecmlib
+        world, _added = _ecmlib.attach(world, cfg, float(cfg.get("_ecm_t", t)))
+    return world
 
 
 def load_config(path):

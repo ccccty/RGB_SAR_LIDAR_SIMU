@@ -94,17 +94,19 @@ def class_map(runs):
     """name -> class id, built from the COCO category tables."""
     cls_of = {}
     names = {}
+    categories = set()
     for _nm, d, _n in runs:
         for p in sorted(os.listdir(d)):
             if not (p.startswith("annotations_") and p.endswith("_coco.json")):
                 continue
             coco = load_json(os.path.join(d, p), {}) or {}
             cats = {c["id"]: c["name"] for c in coco.get("categories") or []}
+            categories.update(cats.values())
             for a in coco.get("annotations") or []:
                 cn = cats.get(a.get("category_id"))
                 if a.get("object_name") and cn:
                     cls_of[a["object_name"]] = cn
-    for cn in sorted(set(cls_of.values())):
+    for cn in sorted(categories | set(cls_of.values())):
         names[cn] = len(names)
     return cls_of, names
 

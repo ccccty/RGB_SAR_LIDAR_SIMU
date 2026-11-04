@@ -56,6 +56,27 @@ def boxes_from_corners(world, cam, width, height, min_frac=1e-4):
     return out
 
 
+ANNOTATION_ID_STRIDE = 1000
+
+
+def annotation_id(image_id, index, view_index=0, stride=ANNOTATION_ID_STRIDE):
+    """One place that decides how a COCO annotation id is formed.
+
+    dataset.py's optical branch multiplied image_id by 10000 and added a view
+    term, while this module used 1000, so the two trees encoded ids on
+    different bases. Each is internally injective -- the assert below proves it
+    for realistic counts -- so nothing is broken today, but a future 'all
+    modalities in one COCO' would collide on frames >= 1. Keeping the formula
+    here, with a stride wide enough for the annotation count, makes the rule
+    single-sourced and testable instead of two constants in two files.
+    """
+    if not 0 <= int(index) < stride:
+        raise ValueError(
+            "frame %d has %d annotations, which overflows the id stride %d; "
+            "raise ANNOTATION_ID_STRIDE rather than letting ids alias"
+            % (int(image_id), int(index), stride))
+    return int(image_id) * stride * 10 + int(view_index) * stride + int(index)
+
 def to_coco(boxes, world, image_id, file_name, width, height):
     anns = []
     for aid, (oid, b) in enumerate(sorted(boxes.items())):
@@ -65,7 +86,7 @@ def to_coco(boxes, world, image_id, file_name, width, height):
         if o is None or not o.get("label", True):
             continue
         anns.append(dict(
-            id=image_id * 1000 + aid, image_id=image_id, category_id=o["cls_id"],
+            id=annotation_id(image_id, aid), image_id=image_id, category_id=o["cls_id"],
             bbox=[round(b["x0"], 2), round(b["y0"], 2),
                   round(b["x1"] - b["x0"], 2), round(b["y1"] - b["y0"], 2)],
             area=round((b["x1"] - b["x0"]) * (b["y1"] - b["y0"]), 2),
@@ -84,7 +105,9 @@ def radar_labels(world, detections, frame_id):
         boxes.append(dict(id=o["id"], name=o["name"], cls=o["cls"], cls_id=o["cls_id"],
                           center=[round(float(v), 3) for v in c.mean(axis=0)],
                           size=[round(float(v), 3) for v in o["size"]],
-                          yaw=round(float(o["yaw"]), 2)))
+                          yaw=round(float(o["yaw"]), 2),
+                          pitch=round(float(o.get("pitch", 0)), 2),
+                          roll=round(float(o.get("roll", 0)), 2)))
     pts = [d for d in detections if d["obj"] >= 0]
     clutter = [d for d in detections if d["obj"] < 0]
     def measurement(d):

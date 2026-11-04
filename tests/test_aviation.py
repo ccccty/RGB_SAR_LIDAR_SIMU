@@ -78,11 +78,19 @@ class AviationTests(unittest.TestCase):
         np.testing.assert_array_equal(low["rd_map"], high["rd_map"])
         self.assertAlmostEqual(low["detections"][0]["v_r_true"], 15.0)
 
-    def test_reject_multiple_targets_in_single_target_planner(self):
+    def test_reject_duplicate_track_names(self):
         cfg = config()
         cfg["objects"].append(copy.deepcopy(cfg["objects"][0]))
-        with self.assertRaisesRegex(ValueError, "one labelled target"):
+        with self.assertRaisesRegex(ValueError, "unique, non-empty names"):
             plan.ClipPlan(cfg, 0, 4, 0.2, 7)
+
+    def test_independent_flight_preserves_secondary_target_motion(self):
+        cfg = config()
+        cfg["objects"].append(dict(name="second", shape="box", pos=[100, 200, 3000], vel=[40, 0, 0]))
+        cp = plan.ClipPlan(cfg, 0, 4, 0.2, 7)
+        position, velocity, _ = cp.object_state(cfg["objects"][1], 1)
+        np.testing.assert_allclose(position, [140, 200, 3000])
+        np.testing.assert_allclose(velocity, [40, 0, 0])
 
     def test_subbeam_aircraft_does_not_inherit_ground_power(self):
         cfg = dict(ground=dict(enabled=False, size=20000, mat="concrete"), _frame_seed=3,

@@ -1,0 +1,70 @@
+{
+  "hdri": {
+    "kloofendal_28d_misty_puresky_2k.hdr": {
+      "bytes": 4467957,
+      "downloaded": "2026-11-03T12:44:55Z",
+      "file": "kloofendal_28d_misty_puresky_2k.hdr",
+      "id": "kloofendal_28d_misty_puresky",
+      "license": "CC0",
+      "sha256": "7adde668fb821069a05e4dcaf09c08ebf2de6503bdd99fd5bdf7bcfddff4236a",
+      "size": "2k",
+      "source": "polyhaven",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloofendal_28d_misty_puresky_2k.hdr"
+    },
+    "kloofendal_43d_clear_puresky_2k.hdr": {
+      "bytes": 4624289,
+      "downloaded": "2026-11-03T12:44:48Z",
+      "file": "kloofendal_43d_clear_puresky_2k.hdr",
+      "id": "kloofendal_43d_clear_puresky",
+      "license": "CC0",
+      "sha256": "462a3cc63bfcd9fe0299137a0f33f4ade84e237f4cb6115fe46f5ab400693fe6",
+      "size": "2k",
+      "source": "polyhaven",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloofendal_43d_clear_puresky_2k.hdr"
+    },
+    "kloofendal_48d_partly_cloudy_puresky_2k.hdr": {
+      "bytes": 5451493,
+      "downloaded": "2026-11-03T08:43:47Z",
+      "file": "kloofendal_48d_partly_cloudy_puresky_2k.hdr",
+      "id": "kloofendal_48d_partly_cloudy_puresky",
+      "license": "CC0",
+      "sha256": "5244534e9cf5b606f2ff513aa00ddb161b0a4826ffd88a0d3bd03ac29247d198",
+      "size": "2k",
+      "source": "polyhaven",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloofendal_48d_partly_cloudy_puresky_2k.hdr",
+      "weather": [
+        "clear",
+        "cloudy"
+      ]
+    },
+    "kloofendal_overcast_puresky_2k.hdr": {
+      "bytes": 4335717,
+      "downloaded": "2026-11-03T12:44:51Z",
+      "file": "kloofendal_overcast_puresky_2k.hdr",
+      "id": "kloofendal_overcast_puresky",
+      "license": "CC0",
+      "sha256": "312b1b04b7f10057a4f1418abc59d1166c8933cc93fc72051502edaf8d6b2fcd",
+      "size": "2k",
+      "source": "polyhaven",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloofendal_overcast_puresky_2k.hdr"
+    },
+    "overcast_soil_puresky_2k.hdr": {
+      "bytes": 4568000,
+      "downloaded": "2026-11-03T12:44:19Z",
+      "file": "overcast_soil_puresky_2k.hdr",
+      "id": "overcast_soil_puresky",
+      "license": "CC0",
+      "sha256": "5414e1ac0c35e451d28595b2a2cba05e2ca301fdeb755b0a469408443093dafc",
+      "size": "2k",
+      "source": "polyhaven",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/overcast_soil_puresky_2k.hdr",
+      "weather": [
+        "cloudy",
+        "fog",
+        "rain"
+      ]
+    }
+  },
+  "materials": {},
+  "version": 1
+}

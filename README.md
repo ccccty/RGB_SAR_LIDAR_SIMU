@@ -1,5 +1,11 @@
 # RGB / SAR / LiDAR 多模态传感器仿真器
 
+> **干扰图像增广**：统一有源类噪声/亮斑和无源类遮挡/对比度衰减，覆盖雷达 RD / RA，保留干净样本对照。
+> 支持场景配置、`simkit augment` 与工作台切换；作用域和 10 帧复现步骤见 [干扰增广与整体架构](docs/干扰增广与整体架构.md)。
+
+> **2026-11-03 运动连续性优化**：独立目标轨迹、开放航路平滑停车、飞机协调转弯姿态，以及默认 10 帧的 `simkit validate`。
+> 指定双发战斗机的配置、验证结果与复现命令见 [运动架构优化与最小验证](docs/运动架构优化与最小验证.md)。
+
 > **真实性 v3**：源 PBR/UV、共享网格清理、模型前向修正、高度剖面大气、局部热源、
 > RGB 光电子/运动曝光、实际 RD 峰检测，以及独立实例图/深度配准检查已实现。
 > 使用 `tools/build_aviation.py --realism` 启用，见 [真实性升级与复现](docs/真实性升级_v3.md)。
@@ -181,11 +187,19 @@ node tools\probe_canvas.js                   # 查画布真的画了东西、滑
 
 ### 2.3 导出成 YOLO 训练集
 
+训练集单独重渲染，落在 `out\ds4\`，不碰 `out\` 下已经发布到网站的那批运行：
+
 ```powershell
-python tools\export_yolo.py                 # 全部场景 -> datasets/yolo/
-python tools\export_yolo.py --fmt png        # 无损（体积约 4 倍）
-python tools\yolo_sheet.py datasets/yolo optical   # 标注回放核对图
+env\Scripts\python.exe tools\build_seeker.py --dest out\ds4 --no-web --jobs 6
+env\Scripts\python.exe tools\export_yolo.py --runs out\ds4
+env\Scripts\python.exe tools\yolo_sheet.py datasets/yolo optical   # 标注回放核对图
 ```
+
+`--dest out\ds4` 是有意的：`tools\export_web.py` 会把 `out\` 下每个带 `meta.json` 的
+目录当场景发布，240 帧的机载导引运行直接放进去会让网站数据从 78 帧跳到近千帧。
+`--no-web` 再关掉合并 COCO、网站导出和缩略图，这条命令只做渲染。
+
+`--fmt png` 出无损（体积约 4 倍）；`--scenes` / `--flavours` 可以只导一部分。
 
 输出按模态分成多套数据集（`data_optical.yaml`、`data_ir_lwir.yaml`、`data_sar.yaml` …），
 每套自带 `images/` 与 `labels/`，可直接 `yolo detect train data=...`。

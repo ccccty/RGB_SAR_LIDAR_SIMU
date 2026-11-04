@@ -1,0 +1,197 @@
+{
+ "ground": {
+  "enabled": false
+ },
+ "weather": {
+  "mode": "per_clip",
+  "pool": [
+   "clear",
+   "cloudy"
+  ]
+ },
+ "sun": {
+  "elev_deg": 38,
+  "az_deg": 120,
+  "irradiance": 900,
+  "on": true
+ },
+ "air": {
+  "temp_c": -22,
+  "rh": 0.15,
+  "wind_mps": 18
+ },
+ "ir": {
+  "bands": [
+   "mwir"
+  ],
+  "netd_mk": 28,
+  "psf_px": 1.3,
+  "nuc": {
+   "enabled": true,
+   "prnu": 0.008,
+   "dsnu_counts": 25,
+   "column_fpn_counts": 6,
+   "dead_px": 0.0002,
+   "seed": 12345
+  }
+ },
+ "optical": {
+  "samples": 16,
+  "exposure": -1.4
+ },
+ "frames": {
+  "n": 20,
+  "dt": 0.05
+ },
+ "seed": 1102,
+ "objects": [
+  {
+   "name": "uav_quad",
+   "cls": "uav",
+   "shape": "obj",
+   "model": "../assets/models/旋翼无人机/四旋翼无人机.obj",
+   "pos": [
+    0,
+    0,
+    120
+   ],
+   "vel": [
+    4,
+    -2,
+    0
+   ],
+   "rot": 200,
+   "mat": "painted_metal",
+   "label": true,
+   "decimate": 9000,
+   "scale": 1.0,
+   "temp_c": 22,
+   "rcs_db": -10.0
+  }
+ ],
+ "sensors": {
+  "ir_camera": {
+   "pos": [
+    0.0,
+    -160.0,
+    120.0
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    120.0
+   ],
+   "fov_deg": 2.2,
+   "width": 768,
+   "height": 576
+  },
+  "optical": {
+   "pos": [
+    0.0,
+    -160.0,
+    120.0
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    120.0
+   ],
+   "fov_deg": 2.2,
+   "width": 768,
+   "height": 576
+  },
+  "radar": {
+   "band": "Ku",
+   "az_span_deg": 2.0,
+   "el_span_deg": 1.6,
+   "n_az": 40,
+   "n_el": 28,
+   "bandwidth_mhz": 7.5,
+   "n_samples": 1024,
+   "chirp_us": 15,
+   "pri_us": 15,
+   "beamwidth_el_deg": 6.0,
+   "n_chirps": 256,
+   "tx_power_dbm": 40,
+   "noise_figure_db": 8,
+   "clutter_density": 0.0,
+   "mti_min_vr_mps": 0.8,
+   "pfa": 1e-06,
+   "swerling": "I",
+   "clutter_db": -12.0,
+   "ground_clutter_db": -35.0,
+   "pos": [
+    0.0,
+    -160.0,
+    120.0
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    120.0
+   ],
+   "up": [
+    0,
+    0,
+    1
+   ]
+  }
+ },
+ "clip": {
+  "frames_per_clip": 20,
+  "camera": "ir_camera",
+  "views": [
+   {
+    "name": "seeker",
+    "tag": "",
+    "fov_deg": 2.2,
+    "width": 768,
+    "height": 576
+   },
+   {
+    "name": "wide",
+    "tag": "_wide",
+    "fov_deg": 18.0,
+    "width": 640,
+    "height": 480,
+    "sweep_deg": 1.2,
+    "sweep_hz": 0.06
+   }
+  ],
+  "seeker": {
+   "mode": "platform",
+   "platform": {
+    "origin": [
+     0.0,
+     -160.0,
+     120.0
+    ],
+    "speed_mps": 14.0,
+    "heading_deg": 90.0,
+    "dive_deg": -0.5,
+    "weave_amp_m": 0.25,
+    "weave_hz": 0.2,
+    "standoff_end_m": 95.0,
+    "solve": "standoff"
+   },
+   "target_m": 0.35,
+   "el_deg": 0.5,
+   "range_m": [
+    160.0,
+    95.0
+   ],
+   "los_jitter_deg": 0.005,
+   "wander_deg": 0.1,
+   "wander_hz": 0.09,
+   "lag_s": 0.12,
+   "bank_max_deg": 25,
+   "per_clip_variation": {
+    "enabled": false
+   }
+  },
+  "rig": {
+   "vibration_m": 0.02,
+   "vibration_deg": 0.05
+  }
+ }
+}

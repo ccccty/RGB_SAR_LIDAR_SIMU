@@ -320,7 +320,8 @@ def simulate(world, cfg, rng=None):
     area_flat = np.tile(cell_area_col, n_cross)
 
     areas = _face_areas(world) if not hasattr(world, "face_areas") else world.face_areas()
-    normals = _face_normals(world)
+    normals = (world.face_normals() if hasattr(world, "face_normals")
+               else _face_normals(world))
     spec_scale = 10.0 ** (float(rc["specular_scale_db"]) / 10.0)
     diff_gamma = float(rc["diffuse_gamma"])
     ground_scale = 10.0 ** (float(rc["ground_clutter_db"]) / 10.0)

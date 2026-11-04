@@ -1,0 +1,3756 @@
+{
+ "generated": "2026-11-03T14:53:02Z",
+ "source": "assets/refs (Wikimedia Commons photographs)",
+ "catalogue": "assets/refs/catalog.json",
+ "tool": "tools/extract_refs.py",
+ "method": {
+  "target_mask": "border-background model: k-means on border+sky colours, largest component farther than 98th percentile of the background spread; 1/4 resolution. Hand-drawn normalised box replaces the auto mask where it is wrong.",
+  "albedo": "median linear target / (k * median linear sky); k=4.0 clear, 2.0 hazy, 1.2 overcast, 1.6 scene-background fallback",
+  "texture_hf_ratio": "sum PSD(f>=0.25 cyc/px) / sum PSD(0.02..0.5 cyc/px), Hann-windowed, DC removed",
+  "target_lap_var": "4-neighbour Laplacian variance in DN^2 inside the target",
+  "sky_mean_std": "sRGB luma mean/std (0..255) inside the sky/background mask",
+  "psd_slope": "log-log slope of the radial PSD of the sky patch, 0.02..0.42 cyc/px",
+  "cam_noise_dn": "robust sigma of the local 4-neighbour Laplacian residual in the sky patch, /sqrt(1.25), in DN"
+ },
+ "uncertainty": "albedo +-35%; texture metrics are JPEG-limited (JPEG removes high-frequency energy, so hf_ratio is a lower bound); cam_noise excludes JPEG quantisation",
+ "usage_guidance": {
+  "A_material": "近距大目标（mask_area_frac >= 5% 画面）：涂装颜色、蒙皮纹理、天空/背景统计只应从这里取；本图库主体属于这一类。",
+  "B_degradation": "远距小目标（mask_area_frac <= 1.5%）：只能用于目标像素占比、PSF/噪声/大气退化的定性对照，不能用来定色。",
+  "rule": "两类不要混用：在色/纹理上对标的样本，不能同时用来对齐退化链。",
+  "not_in_gallery": "本图库不含 AOT / Anti-UAV410 那类远距退化数据（AOT 还是灰度）；20 km 机载工况没有可直接对标的真实测试集。",
+  "source_corrections": "VisDrone 10 类里没有飞机；MSTAR/SenSiAC 是地面车辆 SAR/IR；公开真实 SAR 飞机切片仅约 4k（SAR-AIRcraft-1.0 / SARDet-100K）。本图库只承担光学外观参考，不承担 SAR/IR 对标。"
+ },
+ "reference_materials": {
+  "asphalt": {
+   "albedo": [
+    0.16,
+    0.16,
+    0.17
+   ],
+   "emissivity": 0.95
+  },
+  "building_wall": {
+   "albedo": [
+    0.55,
+    0.52,
+    0.48
+   ],
+   "emissivity": 0.9
+  },
+  "clothing": {
+   "albedo": [
+    0.3,
+    0.32,
+    0.38
+   ],
+   "emissivity": 0.96
+  },
+  "concrete": {
+   "albedo": [
+    0.45,
+    0.44,
+    0.42
+   ],
+   "emissivity": 0.93
+  },
+  "engine_hot": {
+   "albedo": [
+    0.2,
+    0.2,
+    0.22
+   ],
+   "emissivity": 0.9
+  },
+  "foliage": {
+   "albedo": [
+    0.16,
+    0.28,
+    0.12
+   ],
+   "emissivity": 0.97
+  },
+  "glass": {
+   "albedo": [
+    0.18,
+    0.22,
+    0.26
+   ],
+   "emissivity": 0.85
+  },
+  "metal_bare": {
+   "albedo": [
+    0.62,
+    0.64,
+    0.66
+   ],
+   "emissivity": 0.12
+  },
+  "painted_metal": {
+   "albedo": [
+    0.22,
+    0.24,
+    0.28
+   ],
+   "emissivity": 0.92
+  },
+  "plastic": {
+   "albedo": [
+    0.65,
+    0.65,
+    0.65
+   ],
+   "emissivity": 0.93
+  },
+  "rubber": {
+   "albedo": [
+    0.08,
+    0.08,
+    0.09
+   ],
+   "emissivity": 0.93
+  },
+  "seawater": {
+   "albedo": [
+    0.04,
+    0.07,
+    0.1
+   ],
+   "emissivity": 0.96
+  },
+  "skin": {
+   "albedo": [
+    0.62,
+    0.48,
+    0.4
+   ],
+   "emissivity": 0.98
+  }
+ },
+ "军用飞机": {
+  "albedo_linear": [
+   0.1148,
+   0.1603,
+   0.2172
+  ],
+  "albedo_p25": [
+   0.0736,
+   0.1019,
+   0.1408
+  ],
+  "albedo_p75": [
+   0.2351,
+   0.3029,
+   0.3638
+  ],
+  "albedo_k": 4.0,
+  "albedo_confidence": "high",
+  "albedo_uncertainty": "+-35% (k model and camera tone curve)",
+  "albedo_n_high": 3,
+  "albedo_n_usable": 6,
+  "albedo_excluded": {
+   "backlit": 0,
+   "invalid_sky_or_clip": 2
+  },
+  "target_over_sky": 0.9139999999999999,
+  "target_median_srgb": [
+   138.0,
+   173.5,
+   193.0
+  ],
+  "texture_hf_ratio": 0.02325,
+  "target_lap_var": 1811.6,
+  "sky_mean": 171.815,
+  "sky_std": 12.17,
+  "psd_slope": -1.9525000000000001,
+  "cam_noise_dn": 3.79,
+  "samples": [
+   "02_F-15EX_Eagle_II.jpg.jpg",
+   "03_US_Navy_090711-N-9712C-011_Two_F-A-18_Hornets_assigned_to_Strike.jpg",
+   "04_20181208_JASDF_F-15C_E-2_formation_flight_Naha_Air_Show_2018-8.j.jpg",
+   "05_An-124_RA-82028_in_formation_with_Su-27_09-May-2010.jpg.jpg",
+   "06_A_Su-27_escorted_by_an_F-16.jpg.jpg",
+   "07_F-15_eagle_USAF.jpg.jpg",
+   "08_F-15E_Strike_Eagle_banks_away_from_a_tanker.jpg.jpg",
+   "09_United_States_Air_Force_McDonnell_Douglas_F-15_Eagle_Landing_at.jpg"
+  ],
+  "n_images": 8,
+  "n_albedo_samples": 3,
+  "n_sky_background": 8,
+  "image_titles": [
+   "File:F-15EX Eagle II.jpg",
+   "File:US Navy 090711-N-9712C-011 Two F-A-18 Hornets assigned to Strike Fighter Squadron (VFA) 204 and two F-15 Strike Eagles assigned to the Louisiana Air National Guard 159th Fighter Wing fly in an echelon formation.jpg",
+   "File:20181208 JASDF F-15C E-2 formation flight Naha Air Show 2018-8.jpg",
+   "File:An-124 RA-82028 in formation with Su-27 09-May-2010.jpg",
+   "File:A Su-27 escorted by an F-16.jpg",
+   "File:F-15 eagle USAF.jpg",
+   "File:F-15E Strike Eagle banks away from a tanker.jpg",
+   "File:United States Air Force McDonnell Douglas F-15 Eagle Landing at ILM 2.jpg"
+  ],
+  "usage": {
+   "dominant": "A_material",
+   "A_material": 5,
+   "B_degradation": 1,
+   "intermediate": 2,
+   "note": "近距离大目标照片（目标占画面 >= 5%）用于反推涂装颜色/蒙皮纹理；远距离小目标照片（<= 1.5%）只用于目标占比/退化链的定性对照，其 albedo 计入但置信度低。本类 5 张偏 A，1 张偏 B，2 张居中。"
+  },
+  "suggested_basis": "85% 实测有效反照率 + 15% 现有 MATERIALS 值（低置信时向现值收缩）",
+  "simkit_material": "painted_metal",
+  "simkit_albedo_current": [
+   0.22,
+   0.24,
+   0.28
+  ],
+  "simkit_albedo_delta": [
+   -0.089,
+   -0.068,
+   -0.053
+  ],
+  "simkit_albedo_ratio": 0.716,
+  "suggested_simkit_albedo": [
+   0.131,
+   0.172,
+   0.227
+  ],
+  "simkit_alternatives": {
+   "metal_bare": {
+    "albedo": [
+     0.62,
+     0.64,
+     0.66
+    ],
+    "note": "裸金属/复合材料蒙皮参考"
+   }
+  },
+  "notes": "整机多为哑光灰/深灰涂装，少量裸金属蒙皮；8 张样本中 8 张以天空为参考（k=4.0），0 张以场景背景为参考（低置信）；albedo 由 3 张通过质量门的样本取中位数（置信度 high）。",
+  "per_image": [
+   {
+    "file": "军用飞机/02_F-15EX_Eagle_II.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.1011,
+     0.1711,
+     0.2029
+    ],
+    "albedo_k": 1.2,
+    "target_over_sky": 0.193,
+    "texture_hf_ratio": 0.02168,
+    "target_lap_var": 2257.85,
+    "sky_mean": 220.97,
+    "sky_std": 5.5,
+    "psd_slope": -1.855,
+    "cam_noise_dn": 0.68,
+    "mask_area_frac": 0.1944,
+    "target_median_srgb": [
+     84.0,
+     108.0,
+     117.0
+    ],
+    "target_median_linear": [
+     0.0887,
+     0.15,
+     0.1779
+    ],
+    "sky_luma_lin": 0.7305,
+    "sky_mean_rgb": [
+     221.0,
+     220.7,
+     220.8
+    ],
+    "edge_align": 4.56,
+    "compactness": 0.305
+   },
+   {
+    "file": "军用飞机/03_US_Navy_090711-N-9712C-011_Two_F-A-18_Hornets_assigned_to_Strike.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.4099,
+     0.4075,
+     0.4295
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 1.639,
+    "texture_hf_ratio": 0.03592,
+    "target_lap_var": 5348.35,
+    "sky_mean": 153.65,
+    "sky_std": 20.43,
+    "psd_slope": -2.32,
+    "cam_noise_dn": 6.64,
+    "mask_area_frac": 0.0273,
+    "target_median_srgb": [
+     190.0,
+     189.5,
+     194.0
+    ],
+    "target_median_linear": [
+     0.5149,
+     0.5119,
+     0.5395
+    ],
+    "sky_luma_lin": 0.314,
+    "sky_mean_rgb": [
+     142.8,
+     154.2,
+     179.9
+    ],
+    "edge_align": 4.86,
+    "compactness": 0.419
+   },
+   {
+    "file": "军用飞机/04_20181208_JASDF_F-15C_E-2_formation_flight_Naha_Air_Show_2018-8.j.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.4661,
+     0.489,
+     0.5185
+    ],
+    "albedo_k": 2.0,
+    "target_over_sky": 0.969,
+    "texture_hf_ratio": 0.01979,
+    "target_lap_var": 1577.02,
+    "sky_mean": 189.98,
+    "sky_std": 1.99,
+    "psd_slope": -2.085,
+    "cam_noise_dn": 0.4,
+    "mask_area_frac": 0.1,
+    "target_median_srgb": [
+     184.0,
+     188.0,
+     193.0
+    ],
+    "target_median_linear": [
+     0.4793,
+     0.5029,
+     0.5333
+    ],
+    "sky_luma_lin": 0.5142,
+    "sky_mean_rgb": [
+     186.6,
+     190.6,
+     194.8
+    ],
+    "edge_align": 16.93,
+    "compactness": 0.405
+   },
+   {
+    "file": "军用飞机/05_An-124_RA-82028_in_formation_with_Su-27_09-May-2010.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.0323,
+     0.0436,
+     0.0644
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.168,
+    "texture_hf_ratio": 0.03854,
+    "target_lap_var": 2457.72,
+    "sky_mean": 124.58,
+    "sky_std": 4.59,
+    "psd_slope": -1.472,
+    "cam_noise_dn": 0.5,
+    "mask_area_frac": 0.1437,
+    "target_median_srgb": [
+     46.0,
+     54.0,
+     66.0
+    ],
+    "target_median_linear": [
+     0.0273,
+     0.0369,
+     0.0545
+    ],
+    "sky_luma_lin": 0.2116,
+    "sky_mean_rgb": [
+     89.7,
+     129.1,
+     181.3
+    ],
+    "edge_align": 6.24,
+    "compactness": 0.402
+   },
+   {
+    "file": "军用飞机/06_A_Su-27_escorted_by_an_F-16.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "B_degradation",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.95,
+     0.95,
+     0.95
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 7.788,
+    "texture_hf_ratio": 0.047,
+    "target_lap_var": 1320.79,
+    "sky_mean": 53.52,
+    "sky_std": 17.28,
+    "psd_slope": -1.336,
+    "cam_noise_dn": 24.92,
+    "mask_area_frac": 0.0081,
+    "target_median_srgb": [
+     116.0,
+     161.0,
+     193.0
+    ],
+    "target_median_linear": [
+     0.1746,
+     0.3564,
+     0.5333
+    ],
+    "sky_luma_lin": 0.0425,
+    "sky_mean_rgb": [
+     23.1,
+     56.5,
+     113.2
+    ],
+    "edge_align": 3.21,
+    "compactness": 0.871
+   },
+   {
+    "file": "军用飞机/07_F-15_eagle_USAF.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.1148,
+     0.1603,
+     0.2172
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.61,
+    "texture_hf_ratio": 0.02482,
+    "target_lap_var": 2046.18,
+    "sky_mean": 220.77,
+    "sky_std": 18.82,
+    "psd_slope": -1.995,
+    "cam_noise_dn": 11.56,
+    "mask_area_frac": 0.3887,
+    "target_median_srgb": [
+     160.0,
+     186.0,
+     213.0
+    ],
+    "target_median_linear": [
+     0.3515,
+     0.491,
+     0.6654
+    ],
+    "sky_luma_lin": 0.7657,
+    "sky_mean_rgb": [
+     208.5,
+     221.8,
+     243.3
+    ],
+    "edge_align": 2.03,
+    "compactness": 0.529
+   },
+   {
+    "file": "军用飞机/08_F-15E_Strike_Eagle_banks_away_from_a_tanker.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "marginal",
+    "usage": "A_material",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.3555,
+     0.4455,
+     0.5103
+    ],
+    "albedo_k": 2.0,
+    "target_over_sky": 0.859,
+    "texture_hf_ratio": 0.00633,
+    "target_lap_var": 401.77,
+    "sky_mean": 217.84,
+    "sky_std": 20.83,
+    "psd_slope": -1.91,
+    "cam_noise_dn": 6.16,
+    "mask_area_frac": 0.4491,
+    "target_median_srgb": [
+     189.0,
+     209.0,
+     222.0
+    ],
+    "target_median_linear": [
+     0.5089,
+     0.6376,
+     0.7305
+    ],
+    "sky_luma_lin": 0.7157,
+    "sky_mean_rgb": [
+     204.8,
+     219.9,
+     232.3
+    ],
+    "edge_align": 2.88,
+    "compactness": 0.412
+   },
+   {
+    "file": "军用飞机/09_United_States_Air_Force_McDonnell_Douglas_F-15_Eagle_Landing_at.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "low",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": true,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.1198,
+     0.2719,
+     0.5005
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 1.027,
+    "texture_hf_ratio": 0.00875,
+    "target_lap_var": 755.92,
+    "sky_mean": 130.71,
+    "sky_std": 7.06,
+    "psd_slope": -1.999,
+    "cam_noise_dn": 1.42,
+    "mask_area_frac": 0.0303,
+    "target_median_srgb": [
+     94.0,
+     138.0,
+     182.0
+    ],
+    "target_median_linear": [
+     0.1119,
+     0.2542,
+     0.4678
+    ],
+    "sky_luma_lin": 0.2337,
+    "sky_mean_rgb": [
+     95.9,
+     136.2,
+     178.6
+    ],
+    "edge_align": 54.28,
+    "compactness": 0.474
+   }
+  ]
+ },
+ "民航飞机": {
+  "albedo_linear": [
+   0.6172,
+   0.6248,
+   0.6963
+  ],
+  "albedo_p25": [
+   0.553,
+   0.5568,
+   0.6294
+  ],
+  "albedo_p75": [
+   0.7054,
+   0.6965,
+   0.7623
+  ],
+  "albedo_k": 2.0,
+  "albedo_confidence": "medium",
+  "albedo_uncertainty": "+-35% (k model and camera tone curve)",
+  "albedo_n_high": 1,
+  "albedo_n_usable": 3,
+  "albedo_excluded": {
+   "backlit": 0,
+   "invalid_sky_or_clip": 4
+  },
+  "target_over_sky": 1.05,
+  "target_median_srgb": [
+   122.0,
+   156.0,
+   190.0
+  ],
+  "texture_hf_ratio": 0.01383,
+  "target_lap_var": 2010.64,
+  "sky_mean": 135.19,
+  "sky_std": 10.64,
+  "psd_slope": -1.681,
+  "cam_noise_dn": 1.79,
+  "samples": [
+   "02_Commercial_flight_UA2442_IAH_to_FLL_airplane_N37502_Boeing_737_M.jpg",
+   "03_Copa_Airlines_Boeing_737_MAX_9_HP-9903CMP_taxiing_at_JFK_Airport.jpg",
+   "04_Turkish_Airlines_TC-LYD_Boeing_737-MAX_9.jpg.jpg",
+   "05_Boeing_737_MAX_9_-_HP-9902CMP_-_Copa_Airlines_Flight_CM358_Panam.jpg",
+   "07_Southwest_Boeing_737-700_N947WN_BWI_MD1.jpg.jpg",
+   "08_Boeing_737_Victoria_Bridge_Brisbane_P1250879.jpg.jpg",
+   "09_Boeing_737_Sunbury_St_Geebung_01.jpg.jpg"
+  ],
+  "n_images": 7,
+  "n_albedo_samples": 3,
+  "n_sky_background": 7,
+  "image_titles": [
+   "File:Commercial flight UA2442 IAH to FLL airplane N37502 Boeing 737 MAX 9.jpg",
+   "File:Copa Airlines Boeing 737 MAX 9 HP-9903CMP taxiing at JFK Airport.jpg",
+   "File:Turkish Airlines TC-LYD Boeing 737-MAX 9.jpg",
+   "File:Boeing 737 MAX 9 - HP-9902CMP - Copa Airlines Flight CM358 (Panama City) - Landing Guatemala City La Aurora GUA MGGT.jpg",
+   "File:Southwest Boeing 737-700 N947WN BWI MD1.jpg",
+   "File:Boeing 737 Victoria Bridge Brisbane P1250879.jpg",
+   "File:Boeing 737 Sunbury St Geebung 01.jpg"
+  ],
+  "usage": {
+   "dominant": "A_material",
+   "A_material": 5,
+   "B_degradation": 0,
+   "intermediate": 2,
+   "note": "近距离大目标照片（目标占画面 >= 5%）用于反推涂装颜色/蒙皮纹理；远距离小目标照片（<= 1.5%）只用于目标占比/退化链的定性对照，其 albedo 计入但置信度低。本类 5 张偏 A，0 张偏 B，2 张居中。"
+  },
+  "suggested_basis": "70% 实测有效反照率 + 30% 现有 MATERIALS 值（低置信时向现值收缩）",
+  "simkit_material": "painted_metal",
+  "simkit_albedo_current": [
+   0.22,
+   0.24,
+   0.28
+  ],
+  "simkit_albedo_delta": [
+   0.278,
+   0.269,
+   0.291
+  ],
+  "simkit_albedo_ratio": 2.132,
+  "suggested_simkit_albedo": [
+   0.498,
+   0.509,
+   0.571
+  ],
+  "simkit_alternatives": {
+   "plastic": {
+    "albedo": [
+     0.65,
+     0.65,
+     0.65
+    ],
+    "note": "白/浅色工程塑料外壳参考"
+   }
+  },
+  "notes": "白色/浅灰聚氨酯蒙皮 + 深色舷窗；7 张样本中 7 张以天空为参考（k=2.0），0 张以场景背景为参考（低置信）；albedo 由 3 张通过质量门的样本取中位数（置信度 medium）。",
+  "per_image": [
+   {
+    "file": "民航飞机/02_Commercial_flight_UA2442_IAH_to_FLL_airplane_N37502_Boeing_737_M.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.4887,
+     0.4887,
+     0.5625
+    ],
+    "albedo_k": 2.0,
+    "target_over_sky": 0.988,
+    "texture_hf_ratio": 0.00657,
+    "target_lap_var": 542.75,
+    "sky_mean": 188.8,
+    "sky_std": 11.38,
+    "psd_slope": -2.609,
+    "cam_noise_dn": 1.79,
+    "mask_area_frac": 0.2843,
+    "target_median_srgb": [
+     185.0,
+     185.0,
+     197.0
+    ],
+    "target_median_linear": [
+     0.4851,
+     0.4851,
+     0.5583
+    ],
+    "sky_luma_lin": 0.4963,
+    "sky_mean_rgb": [
+     188.1,
+     187.8,
+     198.6
+    ],
+    "edge_align": 11.23,
+    "compactness": 0.312
+   },
+   {
+    "file": "民航飞机/03_Copa_Airlines_Boeing_737_MAX_9_HP-9903CMP_taxiing_at_JFK_Airport.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.95,
+     0.95,
+     0.95
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 3.845,
+    "texture_hf_ratio": 0.01207,
+    "target_lap_var": 2994.76,
+    "sky_mean": 59.71,
+    "sky_std": 17.24,
+    "psd_slope": -1.328,
+    "cam_noise_dn": 17.52,
+    "mask_area_frac": 0.2483,
+    "target_median_srgb": [
+     122.0,
+     108.0,
+     100.0
+    ],
+    "target_median_linear": [
+     0.1946,
+     0.15,
+     0.1274
+    ],
+    "sky_luma_lin": 0.0405,
+    "sky_mean_rgb": [
+     57.8,
+     59.0,
+     72.5
+    ],
+    "edge_align": 2.05,
+    "compactness": 0.39
+   },
+   {
+    "file": "民航飞机/04_Turkish_Airlines_TC-LYD_Boeing_737-MAX_9.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.7936,
+     0.7682,
+     0.8282
+    ],
+    "albedo_k": 1.2,
+    "target_over_sky": 0.93,
+    "texture_hf_ratio": 0.02341,
+    "target_lap_var": 2010.64,
+    "sky_mean": 210.35,
+    "sky_std": 10.64,
+    "psd_slope": -2.466,
+    "cam_noise_dn": 0.1,
+    "mask_area_frac": 0.2309,
+    "target_median_srgb": [
+     209.0,
+     206.0,
+     213.0
+    ],
+    "target_median_linear": [
+     0.6376,
+     0.6172,
+     0.6654
+    ],
+    "sky_luma_lin": 0.6696,
+    "sky_mean_rgb": [
+     210.4,
+     209.3,
+     217.6
+    ],
+    "edge_align": 7.99,
+    "compactness": 0.304
+   },
+   {
+    "file": "民航飞机/05_Boeing_737_MAX_9_-_HP-9902CMP_-_Copa_Airlines_Flight_CM358_Panam.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "low",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": true,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.0837,
+     0.266,
+     0.5381
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.988,
+    "texture_hf_ratio": 0.01383,
+    "target_lap_var": 845.25,
+    "sky_mean": 148.24,
+    "sky_std": 4.16,
+    "psd_slope": -1.681,
+    "cam_noise_dn": 0.31,
+    "mask_area_frac": 0.1673,
+    "target_median_srgb": [
+     91.0,
+     156.0,
+     214.0
+    ],
+    "target_median_linear": [
+     0.1046,
+     0.3325,
+     0.6724
+    ],
+    "sky_luma_lin": 0.3124,
+    "sky_mean_rgb": [
+     92.9,
+     157.9,
+     215.8
+    ],
+    "edge_align": 20.28,
+    "compactness": 0.401
+   },
+   {
+    "file": "民航飞机/07_Southwest_Boeing_737-700_N947WN_BWI_MD1.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.6172,
+     0.6248,
+     0.6963
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 2.499,
+    "texture_hf_ratio": 0.02328,
+    "target_lap_var": 2381.85,
+    "sky_mean": 135.19,
+    "sky_std": 29.32,
+    "psd_slope": -2.663,
+    "cam_noise_dn": 1.33,
+    "mask_area_frac": 0.1845,
+    "target_median_srgb": [
+     180.0,
+     181.0,
+     190.0
+    ],
+    "target_median_linear": [
+     0.4564,
+     0.4621,
+     0.5149
+    ],
+    "sky_luma_lin": 0.1849,
+    "sky_mean_rgb": [
+     119.5,
+     136.1,
+     170.6
+    ],
+    "edge_align": 8.51,
+    "compactness": 0.306
+   },
+   {
+    "file": "民航飞机/08_Boeing_737_Victoria_Bridge_Brisbane_P1250879.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": true,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.015,
+     0.6968,
+     0.95
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 1.174,
+    "texture_hf_ratio": 0.01342,
+    "target_lap_var": 2001.08,
+    "sky_mean": 59.92,
+    "sky_std": 4.0,
+    "psd_slope": -1.593,
+    "cam_noise_dn": 9.76,
+    "mask_area_frac": 0.0218,
+    "target_median_srgb": [
+     5.0,
+     75.0,
+     153.0
+    ],
+    "target_median_linear": [
+     0.0015,
+     0.0704,
+     0.3185
+    ],
+    "sky_luma_lin": 0.0631,
+    "sky_mean_rgb": [
+     2.6,
+     68.1,
+     148.5
+    ],
+    "edge_align": 19.31,
+    "compactness": 0.403
+   },
+   {
+    "file": "民航飞机/09_Boeing_737_Sunbury_St_Geebung_01.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "low",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": true,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.0632,
+     0.2636,
+     0.7562
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 1.05,
+    "texture_hf_ratio": 0.02105,
+    "target_lap_var": 2276.59,
+    "sky_mean": 84.19,
+    "sky_std": 8.51,
+    "psd_slope": 0.052,
+    "cam_noise_dn": 29.74,
+    "mask_area_frac": 0.0315,
+    "target_median_srgb": [
+     45.0,
+     93.0,
+     152.0
+    ],
+    "target_median_linear": [
+     0.0262,
+     0.1095,
+     0.314
+    ],
+    "sky_luma_lin": 0.1038,
+    "sky_mean_rgb": [
+     32.9,
+     92.6,
+     152.4
+    ],
+    "edge_align": 21.59,
+    "compactness": 0.337
+   }
+  ]
+ },
+ "直升机": {
+  "albedo_linear": [
+   0.0143,
+   0.0121,
+   0.0121
+  ],
+  "albedo_p25": [
+   0.0122,
+   0.0111,
+   0.0111
+  ],
+  "albedo_p75": [
+   0.0255,
+   0.0217,
+   0.0153
+  ],
+  "albedo_k": 4.0,
+  "albedo_confidence": "medium",
+  "albedo_uncertainty": "+-35% (k model and camera tone curve)",
+  "albedo_n_high": 0,
+  "albedo_n_usable": 3,
+  "albedo_excluded": {
+   "backlit": 1,
+   "invalid_sky_or_clip": 1
+  },
+  "target_over_sky": 0.036500000000000005,
+  "target_median_srgb": [
+   23.0,
+   26.5,
+   29.0
+  ],
+  "texture_hf_ratio": 0.022645,
+  "target_lap_var": 2839.31,
+  "sky_mean": 159.64,
+  "sky_std": 12.274999999999999,
+  "psd_slope": -1.7294999999999998,
+  "cam_noise_dn": 3.5,
+  "samples": [
+   "03_OH-58_Kiowa_25397086183_.jpg.jpg",
+   "07_OH-58_firing_Hellfire_missile_during_Operation_Brown.jpg.jpg",
+   "08_A_U.S._Army_UH-60_Black_Hawk_helicopter_background_assigned_to_t.jpg",
+   "09_Operation_Patriot_Strike_Nets_AQI_Suspects.jpg.jpg"
+  ],
+  "n_images": 4,
+  "n_albedo_samples": 3,
+  "n_sky_background": 4,
+  "image_titles": [
+   "File:OH-58 \"Kiowa\" (25397086183).jpg",
+   "File:OH-58 firing Hellfire missile during Operation Brown.jpg",
+   "File:A U.S. Army UH-60 Black Hawk helicopter, background, assigned to the 2nd Battalion, 25th Aviation Regiment, 25th Combat Aviation Brigade, 25th Infantry Division lands near a simulated downed OH-58D Kiowa Warrior 130926-A-UG106-026.jpg",
+   "File:Operation Patriot Strike Nets AQI Suspects.jpg"
+  ],
+  "usage": {
+   "dominant": "B_degradation",
+   "A_material": 1,
+   "B_degradation": 2,
+   "intermediate": 1,
+   "note": "近距离大目标照片（目标占画面 >= 5%）用于反推涂装颜色/蒙皮纹理；远距离小目标照片（<= 1.5%）只用于目标占比/退化链的定性对照，其 albedo 计入但置信度低。本类 1 张偏 A，2 张偏 B，1 张居中。"
+  },
+  "suggested_basis": "70% 实测有效反照率 + 30% 现有 MATERIALS 值（低置信时向现值收缩）",
+  "simkit_material": "painted_metal",
+  "simkit_albedo_current": [
+   0.22,
+   0.24,
+   0.28
+  ],
+  "simkit_albedo_delta": [
+   -0.144,
+   -0.16,
+   -0.188
+  ],
+  "simkit_albedo_ratio": 0.335,
+  "suggested_simkit_albedo": [
+   0.076,
+   0.08,
+   0.092
+  ],
+  "simkit_alternatives": {
+   "metal_bare": {
+    "albedo": [
+     0.62,
+     0.64,
+     0.66
+    ],
+    "note": "裸金属/复合材料蒙皮参考"
+   }
+  },
+  "notes": "军绿/灰涂装，旋翼为深色复合材料；4 张样本中 4 张以天空为参考（k=4.0），0 张以场景背景为参考（低置信）；albedo 由 3 张通过质量门的样本取中位数（置信度 medium）。",
+  "per_image": [
+   {
+    "file": "直升机/03_OH-58_Kiowa_25397086183_.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.01,
+     0.01,
+     0.01
+    ],
+    "albedo_k": 1.2,
+    "target_over_sky": 0.002,
+    "texture_hf_ratio": 0.03226,
+    "target_lap_var": 2262.67,
+    "sky_mean": 207.35,
+    "sky_std": 17.79,
+    "psd_slope": -2.021,
+    "cam_noise_dn": 15.64,
+    "mask_area_frac": 0.0672,
+    "target_median_srgb": [
+     5.0,
+     3.0,
+     2.0
+    ],
+    "target_median_linear": [
+     0.0015,
+     0.0009,
+     0.0006
+    ],
+    "sky_luma_lin": 0.6274,
+    "sky_mean_rgb": [
+     208.7,
+     207.2,
+     203.1
+    ],
+    "edge_align": 2.54,
+    "compactness": 0.653
+   },
+   {
+    "file": "直升机/07_OH-58_firing_Hellfire_missile_during_Operation_Brown.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "low",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": true,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.01,
+     0.0124,
+     0.0165
+    ],
+    "albedo_k": 2.0,
+    "target_over_sky": 0.023,
+    "texture_hf_ratio": 0.01303,
+    "target_lap_var": 375.95,
+    "sky_mean": 167.24,
+    "sky_std": 5.8,
+    "psd_slope": -1.206,
+    "cam_noise_dn": 3.59,
+    "mask_area_frac": 0.0215,
+    "target_median_srgb": [
+     15.0,
+     25.0,
+     30.0
+    ],
+    "target_median_linear": [
+     0.0048,
+     0.0097,
+     0.013
+    ],
+    "sky_luma_lin": 0.3927,
+    "sky_mean_rgb": [
+     156.5,
+     169.9,
+     170.8
+    ],
+    "edge_align": 19.51,
+    "compactness": 0.44
+   },
+   {
+    "file": "直升机/08_A_U.S._Army_UH-60_Black_Hawk_helicopter_background_assigned_to_t.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "B_degradation",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.0368,
+     0.0313,
+     0.0186
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.127,
+    "texture_hf_ratio": 0.00994,
+    "target_lap_var": 3415.95,
+    "sky_mean": 152.04,
+    "sky_std": 6.76,
+    "psd_slope": -1.438,
+    "cam_noise_dn": 2.93,
+    "mask_area_frac": 0.014,
+    "target_median_srgb": [
+     63.0,
+     58.0,
+     44.0
+    ],
+    "target_median_linear": [
+     0.0497,
+     0.0423,
+     0.0252
+    ],
+    "sky_luma_lin": 0.3381,
+    "sky_mean_rgb": [
+     100.3,
+     160.0,
+     225.2
+    ],
+    "edge_align": 2.43,
+    "compactness": 0.705
+   },
+   {
+    "file": "直升机/09_Operation_Patriot_Strike_Nets_AQI_Suspects.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "marginal",
+    "usage": "B_degradation",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.0143,
+     0.0121,
+     0.0121
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.05,
+    "texture_hf_ratio": 0.0542,
+    "target_lap_var": 6358.92,
+    "sky_mean": 129.77,
+    "sky_std": 22.64,
+    "psd_slope": -2.306,
+    "cam_noise_dn": 3.41,
+    "mask_area_frac": 0.0076,
+    "target_median_srgb": [
+     31.0,
+     28.0,
+     28.0
+    ],
+    "target_median_linear": [
+     0.0137,
+     0.0116,
+     0.0116
+    ],
+    "sky_luma_lin": 0.2391,
+    "sky_mean_rgb": [
+     84.0,
+     134.1,
+     221.5
+    ],
+    "edge_align": 23.34,
+    "compactness": 0.517
+   }
+  ]
+ },
+ "固定翼无人机": {
+  "albedo_linear": [
+   0.3435,
+   0.2689,
+   0.2396
+  ],
+  "albedo_p25": [
+   0.2551,
+   0.2178,
+   0.1976
+  ],
+  "albedo_p75": [
+   0.393,
+   0.3557,
+   0.2895
+  ],
+  "albedo_k": 1.2,
+  "albedo_confidence": "medium",
+  "albedo_uncertainty": "+-35% (k model and camera tone curve)",
+  "albedo_n_high": 0,
+  "albedo_n_usable": 3,
+  "albedo_excluded": {
+   "backlit": 0,
+   "invalid_sky_or_clip": 2
+  },
+  "target_over_sky": 0.335,
+  "target_median_srgb": [
+   124.0,
+   124.0,
+   120.0
+  ],
+  "texture_hf_ratio": 0.01232,
+  "target_lap_var": 1128.96,
+  "sky_mean": 204.42,
+  "sky_std": 26.09,
+  "psd_slope": -1.998,
+  "cam_noise_dn": 6.53,
+  "samples": [
+   "01_MQ-9_Reaper_in_flight_2.jpg.jpg",
+   "02_MQ-9_Reaper_in_flight_2007_.jpg.jpg",
+   "03_MQ-9_Reaper_at_flight.jpg.jpg",
+   "06_General_Atomics_MQ-1_Predator_163rd_Reconnaissance_Wing.JPG.jpg",
+   "07_Reaper_RPAS_Aircraft_Lands_at_Kandahar_Afghanistan_MOD_45154678..jpg"
+  ],
+  "n_images": 5,
+  "n_albedo_samples": 3,
+  "n_sky_background": 5,
+  "image_titles": [
+   "File:MQ-9 Reaper in flight 2.jpg",
+   "File:MQ-9 Reaper in flight (2007).jpg",
+   "File:MQ-9 Reaper at flight.jpg",
+   "File:General Atomics MQ-1 Predator 163rd Reconnaissance Wing.JPG",
+   "File:Reaper RPAS Aircraft Lands at Kandahar, Afghanistan MOD 45154678.jpg"
+  ],
+  "usage": {
+   "dominant": "A_material",
+   "A_material": 3,
+   "B_degradation": 0,
+   "intermediate": 2,
+   "note": "近距离大目标照片（目标占画面 >= 5%）用于反推涂装颜色/蒙皮纹理；远距离小目标照片（<= 1.5%）只用于目标占比/退化链的定性对照，其 albedo 计入但置信度低。本类 3 张偏 A，0 张偏 B，2 张居中。"
+  },
+  "suggested_basis": "70% 实测有效反照率 + 30% 现有 MATERIALS 值（低置信时向现值收缩）",
+  "simkit_material": "painted_metal",
+  "simkit_albedo_current": [
+   0.22,
+   0.24,
+   0.28
+  ],
+  "simkit_albedo_delta": [
+   0.086,
+   0.02,
+   -0.028
+  ],
+  "simkit_albedo_ratio": 1.105,
+  "suggested_simkit_albedo": [
+   0.306,
+   0.26,
+   0.252
+  ],
+  "simkit_alternatives": {
+   "metal_bare": {
+    "albedo": [
+     0.62,
+     0.64,
+     0.66
+    ],
+    "note": "裸金属/复合材料蒙皮参考"
+   }
+  },
+  "notes": "浅灰/白色蒙皮，复合材料；5 张样本中 5 张以天空为参考（k=1.2），0 张以场景背景为参考（低置信）；albedo 由 3 张通过质量门的样本取中位数（置信度 medium）。",
+  "per_image": [
+   {
+    "file": "固定翼无人机/01_MQ-9_Reaper_in_flight_2.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.3435,
+     0.2689,
+     0.2396
+    ],
+    "albedo_k": 1.2,
+    "target_over_sky": 0.335,
+    "texture_hf_ratio": 0.01232,
+    "target_lap_var": 773.38,
+    "sky_mean": 219.52,
+    "sky_std": 30.41,
+    "psd_slope": -2.649,
+    "cam_noise_dn": 3.71,
+    "mask_area_frac": 0.2357,
+    "target_median_srgb": [
+     151.0,
+     135.0,
+     128.0
+    ],
+    "target_median_linear": [
+     0.3095,
+     0.2423,
+     0.2159
+    ],
+    "sky_luma_lin": 0.7508,
+    "sky_mean_rgb": [
+     209.2,
+     221.5,
+     227.5
+    ],
+    "edge_align": 3.48,
+    "compactness": 0.411
+   },
+   {
+    "file": "固定翼无人机/02_MQ-9_Reaper_in_flight_2007_.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.1668,
+     0.1668,
+     0.1555
+    ],
+    "albedo_k": 2.0,
+    "target_over_sky": 0.33,
+    "texture_hf_ratio": 0.00399,
+    "target_lap_var": 1631.92,
+    "sky_mean": 204.42,
+    "sky_std": 10.49,
+    "psd_slope": -2.054,
+    "cam_noise_dn": 6.53,
+    "mask_area_frac": 0.031,
+    "target_median_srgb": [
+     124.0,
+     124.0,
+     120.0
+    ],
+    "target_median_linear": [
+     0.2016,
+     0.2016,
+     0.1878
+    ],
+    "sky_luma_lin": 0.6041,
+    "sky_mean_rgb": [
+     202.1,
+     204.0,
+     212.5
+    ],
+    "edge_align": 13.59,
+    "compactness": 0.575
+   },
+   {
+    "file": "固定翼无人机/03_MQ-9_Reaper_at_flight.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.4424,
+     0.4424,
+     0.3394
+    ],
+    "albedo_k": 1.2,
+    "target_over_sky": 0.524,
+    "texture_hf_ratio": 0.00273,
+    "target_lap_var": 668.09,
+    "sky_mean": 214.16,
+    "sky_std": 26.09,
+    "psd_slope": -1.379,
+    "cam_noise_dn": 9.57,
+    "mask_area_frac": 0.0474,
+    "target_median_srgb": [
+     158.0,
+     158.0,
+     140.0
+    ],
+    "target_median_linear": [
+     0.3419,
+     0.3419,
+     0.2623
+    ],
+    "sky_luma_lin": 0.644,
+    "sky_mean_rgb": [
+     210.7,
+     215.0,
+     212.6
+    ],
+    "edge_align": 9.27,
+    "compactness": 0.319
+   },
+   {
+    "file": "固定翼无人机/06_General_Atomics_MQ-1_Predator_163rd_Reconnaissance_Wing.JPG.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.5007,
+     0.4533,
+     0.4085
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 0.732,
+    "texture_hf_ratio": 0.01423,
+    "target_lap_var": 1960.09,
+    "sky_mean": 118.39,
+    "sky_std": 34.02,
+    "psd_slope": -1.998,
+    "cam_noise_dn": 31.64,
+    "mask_area_frac": 0.1583,
+    "target_median_srgb": [
+     109.0,
+     104.0,
+     99.0
+    ],
+    "target_median_linear": [
+     0.1529,
+     0.1384,
+     0.1248
+    ],
+    "sky_luma_lin": 0.1909,
+    "sky_mean_rgb": [
+     123.9,
+     118.8,
+     97.9
+    ],
+    "edge_align": 2.26,
+    "compactness": 0.269
+   },
+   {
+    "file": "固定翼无人机/07_Reaper_RPAS_Aircraft_Lands_at_Kandahar_Afghanistan_MOD_45154678..jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.1385,
+     0.0466,
+     0.0135
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 0.103,
+    "texture_hf_ratio": 0.17209,
+    "target_lap_var": 1128.96,
+    "sky_mean": 122.54,
+    "sky_std": 17.7,
+    "psd_slope": -1.741,
+    "cam_noise_dn": 4.07,
+    "mask_area_frac": 0.0552,
+    "target_median_srgb": [
+     60.0,
+     33.0,
+     14.0
+    ],
+    "target_median_linear": [
+     0.0452,
+     0.0152,
+     0.0044
+    ],
+    "sky_luma_lin": 0.2039,
+    "sky_mean_rgb": [
+     166.9,
+     115.0,
+     65.8
+    ],
+    "edge_align": 2.6,
+    "compactness": 0.764
+   }
+  ]
+ },
+ "旋翼无人机": {
+  "albedo_linear": [
+   0.0877,
+   0.1109,
+   0.1021
+  ],
+  "albedo_p25": [
+   0.0821,
+   0.0937,
+   0.0902
+  ],
+  "albedo_p75": [
+   0.2941,
+   0.2119,
+   0.2339
+  ],
+  "albedo_k": 4.0,
+  "albedo_confidence": "high",
+  "albedo_uncertainty": "+-35% (k model and camera tone curve)",
+  "albedo_n_high": 3,
+  "albedo_n_usable": 5,
+  "albedo_excluded": {
+   "backlit": 0,
+   "invalid_sky_or_clip": 2
+  },
+  "target_over_sky": 0.437,
+  "target_median_srgb": [
+   104.0,
+   120.0,
+   129.0
+  ],
+  "texture_hf_ratio": 0.01825,
+  "target_lap_var": 1497.27,
+  "sky_mean": 153.08,
+  "sky_std": 14.55,
+  "psd_slope": -2.749,
+  "cam_noise_dn": 1.33,
+  "samples": [
+   "01_2015_Dron_DJI_Phantom_3_Advanced.JPG.jpg",
+   "02_DJI_Phantom_4Pro_04-2017_img3_in_flight.jpg.jpg",
+   "03_DJI_Phantom_4_in_Flight_March_2016.jpg.jpg",
+   "04_DJI_-_Drohne_Mavic_4_Pro.JPG.jpg",
+   "05_DJI_-_Drohne_Mavic_Air_2.JPG.jpg",
+   "06_2019-03-23_-_Mavic_Pro_-3941.jpg.jpg",
+   "08_Quadcopter_camera_drone_in_flight.jpg.jpg"
+  ],
+  "n_images": 7,
+  "n_albedo_samples": 3,
+  "n_sky_background": 7,
+  "image_titles": [
+   "File:2015 Dron DJI Phantom 3 Advanced.JPG",
+   "File:DJI Phantom 4Pro 04-2017 img3 in flight.jpg",
+   "File:DJI Phantom 4 in Flight March 2016.jpg",
+   "File:DJI - Drohne Mavic 4 Pro.JPG",
+   "File:DJI - Drohne Mavic Air 2.JPG",
+   "File:2019-03-23 - Mavic Pro -3941.jpg",
+   "File:Quadcopter camera drone in flight.jpg"
+  ],
+  "usage": {
+   "dominant": "A_material",
+   "A_material": 4,
+   "B_degradation": 1,
+   "intermediate": 2,
+   "note": "近距离大目标照片（目标占画面 >= 5%）用于反推涂装颜色/蒙皮纹理；远距离小目标照片（<= 1.5%）只用于目标占比/退化链的定性对照，其 albedo 计入但置信度低。本类 4 张偏 A，1 张偏 B，2 张居中。"
+  },
+  "suggested_basis": "85% 实测有效反照率 + 15% 现有 MATERIALS 值（低置信时向现值收缩）",
+  "simkit_material": "painted_metal",
+  "simkit_albedo_current": [
+   0.22,
+   0.24,
+   0.28
+  ],
+  "simkit_albedo_delta": [
+   -0.112,
+   -0.11,
+   -0.151
+  ],
+  "simkit_albedo_ratio": 0.496,
+  "suggested_simkit_albedo": [
+   0.108,
+   0.13,
+   0.129
+  ],
+  "simkit_alternatives": {
+   "plastic": {
+    "albedo": [
+     0.65,
+     0.65,
+     0.65
+    ],
+    "note": "白/浅色工程塑料外壳参考"
+   }
+  },
+  "notes": "白色/浅灰工程塑料外壳；7 张样本中 7 张以天空为参考（k=4.0），0 张以场景背景为参考（低置信）；albedo 由 3 张通过质量门的样本取中位数（置信度 high）。",
+  "per_image": [
+   {
+    "file": "旋翼无人机/01_2015_Dron_DJI_Phantom_3_Advanced.JPG.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "B_degradation",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.0629,
+     0.0797,
+     0.1039
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.309,
+    "texture_hf_ratio": 0.0114,
+    "target_lap_var": 456.36,
+    "sky_mean": 188.56,
+    "sky_std": 10.24,
+    "psd_slope": -2.896,
+    "cam_noise_dn": 1.33,
+    "mask_area_frac": 0.0095,
+    "target_median_srgb": [
+     102.0,
+     114.0,
+     129.0
+    ],
+    "target_median_linear": [
+     0.1329,
+     0.1683,
+     0.2195
+    ],
+    "sky_luma_lin": 0.5281,
+    "sky_mean_rgb": [
+     169.9,
+     192.0,
+     210.6
+    ],
+    "edge_align": 1.96,
+    "compactness": 0.835
+   },
+   {
+    "file": "旋翼无人机/02_DJI_Phantom_4Pro_04-2017_img3_in_flight.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.95,
+     0.95,
+     0.95
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 6.244,
+    "texture_hf_ratio": 0.01531,
+    "target_lap_var": 1914.43,
+    "sky_mean": 74.77,
+    "sky_std": 23.91,
+    "psd_slope": -3.163,
+    "cam_noise_dn": 5.11,
+    "mask_area_frac": 0.03,
+    "target_median_srgb": [
+     181.0,
+     177.0,
+     178.0
+    ],
+    "target_median_linear": [
+     0.4621,
+     0.4397,
+     0.4452
+    ],
+    "sky_luma_lin": 0.0712,
+    "sky_mean_rgb": [
+     65.2,
+     82.1,
+     29.5
+    ],
+    "edge_align": 2.46,
+    "compactness": 0.492
+   },
+   {
+    "file": "旋翼无人机/03_DJI_Phantom_4_in_Flight_March_2016.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.5005,
+     0.3128,
+     0.3656
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 1.403,
+    "texture_hf_ratio": 0.02545,
+    "target_lap_var": 2075.87,
+    "sky_mean": 106.45,
+    "sky_std": 12.88,
+    "psd_slope": -2.569,
+    "cam_noise_dn": 2.46,
+    "mask_area_frac": 0.0585,
+    "target_median_srgb": [
+     149.0,
+     120.0,
+     129.0
+    ],
+    "target_median_linear": [
+     0.3005,
+     0.1878,
+     0.2195
+    ],
+    "sky_luma_lin": 0.1501,
+    "sky_mean_rgb": [
+     85.2,
+     109.8,
+     136.5
+    ],
+    "edge_align": 5.85,
+    "compactness": 0.354
+   },
+   {
+    "file": "旋翼无人机/04_DJI_-_Drohne_Mavic_4_Pro.JPG.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.0765,
+     0.0765,
+     0.0783
+    ],
+    "albedo_k": 2.0,
+    "target_over_sky": 0.153,
+    "texture_hf_ratio": 0.02256,
+    "target_lap_var": 2275.65,
+    "sky_mean": 206.78,
+    "sky_std": 14.55,
+    "psd_slope": -2.698,
+    "cam_noise_dn": 1.33,
+    "mask_area_frac": 0.0842,
+    "target_median_srgb": [
+     87.0,
+     87.0,
+     88.0
+    ],
+    "target_median_linear": [
+     0.0953,
+     0.0953,
+     0.0976
+    ],
+    "sky_luma_lin": 0.6232,
+    "sky_mean_rgb": [
+     199.3,
+     206.9,
+     225.0
+    ],
+    "edge_align": 3.12,
+    "compactness": 0.517
+   },
+   {
+    "file": "旋翼无人机/05_DJI_-_Drohne_Mavic_Air_2.JPG.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.0877,
+     0.1109,
+     0.1021
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.437,
+    "texture_hf_ratio": 0.01825,
+    "target_lap_var": 1497.27,
+    "sky_mean": 147.67,
+    "sky_std": 9.08,
+    "psd_slope": -2.445,
+    "cam_noise_dn": 1.33,
+    "mask_area_frac": 0.1487,
+    "target_median_srgb": [
+     93.0,
+     104.0,
+     100.0
+    ],
+    "target_median_linear": [
+     0.1095,
+     0.1384,
+     0.1274
+    ],
+    "sky_luma_lin": 0.3121,
+    "sky_mean_rgb": [
+     93.3,
+     155.9,
+     225.5
+    ],
+    "edge_align": 7.75,
+    "compactness": 0.424
+   },
+   {
+    "file": "旋翼无人机/06_2019-03-23_-_Mavic_Pro_-3941.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.2524,
+     0.3425,
+     0.5163
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 0.531,
+    "texture_hf_ratio": 0.0239,
+    "target_lap_var": 1238.09,
+    "sky_mean": 153.08,
+    "sky_std": 17.12,
+    "psd_slope": -2.749,
+    "cam_noise_dn": 1.33,
+    "mask_area_frac": 0.1328,
+    "target_median_srgb": [
+     104.0,
+     120.0,
+     145.0
+    ],
+    "target_median_linear": [
+     0.1384,
+     0.1878,
+     0.2831
+    ],
+    "sky_luma_lin": 0.3428,
+    "sky_mean_rgb": [
+     163.0,
+     152.3,
+     131.3
+    ],
+    "edge_align": 6.34,
+    "compactness": 0.429
+   },
+   {
+    "file": "旋翼无人机/08_Quadcopter_camera_drone_in_flight.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.202,
+     0.152,
+     0.1013
+    ],
+    "albedo_k": 2.0,
+    "target_over_sky": 0.325,
+    "texture_hf_ratio": 0.0053,
+    "target_lap_var": 1227.89,
+    "sky_mean": 204.41,
+    "sky_std": 17.11,
+    "psd_slope": -2.796,
+    "cam_noise_dn": 1.33,
+    "mask_area_frac": 0.0172,
+    "target_median_srgb": [
+     138.0,
+     121.0,
+     100.0
+    ],
+    "target_median_linear": [
+     0.2542,
+     0.1912,
+     0.1274
+    ],
+    "sky_luma_lin": 0.629,
+    "sky_mean_rgb": [
+     199.4,
+     204.6,
+     213.7
+    ],
+    "edge_align": 11.27,
+    "compactness": 0.508
+   }
+  ]
+ },
+ "军舰": {
+  "albedo_linear": [
+   0.1827,
+   0.1346,
+   0.0956
+  ],
+  "albedo_p25": [
+   0.1736,
+   0.1141,
+   0.0675
+  ],
+  "albedo_p75": [
+   0.1919,
+   0.155,
+   0.1237
+  ],
+  "albedo_k": 4.0,
+  "albedo_confidence": "high",
+  "albedo_uncertainty": "+-35% (k model and camera tone curve)",
+  "albedo_n_high": 2,
+  "albedo_n_usable": 5,
+  "albedo_excluded": {
+   "backlit": 0,
+   "invalid_sky_or_clip": 0
+  },
+  "target_over_sky": 0.42,
+  "target_median_srgb": [
+   131.0,
+   125.0,
+   115.0
+  ],
+  "texture_hf_ratio": 0.04269,
+  "target_lap_var": 1920.1,
+  "sky_mean": 218.44,
+  "sky_std": 18.22,
+  "psd_slope": -1.817,
+  "cam_noise_dn": 1.89,
+  "samples": [
+   "02_US_Navy_110930-N-QN361-146_The_Arleigh_Burke-class_guided-missil.jpg",
+   "03_US_Navy_110928-N-TU221-257_The_Arleigh_Burke-class_guided-missil.jpg",
+   "07_US_Navy_030329-N-6141B-005_The_guided_missile_destroyer_USS_Arle.jpg",
+   "08_A_port_quarter_view_of_the_guided_missile_destroyer_ARLEIGH_BURK.jpg",
+   "09_US_Navy_090717-N-1655H-017_Boatswain_s_Mate_Seaman_Nelson_Norieg.jpg"
+  ],
+  "n_images": 5,
+  "n_albedo_samples": 2,
+  "n_sky_background": 5,
+  "image_titles": [
+   "File:US Navy 110930-N-QN361-146 The Arleigh Burke-class guided-missile destroyer USS Sterett (DDG 104) is underway conducting a composite training unit.jpg",
+   "File:US Navy 110928-N-TU221-257 The Arleigh Burke-class guided-missile destroyer USS Sterett (DDG 104) is underway conducting a composite training unit.jpg",
+   "File:US Navy 030329-N-6141B-005 The guided missile destroyer USS Arleigh Burke (DDG 51) conducts underway operations in support of Operation Iraqi Freedom.jpg",
+   "File:A port quarter view of the guided missile destroyer ARLEIGH BURKE (DDG-51) underway off the coast of New England prior to its commissioning - DPLA - ac89a08a3d6b1db0643c18087f6336e6.jpeg",
+   "File:US Navy 090717-N-1655H-017 Boatswain's Mate Seaman Nelson Noriega secures a lifeline aboard the guided-missile destroyer USS Arleigh Burke (DDG 51) as the ship is underway off the coast of South Africa.jpg"
+  ],
+  "usage": {
+   "dominant": "A_material",
+   "A_material": 3,
+   "B_degradation": 0,
+   "intermediate": 2,
+   "note": "近距离大目标照片（目标占画面 >= 5%）用于反推涂装颜色/蒙皮纹理；远距离小目标照片（<= 1.5%）只用于目标占比/退化链的定性对照，其 albedo 计入但置信度低。本类 3 张偏 A，0 张偏 B，2 张居中。"
+  },
+  "suggested_basis": "85% 实测有效反照率 + 15% 现有 MATERIALS 值（低置信时向现值收缩）",
+  "simkit_material": "painted_metal",
+  "simkit_albedo_current": [
+   0.22,
+   0.24,
+   0.28
+  ],
+  "simkit_albedo_delta": [
+   -0.032,
+   -0.09,
+   -0.157
+  ],
+  "simkit_albedo_ratio": 0.623,
+  "suggested_simkit_albedo": [
+   0.188,
+   0.15,
+   0.123
+  ],
+  "simkit_alternatives": {
+   "metal_bare": {
+    "albedo": [
+     0.62,
+     0.64,
+     0.66
+    ],
+    "note": "裸金属/复合材料蒙皮参考"
+   }
+  },
+  "notes": "海军灰（haze grey）低反照率涂装；5 张样本中 5 张以天空为参考（k=4.0），0 张以场景背景为参考（低置信）；albedo 由 2 张通过质量门的样本取中位数（置信度 high）。",
+  "per_image": [
+   {
+    "file": "军舰/02_US_Navy_110930-N-QN361-146_The_Arleigh_Burke-class_guided-missil.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.1521,
+     0.2,
+     0.2846
+    ],
+    "albedo_k": 1.2,
+    "target_over_sky": 0.235,
+    "texture_hf_ratio": 0.0677,
+    "target_lap_var": 1920.1,
+    "sky_mean": 232.22,
+    "sky_std": 21.97,
+    "psd_slope": -2.261,
+    "cam_noise_dn": 1.61,
+    "mask_area_frac": 0.0411,
+    "target_median_srgb": [
+     110.0,
+     125.0,
+     147.0
+    ],
+    "target_median_linear": [
+     0.1559,
+     0.2051,
+     0.2918
+    ],
+    "sky_luma_lin": 0.8544,
+    "sky_mean_rgb": [
+     229.8,
+     232.6,
+     232.1
+    ],
+    "edge_align": 3.15,
+    "compactness": 0.785
+   },
+   {
+    "file": "军舰/03_US_Navy_110928-N-TU221-257_The_Arleigh_Burke-class_guided-missil.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.0679,
+     0.0679,
+     0.0722
+    ],
+    "albedo_k": 2.0,
+    "target_over_sky": 0.136,
+    "texture_hf_ratio": 0.04269,
+    "target_lap_var": 888.95,
+    "sky_mean": 161.19,
+    "sky_std": 16.64,
+    "psd_slope": -1.417,
+    "cam_noise_dn": 1.33,
+    "mask_area_frac": 0.3067,
+    "target_median_srgb": [
+     63.0,
+     63.0,
+     65.0
+    ],
+    "target_median_linear": [
+     0.0497,
+     0.0497,
+     0.0529
+    ],
+    "sky_luma_lin": 0.3663,
+    "sky_mean_rgb": [
+     160.6,
+     161.2,
+     161.7
+    ],
+    "edge_align": 4.8,
+    "compactness": 0.388
+   },
+   {
+    "file": "军舰/07_US_Navy_030329-N-6141B-005_The_guided_missile_destroyer_USS_Arle.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.2011,
+     0.1755,
+     0.1519
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.726,
+    "texture_hf_ratio": 0.03961,
+    "target_lap_var": 4340.34,
+    "sky_mean": 130.61,
+    "sky_std": 38.35,
+    "psd_slope": -2.066,
+    "cam_noise_dn": 11.93,
+    "mask_area_frac": 0.2471,
+    "target_median_srgb": [
+     131.0,
+     123.0,
+     115.0
+    ],
+    "target_median_linear": [
+     0.227,
+     0.1981,
+     0.1714
+    ],
+    "sky_luma_lin": 0.2822,
+    "sky_mean_rgb": [
+     112.7,
+     133.0,
+     160.5
+    ],
+    "edge_align": 3.24,
+    "compactness": 0.42
+   },
+   {
+    "file": "军舰/08_A_port_quarter_view_of_the_guided_missile_destroyer_ARLEIGH_BURK.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.5672,
+     0.5106,
+     0.4632
+    ],
+    "albedo_k": 1.2,
+    "target_over_sky": 0.624,
+    "texture_hf_ratio": 0.04657,
+    "target_lap_var": 11790.12,
+    "sky_mean": 229.71,
+    "sky_std": 14.68,
+    "psd_slope": -0.124,
+    "cam_noise_dn": 17.24,
+    "mask_area_frac": 0.0782,
+    "target_median_srgb": [
+     196.0,
+     187.0,
+     179.0
+    ],
+    "target_median_linear": [
+     0.552,
+     0.4969,
+     0.4508
+    ],
+    "sky_luma_lin": 0.811,
+    "sky_mean_rgb": [
+     221.0,
+     231.6,
+     231.8
+    ],
+    "edge_align": 4.21,
+    "compactness": 0.684
+   },
+   {
+    "file": "军舰/09_US_Navy_090717-N-1655H-017_Boatswain_s_Mate_Seaman_Nelson_Norieg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.1644,
+     0.0936,
+     0.0393
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.42,
+    "texture_hf_ratio": 0.02301,
+    "target_lap_var": 884.12,
+    "sky_mean": 218.44,
+    "sky_std": 18.22,
+    "psd_slope": -1.817,
+    "cam_noise_dn": 1.89,
+    "mask_area_frac": 0.0455,
+    "target_median_srgb": [
+     182.0,
+     141.0,
+     94.0
+    ],
+    "target_median_linear": [
+     0.4678,
+     0.2664,
+     0.1119
+    ],
+    "sky_luma_lin": 0.7111,
+    "sky_mean_rgb": [
+     199.8,
+     221.5,
+     244.1
+    ],
+    "edge_align": 2.2,
+    "compactness": 0.539
+   }
+  ]
+ },
+ "民用船舶": {
+  "albedo_linear": [
+   0.1258,
+   0.0663,
+   0.0724
+  ],
+  "albedo_p25": [
+   0.102,
+   0.0507,
+   0.0535
+  ],
+  "albedo_p75": [
+   0.1757,
+   0.1109,
+   0.0993
+  ],
+  "albedo_k": 4.0,
+  "albedo_confidence": "high",
+  "albedo_uncertainty": "+-35% (k model and camera tone curve)",
+  "albedo_n_high": 5,
+  "albedo_n_usable": 7,
+  "albedo_excluded": {
+   "backlit": 0,
+   "invalid_sky_or_clip": 0
+  },
+  "target_over_sky": 0.394,
+  "target_median_srgb": [
+   108.0,
+   97.0,
+   94.0
+  ],
+  "texture_hf_ratio": 0.02992,
+  "target_lap_var": 2442.04,
+  "sky_mean": 168.77,
+  "sky_std": 16.22,
+  "psd_slope": -2.023,
+  "cam_noise_dn": 1.42,
+  "samples": [
+   "01_MSC_HARMONY_III_container_ship_2006_in_Port_Koper_SIKOP_2024_.jp.jpg",
+   "03_Container_ship_Reecon_Whale_on_Black_Sea_near_Constanta_Romania..jpg",
+   "04_Container_ship_Express_Black_Sea_in_Fremantle_Harbour_April_2026.jpg",
+   "05_Container_ship_Express_Black_Sea_in_Fremantle_Harbour_April_2026.jpg",
+   "06_White_SeaBaltic_Canal._Cruise_ship_A._S._Popov_P7120615_2200.jpg.jpg",
+   "07_Sea_angling_boat_and_container_ship_off_Broadstairs_Kent_1.jpg.jpg",
+   "09_Anthem_of_the_Seas_ship_2015_at_Liverpool_2021-6.jpg.jpg"
+  ],
+  "n_images": 7,
+  "n_albedo_samples": 5,
+  "n_sky_background": 7,
+  "image_titles": [
+   "File:MSC HARMONY III (container ship, 2006) in Port Koper (SIKOP, 2024).jpg",
+   "File:Container ship Reecon Whale on Black Sea near Constanța Romania.jpg",
+   "File:Container ship Express Black Sea in Fremantle Harbour, April 2026 02.jpg",
+   "File:Container ship Express Black Sea in Fremantle Harbour, April 2026 01.jpg",
+   "File:White Sea–Baltic Canal. Cruise ship A. S. Popov P7120615 2200.jpg",
+   "File:Sea angling boat and container ship off Broadstairs, Kent 1.jpg",
+   "File:Anthem of the Seas (ship, 2015) at Liverpool 2021-6.jpg"
+  ],
+  "usage": {
+   "dominant": "A_material",
+   "A_material": 4,
+   "B_degradation": 0,
+   "intermediate": 3,
+   "note": "近距离大目标照片（目标占画面 >= 5%）用于反推涂装颜色/蒙皮纹理；远距离小目标照片（<= 1.5%）只用于目标占比/退化链的定性对照，其 albedo 计入但置信度低。本类 4 张偏 A，0 张偏 B，3 张居中。"
+  },
+  "suggested_basis": "85% 实测有效反照率 + 15% 现有 MATERIALS 值（低置信时向现值收缩）",
+  "simkit_material": "painted_metal",
+  "simkit_albedo_current": [
+   0.22,
+   0.24,
+   0.28
+  ],
+  "simkit_albedo_delta": [
+   -0.08,
+   -0.148,
+   -0.176
+  ],
+  "simkit_albedo_ratio": 0.454,
+  "suggested_simkit_albedo": [
+   0.14,
+   0.092,
+   0.104
+  ],
+  "simkit_alternatives": {
+   "plastic": {
+    "albedo": [
+     0.65,
+     0.65,
+     0.65
+    ],
+    "note": "白/浅色工程塑料外壳参考"
+   }
+  },
+  "notes": "白色上层建筑 + 深色船体/甲板；7 张样本中 7 张以天空为参考（k=4.0），0 张以场景背景为参考（低置信）；albedo 由 5 张通过质量门的样本取中位数（置信度 high）。",
+  "per_image": [
+   {
+    "file": "民用船舶/01_MSC_HARMONY_III_container_ship_2006_in_Port_Koper_SIKOP_2024_.jp.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.1757,
+     0.1431,
+     0.1312
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.609,
+    "texture_hf_ratio": 0.08064,
+    "target_lap_var": 15809.02,
+    "sky_mean": 124.05,
+    "sky_std": 17.87,
+    "psd_slope": -1.989,
+    "cam_noise_dn": 2.65,
+    "mask_area_frac": 0.0548,
+    "target_median_srgb": [
+     108.0,
+     98.0,
+     94.0
+    ],
+    "target_median_linear": [
+     0.15,
+     0.1221,
+     0.1119
+    ],
+    "sky_luma_lin": 0.2133,
+    "sky_mean_rgb": [
+     76.4,
+     133.2,
+     174.3
+    ],
+    "edge_align": 2.52,
+    "compactness": 0.585
+   },
+   {
+    "file": "民用船舶/03_Container_ship_Reecon_Whale_on_Black_Sea_near_Constanta_Romania..jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.1062,
+     0.0899,
+     0.1215
+    ],
+    "albedo_k": 1.2,
+    "target_over_sky": 0.114,
+    "texture_hf_ratio": 0.02992,
+    "target_lap_var": 2074.78,
+    "sky_mean": 229.72,
+    "sky_std": 9.05,
+    "psd_slope": -2.325,
+    "cam_noise_dn": 1.33,
+    "mask_area_frac": 0.1795,
+    "target_median_srgb": [
+     90.0,
+     83.0,
+     96.0
+    ],
+    "target_median_linear": [
+     0.1022,
+     0.0865,
+     0.117
+    ],
+    "sky_luma_lin": 0.8021,
+    "sky_mean_rgb": [
+     228.7,
+     229.5,
+     231.0
+    ],
+    "edge_align": 6.17,
+    "compactness": 0.381
+   },
+   {
+    "file": "民用船舶/04_Container_ship_Express_Black_Sea_in_Fremantle_Harbour_April_2026.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.102,
+     0.0663,
+     0.0535
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.332,
+    "texture_hf_ratio": 0.01562,
+    "target_lap_var": 3461.56,
+    "sky_mean": 186.65,
+    "sky_std": 14.82,
+    "psd_slope": -1.391,
+    "cam_noise_dn": 1.42,
+    "mask_area_frac": 0.0362,
+    "target_median_srgb": [
+     126.0,
+     103.0,
+     93.0
+    ],
+    "target_median_linear": [
+     0.2086,
+     0.1356,
+     0.1095
+    ],
+    "sky_luma_lin": 0.5113,
+    "sky_mean_rgb": [
+     173.6,
+     188.5,
+     205.1
+    ],
+    "edge_align": 3.42,
+    "compactness": 0.824
+   },
+   {
+    "file": "民用船舶/05_Container_ship_Express_Black_Sea_in_Fremantle_Harbour_April_2026.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.0154,
+     0.01,
+     0.01
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.04,
+    "texture_hf_ratio": 0.0465,
+    "target_lap_var": 2297.71,
+    "sky_mean": 184.7,
+    "sky_std": 16.22,
+    "psd_slope": -1.958,
+    "cam_noise_dn": 1.42,
+    "mask_area_frac": 0.047,
+    "target_median_srgb": [
+     49.0,
+     34.0,
+     37.0
+    ],
+    "target_median_linear": [
+     0.0307,
+     0.016,
+     0.0185
+    ],
+    "sky_luma_lin": 0.4994,
+    "sky_mean_rgb": [
+     172.2,
+     186.4,
+     202.7
+    ],
+    "edge_align": 3.15,
+    "compactness": 0.63
+   },
+   {
+    "file": "民用船舶/06_White_SeaBaltic_Canal._Cruise_ship_A._S._Popov_P7120615_2200.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.1258,
+     0.1109,
+     0.0993
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.467,
+    "texture_hf_ratio": 0.02906,
+    "target_lap_var": 2442.04,
+    "sky_mean": 140.07,
+    "sky_std": 18.28,
+    "psd_slope": -2.072,
+    "cam_noise_dn": 1.42,
+    "mask_area_frac": 0.117,
+    "target_median_srgb": [
+     103.0,
+     97.0,
+     92.0
+    ],
+    "target_median_linear": [
+     0.1356,
+     0.1195,
+     0.107
+    ],
+    "sky_luma_lin": 0.2696,
+    "sky_mean_rgb": [
+     115.8,
+     144.3,
+     169.7
+    ],
+    "edge_align": 4.54,
+    "compactness": 0.524
+   },
+   {
+    "file": "民用船舶/07_Sea_angling_boat_and_container_ship_off_Broadstairs_Kent_1.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.2711,
+     0.0507,
+     0.0724
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.394,
+    "texture_hf_ratio": 0.01659,
+    "target_lap_var": 1946.61,
+    "sky_mean": 163.25,
+    "sky_std": 18.82,
+    "psd_slope": -2.158,
+    "cam_noise_dn": 10.15,
+    "mask_area_frac": 0.0505,
+    "target_median_srgb": [
+     175.0,
+     80.0,
+     95.0
+    ],
+    "target_median_linear": [
+     0.4287,
+     0.0802,
+     0.1144
+    ],
+    "sky_luma_lin": 0.3953,
+    "sky_mean_rgb": [
+     138.7,
+     167.7,
+     190.3
+    ],
+    "edge_align": 4.5,
+    "compactness": 0.62
+   },
+   {
+    "file": "民用船舶/09_Anthem_of_the_Seas_ship_2015_at_Liverpool_2021-6.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.3521,
+     0.3764,
+     0.3889
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 1.49,
+    "texture_hf_ratio": 0.06487,
+    "target_lap_var": 9280.64,
+    "sky_mean": 168.77,
+    "sky_std": 6.65,
+    "psd_slope": -2.023,
+    "cam_noise_dn": 1.99,
+    "mask_area_frac": 0.0174,
+    "target_median_srgb": [
+     199.0,
+     205.0,
+     208.0
+    ],
+    "target_median_linear": [
+     0.5711,
+     0.6105,
+     0.6308
+    ],
+    "sky_luma_lin": 0.4055,
+    "sky_mean_rgb": [
+     143.7,
+     173.5,
+     195.4
+    ],
+    "edge_align": 3.46,
+    "compactness": 0.697
+   }
+  ]
+ },
+ "地面车辆": {
+  "albedo_linear": [
+   0.0592,
+   0.0608,
+   0.0694
+  ],
+  "albedo_p25": [
+   0.0592,
+   0.0608,
+   0.0694
+  ],
+  "albedo_p75": [
+   0.0592,
+   0.0608,
+   0.0694
+  ],
+  "albedo_k": 2.0,
+  "albedo_confidence": "low",
+  "albedo_uncertainty": "+-35% (k model and camera tone curve)",
+  "albedo_n_high": 0,
+  "albedo_n_usable": 1,
+  "albedo_excluded": {
+   "backlit": 0,
+   "invalid_sky_or_clip": 7
+  },
+  "target_over_sky": 3.1719999999999997,
+  "target_median_srgb": [
+   143.0,
+   137.5,
+   132.5
+  ],
+  "texture_hf_ratio": 0.018455,
+  "target_lap_var": 2913.445,
+  "sky_mean": 76.795,
+  "sky_std": 37.675,
+  "psd_slope": -2.24,
+  "cam_noise_dn": 9.76,
+  "samples": [
+   "01_2020_Volkswagen_Golf_Style_1.5_Front.jpg.jpg",
+   "02_Volkswagen_Golf_Alltrack_2020_1X7A0289.jpg.jpg",
+   "03_Volkswagen_Golf_II_GTI_16V_IMG_9644.jpg.jpg",
+   "04_Volkswagen_Golf.jpg.jpg",
+   "05_Volkswagen_Golf_Alltrack_2020_DSC_7316.jpg.jpg",
+   "07_2017_Volkswagen_Golf_5G_MY17_1.4_SE_TSI_hatchback_2017-08-30_.jp.jpg",
+   "08_Volkswagen_Golf_VIII_R_1X7A7089.jpg.jpg",
+   "09_1991_Volkswagen_Golf_Ryder.jpg.jpg"
+  ],
+  "n_images": 8,
+  "n_albedo_samples": 1,
+  "n_sky_background": 7,
+  "image_titles": [
+   "File:2020 Volkswagen Golf Style 1.5 Front.jpg",
+   "File:Volkswagen Golf Alltrack (2020) 1X7A0289.jpg",
+   "File:Volkswagen Golf II GTI 16V IMG 9644.jpg",
+   "File:Лоутра Волвис, Volkswagen Golf.jpg",
+   "File:Volkswagen Golf Alltrack (2020) DSC 7316.jpg",
+   "File:2017 Volkswagen Golf (5G MY17) 1.4 SE TSI hatchback (2017-08-30).jpg",
+   "File:Volkswagen Golf VIII R 1X7A7089.jpg",
+   "File:1991 Volkswagen Golf Ryder.jpg"
+  ],
+  "usage": {
+   "dominant": "A_material",
+   "A_material": 3,
+   "B_degradation": 2,
+   "intermediate": 3,
+   "note": "近距离大目标照片（目标占画面 >= 5%）用于反推涂装颜色/蒙皮纹理；远距离小目标照片（<= 1.5%）只用于目标占比/退化链的定性对照，其 albedo 计入但置信度低。本类 3 张偏 A，2 张偏 B，3 张居中。"
+  },
+  "suggested_basis": "45% 实测有效反照率 + 55% 现有 MATERIALS 值（低置信时向现值收缩）",
+  "simkit_material": "painted_metal",
+  "simkit_albedo_current": [
+   0.22,
+   0.24,
+   0.28
+  ],
+  "simkit_albedo_delta": [
+   -0.072,
+   -0.081,
+   -0.095
+  ],
+  "simkit_albedo_ratio": 0.665,
+  "suggested_simkit_albedo": [
+   0.148,
+   0.159,
+   0.185
+  ],
+  "simkit_alternatives": {
+   "glass": {
+    "albedo": [
+     0.18,
+     0.22,
+     0.26
+    ],
+    "note": "车窗玻璃参考"
+   },
+   "rubber": {
+    "albedo": [
+     0.08,
+     0.08,
+     0.09
+    ],
+    "note": "轮胎/橡胶参考"
+   }
+  },
+  "notes": "车漆颜色分散，含玻璃与轮胎；8 张样本中 7 张以天空为参考（k=2.0），1 张以场景背景为参考（低置信）；albedo 由 1 张通过质量门的样本取中位数（置信度 low）。",
+  "per_image": [
+   {
+    "file": "地面车辆/01_2020_Volkswagen_Golf_Style_1.5_Front.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.95,
+     0.95,
+     0.95
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 8.803,
+    "texture_hf_ratio": 0.01916,
+    "target_lap_var": 3044.53,
+    "sky_mean": 54.22,
+    "sky_std": 21.96,
+    "psd_slope": null,
+    "cam_noise_dn": 5.4,
+    "mask_area_frac": 0.2534,
+    "target_median_srgb": [
+     148.0,
+     149.0,
+     144.0
+    ],
+    "target_median_linear": [
+     0.2961,
+     0.3005,
+     0.2789
+    ],
+    "sky_luma_lin": 0.0337,
+    "sky_mean_rgb": [
+     56.5,
+     53.9,
+     50.7
+    ],
+    "edge_align": 2.01,
+    "compactness": 0.202
+   },
+   {
+    "file": "地面车辆/02_Volkswagen_Golf_Alltrack_2020_1X7A0289.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "B_degradation",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.95,
+     0.95,
+     0.95
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 14.713,
+    "texture_hf_ratio": 0.00438,
+    "target_lap_var": 3773.93,
+    "sky_mean": 71.26,
+    "sky_std": 41.64,
+    "psd_slope": -2.495,
+    "cam_noise_dn": 7.96,
+    "mask_area_frac": 0.0118,
+    "target_median_srgb": [
+     208.0,
+     216.0,
+     227.0
+    ],
+    "target_median_linear": [
+     0.6308,
+     0.6867,
+     0.7682
+    ],
+    "sky_luma_lin": 0.0463,
+    "sky_mean_rgb": [
+     65.9,
+     72.8,
+     71.8
+    ],
+    "edge_align": 2.45,
+    "compactness": 0.758
+   },
+   {
+    "file": "地面车辆/03_Volkswagen_Golf_II_GTI_16V_IMG_9644.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "marginal",
+    "usage": "intermediate",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.95,
+     0.5612,
+     0.735
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 1.671,
+    "texture_hf_ratio": 0.03395,
+    "target_lap_var": 4078.37,
+    "sky_mean": 76.3,
+    "sky_std": 40.21,
+    "psd_slope": -2.279,
+    "cam_noise_dn": 14.29,
+    "mask_area_frac": 0.0325,
+    "target_median_srgb": [
+     154.0,
+     70.0,
+     80.0
+    ],
+    "target_median_linear": [
+     0.3231,
+     0.0612,
+     0.0802
+    ],
+    "sky_luma_lin": 0.0682,
+    "sky_mean_rgb": [
+     74.4,
+     75.3,
+     92.0
+    ],
+    "edge_align": 0.99,
+    "compactness": 0.538
+   },
+   {
+    "file": "地面车辆/04_Volkswagen_Golf.jpg.jpg",
+    "bg_kind": "scene",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "B_degradation",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.95,
+     0.7508,
+     0.259
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 1.256,
+    "texture_hf_ratio": 0.00533,
+    "target_lap_var": 3064.27,
+    "sky_mean": 108.69,
+    "sky_std": 58.8,
+    "psd_slope": -2.197,
+    "cam_noise_dn": 36.1,
+    "mask_area_frac": 0.0112,
+    "target_median_srgb": [
+     138.0,
+     120.0,
+     72.0
+    ],
+    "target_median_linear": [
+     0.2542,
+     0.1878,
+     0.0648
+    ],
+    "sky_luma_lin": 0.1563,
+    "sky_mean_rgb": [
+     118.2,
+     107.6,
+     91.8
+    ],
+    "edge_align": 3.15,
+    "compactness": 0.854
+   },
+   {
+    "file": "地面车辆/05_Volkswagen_Golf_Alltrack_2020_DSC_7316.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.0592,
+     0.0608,
+     0.0694
+    ],
+    "albedo_k": 2.0,
+    "target_over_sky": 0.124,
+    "texture_hf_ratio": 0.03147,
+    "target_lap_var": 2782.36,
+    "sky_mean": 199.89,
+    "sky_std": 37.71,
+    "psd_slope": -2.24,
+    "cam_noise_dn": 5.3,
+    "mask_area_frac": 0.3371,
+    "target_median_srgb": [
+     73.0,
+     74.0,
+     79.0
+    ],
+    "target_median_linear": [
+     0.0666,
+     0.0685,
+     0.0782
+    ],
+    "sky_luma_lin": 0.563,
+    "sky_mean_rgb": [
+     197.3,
+     200.3,
+     202.6
+    ],
+    "edge_align": 1.65,
+    "compactness": 0.652
+   },
+   {
+    "file": "地面车辆/07_2017_Volkswagen_Golf_5G_MY17_1.4_SE_TSI_hatchback_2017-08-30_.jp.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "marginal",
+    "usage": "A_material",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.95,
+     0.95,
+     0.95
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 3.699,
+    "texture_hf_ratio": 0.02137,
+    "target_lap_var": 1726.48,
+    "sky_mean": 77.29,
+    "sky_std": 21.12,
+    "psd_slope": -1.689,
+    "cam_noise_dn": 21.5,
+    "mask_area_frac": 0.437,
+    "target_median_srgb": [
+     131.0,
+     141.0,
+     151.0
+    ],
+    "target_median_linear": [
+     0.227,
+     0.2664,
+     0.3095
+    ],
+    "sky_luma_lin": 0.0707,
+    "sky_mean_rgb": [
+     82.7,
+     78.2,
+     52.6
+    ],
+    "edge_align": 2.54,
+    "compactness": 0.646
+   },
+   {
+    "file": "地面车辆/08_Volkswagen_Golf_VIII_R_1X7A7089.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.95,
+     0.95,
+     0.95
+    ],
+    "albedo_k": 2.0,
+    "target_over_sky": 2.645,
+    "texture_hf_ratio": 0.01144,
+    "target_lap_var": 2738.12,
+    "sky_mean": 120.73,
+    "sky_std": 37.64,
+    "psd_slope": -2.669,
+    "cam_noise_dn": 5.3,
+    "mask_area_frac": 0.0472,
+    "target_median_srgb": [
+     155.0,
+     181.0,
+     205.0
+    ],
+    "target_median_linear": [
+     0.3278,
+     0.4621,
+     0.6105
+    ],
+    "sky_luma_lin": 0.167,
+    "sky_mean_rgb": [
+     117.7,
+     121.3,
+     124.5
+    ],
+    "edge_align": 1.56,
+    "compactness": 0.726
+   },
+   {
+    "file": "地面车辆/09_1991_Volkswagen_Golf_Ryder.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.95,
+     0.95,
+     0.95
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 4.995,
+    "texture_hf_ratio": 0.01775,
+    "target_lap_var": 2670.44,
+    "sky_mean": 62.73,
+    "sky_std": 20.38,
+    "psd_slope": -2.055,
+    "cam_noise_dn": 11.56,
+    "mask_area_frac": 0.0416,
+    "target_median_srgb": [
+     125.0,
+     134.0,
+     121.0
+    ],
+    "target_median_linear": [
+     0.2051,
+     0.2384,
+     0.1912
+    ],
+    "sky_luma_lin": 0.0458,
+    "sky_mean_rgb": [
+     55.7,
+     65.1,
+     59.8
+    ],
+    "edge_align": 1.51,
+    "compactness": 0.324
+   }
+  ]
+ },
+ "军用地面车辆": {
+  "albedo_linear": [
+   0.026,
+   0.0341,
+   0.0251
+  ],
+  "albedo_p25": [
+   0.026,
+   0.0341,
+   0.0251
+  ],
+  "albedo_p75": [
+   0.026,
+   0.0341,
+   0.0251
+  ],
+  "albedo_k": 4.0,
+  "albedo_confidence": "low",
+  "albedo_uncertainty": "+-35% (k model and camera tone curve)",
+  "albedo_n_high": 1,
+  "albedo_n_usable": 1,
+  "albedo_excluded": {
+   "backlit": 0,
+   "invalid_sky_or_clip": 3
+  },
+  "target_over_sky": 5.894500000000001,
+  "target_median_srgb": [
+   242.0,
+   217.5,
+   173.5
+  ],
+  "texture_hf_ratio": 0.02046,
+  "target_lap_var": 2057.875,
+  "sky_mean": 103.445,
+  "sky_std": 19.65,
+  "psd_slope": -1.6815,
+  "cam_noise_dn": 8.709999999999999,
+  "samples": [
+   "03_M1-A1_Abrams_Fire.jpg.jpg",
+   "05_M2_Bradley_Fighting_Vehicle_Patrol_6537077_.jpg.jpg",
+   "06_M2_Bradley_Fighting_Vehicle_During_REFORGER_88.jpg.jpg",
+   "07_M1A2_Abrams_firing.jpg.jpg"
+  ],
+  "n_images": 4,
+  "n_albedo_samples": 1,
+  "n_sky_background": 4,
+  "image_titles": [
+   "File:M1-A1 Abrams Fire.jpg",
+   "File:M2 Bradley Fighting Vehicle Patrol (6537077).jpg",
+   "File:M2 Bradley Fighting Vehicle During REFORGER 88.jpg",
+   "File:M1A2 Abrams firing.jpg"
+  ],
+  "usage": {
+   "dominant": "A_material",
+   "A_material": 4,
+   "B_degradation": 0,
+   "intermediate": 0,
+   "note": "近距离大目标照片（目标占画面 >= 5%）用于反推涂装颜色/蒙皮纹理；远距离小目标照片（<= 1.5%）只用于目标占比/退化链的定性对照，其 albedo 计入但置信度低。本类 4 张偏 A，0 张偏 B，0 张居中。"
+  },
+  "suggested_basis": "45% 实测有效反照率 + 55% 现有 MATERIALS 值（低置信时向现值收缩）",
+  "simkit_material": "painted_metal",
+  "simkit_albedo_current": [
+   0.22,
+   0.24,
+   0.28
+  ],
+  "simkit_albedo_delta": [
+   -0.087,
+   -0.093,
+   -0.115
+  ],
+  "simkit_albedo_ratio": 0.601,
+  "suggested_simkit_albedo": [
+   0.133,
+   0.147,
+   0.165
+  ],
+  "simkit_alternatives": {
+   "metal_bare": {
+    "albedo": [
+     0.62,
+     0.64,
+     0.66
+    ],
+    "note": "裸金属/复合材料蒙皮参考"
+   }
+  },
+  "notes": "橄榄绿/沙色低反照率涂装；4 张样本中 4 张以天空为参考（k=4.0），0 张以场景背景为参考（低置信）；albedo 由 1 张通过质量门的样本取中位数（置信度 low）。",
+  "per_image": [
+   {
+    "file": "军用地面车辆/03_M1-A1_Abrams_Fire.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "high",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.026,
+     0.0341,
+     0.0251
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.126,
+    "texture_hf_ratio": 0.02038,
+    "target_lap_var": 3246.09,
+    "sky_mean": 154.18,
+    "sky_std": 10.2,
+    "psd_slope": -1.931,
+    "cam_noise_dn": 5.3,
+    "mask_area_frac": 0.1049,
+    "target_median_srgb": [
+     53.0,
+     61.0,
+     52.0
+    ],
+    "target_median_linear": [
+     0.0356,
+     0.0467,
+     0.0343
+    ],
+    "sky_luma_lin": 0.342,
+    "sky_mean_rgb": [
+     145.7,
+     155.2,
+     168.6
+    ],
+    "edge_align": 6.97,
+    "compactness": 0.459
+   },
+   {
+    "file": "军用地面车辆/05_M2_Bradley_Fighting_Vehicle_Patrol_6537077_.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "low",
+    "sky_ok": false,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.95,
+     0.95,
+     0.95
+    ],
+    "albedo_k": 1.6,
+    "target_over_sky": 15.62,
+    "texture_hf_ratio": 0.02054,
+    "target_lap_var": 4090.51,
+    "sky_mean": 72.86,
+    "sky_std": 29.22,
+    "psd_slope": -1.432,
+    "cam_noise_dn": 17.62,
+    "mask_area_frac": 0.0739,
+    "target_median_srgb": [
+     249.0,
+     252.0,
+     253.0
+    ],
+    "target_median_linear": [
+     0.9473,
+     0.9734,
+     0.9823
+    ],
+    "sky_luma_lin": 0.0623,
+    "sky_mean_rgb": [
+     73.4,
+     73.2,
+     65.9
+    ],
+    "edge_align": 1.96,
+    "compactness": 0.581
+   },
+   {
+    "file": "军用地面车辆/06_M2_Bradley_Fighting_Vehicle_During_REFORGER_88.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.95,
+     0.95,
+     0.95
+    ],
+    "albedo_k": 2.0,
+    "target_over_sky": 8.198,
+    "texture_hf_ratio": 0.03009,
+    "target_lap_var": 224.53,
+    "sky_mean": 88.15,
+    "sky_std": 29.1,
+    "psd_slope": -2.5,
+    "cam_noise_dn": 12.12,
+    "mask_area_frac": 0.244,
+    "target_median_srgb": [
+     235.0,
+     229.0,
+     230.0
+    ],
+    "target_median_linear": [
+     0.8308,
+     0.7835,
+     0.7913
+    ],
+    "sky_luma_lin": 0.0968,
+    "sky_mean_rgb": [
+     91.2,
+     87.7,
+     84.4
+    ],
+    "edge_align": 2.06,
+    "compactness": 0.672
+   },
+   {
+    "file": "军用地面车辆/07_M1A2_Abrams_firing.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": false,
+    "albedo_linear": [
+     0.95,
+     0.95,
+     0.4831
+    ],
+    "albedo_k": 2.0,
+    "target_over_sky": 3.591,
+    "texture_hf_ratio": 0.01126,
+    "target_lap_var": 869.66,
+    "sky_mean": 118.74,
+    "sky_std": 2.4,
+    "psd_slope": -1.175,
+    "cam_noise_dn": 1.51,
+    "mask_area_frac": 0.2646,
+    "target_median_srgb": [
+     253.0,
+     206.0,
+     117.0
+    ],
+    "target_median_linear": [
+     0.9823,
+     0.6172,
+     0.1779
+    ],
+    "sky_luma_lin": 0.1841,
+    "sky_mean_rgb": [
+     118.9,
+     118.2,
+     122.0
+    ],
+    "edge_align": 4.16,
+    "compactness": 0.561
+   }
+  ]
+ },
+ "杂项": {
+  "albedo_linear": [
+   0.1465,
+   0.1187,
+   0.085
+  ],
+  "albedo_p25": [
+   0.0783,
+   0.0643,
+   0.0475
+  ],
+  "albedo_p75": [
+   0.3692,
+   0.3553,
+   0.3297
+  ],
+  "albedo_k": 4.0,
+  "albedo_confidence": "medium",
+  "albedo_uncertainty": "+-35% (k model and camera tone curve)",
+  "albedo_n_high": 0,
+  "albedo_n_usable": 3,
+  "albedo_excluded": {
+   "backlit": 0,
+   "invalid_sky_or_clip": 0
+  },
+  "target_over_sky": 0.491,
+  "target_median_srgb": [
+   129.0,
+   117.0,
+   100.0
+  ],
+  "texture_hf_ratio": 0.03274,
+  "target_lap_var": 781.37,
+  "sky_mean": 163.93,
+  "sky_std": 22.49,
+  "psd_slope": -1.791,
+  "cam_noise_dn": 2.74,
+  "samples": [
+   "01_BarreiraNewJersey.JPG.jpg",
+   "05_Empty_lot_with_chain_link_fence.jpg.jpg",
+   "07_Chainlink_fence_Fence_Barrier.jpg.jpg"
+  ],
+  "n_images": 3,
+  "n_albedo_samples": 3,
+  "n_sky_background": 3,
+  "image_titles": [
+   "File:BarreiraNewJersey.JPG",
+   "File:Empty lot with chain link fence.jpg",
+   "File:Chainlink fence Fence Barrier.jpg"
+  ],
+  "usage": {
+   "dominant": "A_material",
+   "A_material": 1,
+   "B_degradation": 1,
+   "intermediate": 1,
+   "note": "近距离大目标照片（目标占画面 >= 5%）用于反推涂装颜色/蒙皮纹理；远距离小目标照片（<= 1.5%）只用于目标占比/退化链的定性对照，其 albedo 计入但置信度低。本类 1 张偏 A，1 张偏 B，1 张居中。"
+  },
+  "suggested_basis": "70% 实测有效反照率 + 30% 现有 MATERIALS 值（低置信时向现值收缩）",
+  "simkit_material": "painted_metal",
+  "simkit_albedo_current": [
+   0.22,
+   0.24,
+   0.28
+  ],
+  "simkit_albedo_delta": [
+   -0.051,
+   -0.085,
+   -0.136
+  ],
+  "simkit_albedo_ratio": 0.632,
+  "suggested_simkit_albedo": [
+   0.169,
+   0.155,
+   0.144
+  ],
+  "simkit_alternatives": {
+   "concrete": {
+    "albedo": [
+     0.45,
+     0.44,
+     0.42
+    ],
+    "note": "混凝土结构参考"
+   },
+   "metal_bare": {
+    "albedo": [
+     0.62,
+     0.64,
+     0.66
+    ],
+    "note": "裸金属/复合材料蒙皮参考"
+   },
+   "foliage": {
+    "albedo": [
+     0.16,
+     0.28,
+     0.12
+    ],
+    "note": "植被参考"
+   }
+  },
+  "notes": "混凝土隔离墩/金属围栏/植被/机器人混合；3 张样本中 3 张以天空为参考（k=4.0），0 张以场景背景为参考（低置信）；albedo 由 3 张通过质量门的样本取中位数（置信度 medium）。",
+  "per_image": [
+   {
+    "file": "杂项/01_BarreiraNewJersey.JPG.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "A_material",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": false,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.5919,
+     0.5919,
+     0.5745
+    ],
+    "albedo_k": 2.0,
+    "target_over_sky": 1.184,
+    "texture_hf_ratio": 0.03274,
+    "target_lap_var": 781.37,
+    "sky_mean": 134.57,
+    "sky_std": 22.49,
+    "psd_slope": -1.377,
+    "cam_noise_dn": 15.45,
+    "mask_area_frac": 0.1243,
+    "target_median_srgb": [
+     148.0,
+     148.0,
+     146.0
+    ],
+    "target_median_linear": [
+     0.2961,
+     0.2961,
+     0.2874
+    ],
+    "sky_luma_lin": 0.2502,
+    "sky_mean_rgb": [
+     133.7,
+     135.0,
+     132.7
+    ],
+    "edge_align": 2.32,
+    "compactness": 0.228
+   },
+   {
+    "file": "杂项/05_Empty_lot_with_chain_link_fence.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "marginal",
+    "usage": "B_degradation",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.01,
+     0.01,
+     0.01
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.01,
+    "texture_hf_ratio": 0.16546,
+    "target_lap_var": 11051.11,
+    "sky_mean": 205.36,
+    "sky_std": 23.72,
+    "psd_slope": -2.157,
+    "cam_noise_dn": 2.74,
+    "mask_area_frac": 0.0075,
+    "target_median_srgb": [
+     16.0,
+     18.0,
+     18.0
+    ],
+    "target_median_linear": [
+     0.0052,
+     0.006,
+     0.006
+    ],
+    "sky_luma_lin": 0.5897,
+    "sky_mean_rgb": [
+     183.8,
+     209.3,
+     230.7
+    ],
+    "edge_align": 1.8,
+    "compactness": 0.78
+   },
+   {
+    "file": "杂项/07_Chainlink_fence_Fence_Barrier.jpg.jpg",
+    "bg_kind": "sky",
+    "mask_source": "auto_bbox",
+    "mask_quality": "ok",
+    "usage": "intermediate",
+    "confidence": "medium",
+    "sky_ok": true,
+    "sky_clear": true,
+    "backlit": false,
+    "region_sky_like": false,
+    "albedo_valid": true,
+    "albedo_linear": [
+     0.1465,
+     0.1187,
+     0.085
+    ],
+    "albedo_k": 4.0,
+    "target_over_sky": 0.491,
+    "texture_hf_ratio": 0.00119,
+    "target_lap_var": 140.73,
+    "sky_mean": 163.93,
+    "sky_std": 10.24,
+    "psd_slope": -1.791,
+    "cam_noise_dn": 1.61,
+    "mask_area_frac": 0.0185,
+    "target_median_srgb": [
+     129.0,
+     117.0,
+     100.0
+    ],
+    "target_median_linear": [
+     0.2195,
+     0.1779,
+     0.1274
+    ],
+    "sky_luma_lin": 0.3746,
+    "sky_mean_rgb": [
+     151.6,
+     165.9,
+     181.1
+    ],
+    "edge_align": 1.52,
+    "compactness": 0.488
+   }
+  ],
+  "per_material": {
+   "barrier": {
+    "material": "concrete",
+    "label": "隔离墩/护栏",
+    "albedo_linear": [
+     0.1465,
+     0.1187,
+     0.085
+    ],
+    "simkit_albedo_current": [
+     0.45,
+     0.44,
+     0.42
+    ],
+    "suggested_simkit_albedo": [
+     0.313,
+     0.295,
+     0.269
+    ],
+    "samples": [
+     "07_Chainlink_fence_Fence_Barrier.jpg.jpg"
+    ]
+   },
+   "fence": {
+    "material": "metal_bare",
+    "label": "金属围栏",
+    "albedo_linear": [
+     0.0783,
+     0.0644,
+     0.0475
+    ],
+    "simkit_albedo_current": [
+     0.62,
+     0.64,
+     0.66
+    ],
+    "suggested_simkit_albedo": [
+     0.376,
+     0.381,
+     0.384
+    ],
+    "samples": [
+     "05_Empty_lot_with_chain_link_fence.jpg.jpg",
+     "07_Chainlink_fence_Fence_Barrier.jpg.jpg"
+    ]
+   }
+  }
+ }
+}

@@ -37,11 +37,41 @@ MANIFEST = os.path.abspath(MANIFEST)
 CFG_PATH = os.path.abspath(CFG_PATH)
 sys.path.insert(0, PROJECT_ROOT)
 
+from simkit import camera as sk_camera  # noqa: E402
 from simkit import scene as sk_scene  # noqa: E402
 
 cfg = sk_scene.load_config(CFG_PATH)
 opt = cfg.get("optical", {})
 CAM_KEY = opt.get("camera_key", "optical")          # the sensor this renderer draws
+
+# Camera defects (optical.camera.*): sensor noise, vignetting, chromatic
+# aberration, diffraction and flare.  They run on the finished 8-bit frame,
+# after Cycles, so they cannot move geometry, lighting or labels.  The physical
+# electron model (optical.sensor) already owns the detector and the lens PSF
+# when it is enabled, so its stages are skipped here instead of counted twice.
+CAMERA_SKIP = ("sensor", "diffraction") if (opt.get("sensor") or {}).get("enabled") else ()
+CAMERA_POST = sk_camera.has_effect(cfg, skip=CAMERA_SKIP)
+
+
+def read_rendered_rgb8(path):
+    """Exact 8-bit copy of the PNG Blender just wrote.
+
+    Loading with the Non-Color colorspace returns the stored bytes divided by
+    255 instead of a display-referred decode, so the postprocess starts from
+    exactly the pixels in the file and the only quantisation in the chain is
+    the final re-encode.
+    """
+    image = bpy.data.images.load(path, check_existing=False)
+    try:
+        image.colorspace_settings.name = "Non-Color"
+        width, height = (int(v) for v in image.size)
+        channels = int(image.channels)
+        pixels = np.empty(width * height * channels, np.float32)
+        image.pixels.foreach_get(pixels)
+        frame = pixels.reshape(height, width, channels)[::-1, :, :3]
+    finally:
+        bpy.data.images.remove(image)
+    return np.rint(np.clip(frame, 0.0, 1.0) * 255.0).astype(np.uint8)
 
 
 def _views():
@@ -86,11 +116,36 @@ def make_material(mat_name):
     bsdf = m.node_tree.nodes.get("Principled BSDF")
     rgb = spec["albedo"]
     bsdf.inputs["Base Color"].default_value = (rgb[0], rgb[1], rgb[2], 1.0)
-    bsdf.inputs["Roughness"].default_value = 0.25 if mat_name in ("painted_metal", "glass") else 0.65
-    bsdf.inputs["Metallic"].default_value = 0.85 if mat_name == "metal_bare" else 0.1
+    # Reference photos show a broad, WEAK specular lobe on painted airframes; the
+    # old 0.25 roughness / 0.1 metallic pair produced a tight, plastic highlight.
+    # Measured guidance from the reference set: painted surfaces sit near
+    # roughness 0.45-0.60 with metallic 0-0.05; bare metal keeps its own sharper
+    # response.
+    painted = mat_name == "painted_metal" or mat_name.startswith("paint_")
     if mat_name == "glass":
-        bsdf.inputs["Roughness"].default_value = 0.05
-        bsdf.inputs["Metallic"].default_value = 0.0
+        roughness, metallic = 0.05, 0.0
+    elif mat_name == "metal_bare":
+        roughness, metallic = 0.30, 0.85
+    elif mat_name == "chaff_cloud":
+        # strips scatter diffusely; a mirror sphere is the wrong look entirely
+        roughness, metallic = 0.90, 0.0
+    elif painted:
+        roughness, metallic = 0.50, 0.02
+    else:
+        roughness, metallic = 0.65, 0.10
+    bsdf.inputs["Roughness"].default_value = roughness
+    bsdf.inputs["Metallic"].default_value = metallic
+    # Self-emission. A burning flare is the brightest thing in a visible frame;
+    # shading it like a grey ball made the decoy look like a modelling mistake.
+    em = spec.get("emissive")
+    if em:
+        nt = m.node_tree
+        emit = nt.nodes.new("ShaderNodeEmission")
+        emit.inputs["Color"].default_value = (float(em[0]), float(em[1]),
+                                             float(em[2]), 1.0)
+        emit.inputs["Strength"].default_value = float(em[3])
+        out = nt.nodes.get("Material Output")
+        nt.links.new(emit.outputs["Emission"], out.inputs["Surface"])
     return m
 
 
@@ -137,6 +192,62 @@ def gradient_sky(sc, bg, nt, opt, sun_elev_deg, cloud):
     bg2.inputs["Strength"].default_value = float(gain)
     nt.links.new(bg2.outputs["Background"], out.inputs["Surface"])
     return bg2
+
+
+def environment_sky(nt, opt, cfg):
+    """Photographic sky: an equirectangular environment map instead of Nishita.
+
+    A measured sky/HDRI plate carries the clouds, haze and sun position of the
+    real scene, which neither the Nishita model nor a two-colour gradient can
+    reproduce. optical.sky_image accepts .hdr/.exr (float) and .png/.jpg
+    (8-bit); a relative path is resolved against the scene file's directory.
+    The configured optical.sky_strength remains the exposure gain.
+    """
+    path = str(opt.get("sky_image"))
+    if not os.path.isabs(path):
+        base = cfg.get("_base_dir") or os.path.dirname(os.path.abspath(CFG_PATH))
+        path = os.path.join(base, path)
+    path = os.path.normpath(path)
+    if not os.path.isfile(path):
+        raise RuntimeError("optical.sky_image not found: %s" % path)
+    extension = os.path.splitext(path)[1].lower()
+    # check_existing lets all views share one image datablock; a corrupt file
+    # must stop the render here instead of leaving a silently black world.
+    try:
+        image = bpy.data.images.load(path, check_existing=True)
+    except Exception as exc:
+        raise RuntimeError("optical.sky_image could not be loaded: %s (%s)"
+                           % (path, exc)) from exc
+    width, height = (int(v) for v in image.size)
+    if width <= 0 or height <= 0:
+        raise RuntimeError("optical.sky_image has no readable pixels: %s" % path)
+    # An 8-bit PNG/JPG is sRGB-encoded; a float HDR/EXR is already linear.
+    # State it explicitly so altered colour-management preferences cannot shift
+    # the sky radiance.
+    try:
+        image.colorspace_settings.name = (
+            "Linear Rec.709" if extension in (".hdr", ".exr") else "sRGB")
+    except (TypeError, AttributeError):
+        pass
+    for node in list(nt.nodes):
+        nt.nodes.remove(node)
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    coord.location = (-820, 0)
+    tex = nt.nodes.new("ShaderNodeTexEnvironment")
+    tex.location = (-560, 0)
+    tex.image = image
+    tex.projection = "EQUIRECTANGULAR"
+    bg = nt.nodes.new("ShaderNodeBackground")
+    bg.location = (-260, 0)
+    bg.inputs["Strength"].default_value = float(opt.get("sky_strength", 1.0))
+    out = nt.nodes.new("ShaderNodeOutputWorld")
+    out.location = (-40, 0)
+    # Generated coordinates are the world/view direction for a World shader,
+    # which is what an equirectangular lookup expects.
+    nt.links.new(coord.outputs["Generated"], tex.inputs["Vector"])
+    nt.links.new(tex.outputs["Color"], bg.inputs["Color"])
+    nt.links.new(bg.outputs["Background"], out.inputs["Surface"])
+    return bg
 
 
 def add_ground_detail(m, mat_name, scale_m=45.0, contrast=0.22, bump=0.25):
@@ -196,11 +307,132 @@ def add_ground_detail(m, mat_name, scale_m=45.0, contrast=0.22, bump=0.25):
     return m
 
 
+def add_ground_backdrop(m, path, span_m=300.0, aligned=False, offset=(0.0, 0.0),
+                        span_y_m=None):
+    """Wrap a collected real photograph over the ground plane.
+
+    A look-down dataset shows the GROUND, not the sky, so optical.sky_image has
+    no effect on it at all -- the frame came back as one uniform grey field even
+    with a forest plate selected. Mapping the plate onto the ground material is
+    what actually puts the simulated target on real terrain.
+
+    Object coordinates, not UV: add_mesh_object builds meshes with from_pydata,
+    which creates no UV layer, so a UV-mapped image samples a single texel.
+    """
+    if not path or not os.path.isfile(path):
+        return m
+    try:
+        img = bpy.data.images.load(path, check_existing=True)
+    except Exception:
+        return m
+    nt = m.node_tree
+    bsdf = nt.nodes.get("Principled BSDF")
+    if bsdf is None:
+        return m
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    coord.location = (-1100, 300)
+    mapping = nt.nodes.new("ShaderNodeMapping")
+    mapping.location = (-900, 300)
+    # One tile every span_m metres: scale is in the shader, so the pattern stays
+    # world-fixed and consecutive frames see the same terrain sliding past.
+    inv = 1.0 / max(float(span_m), 1.0)
+    # Anisotropic on purpose: the frame is 4:3, so a plate that covers span_m
+    # horizontally covers span_m*3/4 vertically. Scaling both axes equally left
+    # the photo 25% too tall and a click landed 53 px off in v.
+    inv_y = 1.0 / max(float(span_y_m or span_m), 1.0)
+    mapping.inputs["Scale"].default_value = (inv, inv_y, inv)
+    if aligned:
+        # Manual placement: the operator clicked a pixel, so the mapping must be
+        # exactly invertible -- image u,v <-> world x,y with no rotation and no
+        # random offset. A rotated or shifted tile would put the vehicle
+        # somewhere other than where they pointed.
+        mapping.inputs["Location"].default_value = (float(offset[0]), float(offset[1]), 0.0)
+        mapping.inputs["Rotation"].default_value = (0.0, 0.0, 0.0)
+    else:
+        # Rotate and offset the tile so the grid does not line up with the frame:
+        # a plain axis-aligned repeat reads as an obvious tiling seam at 1 km.
+        try:
+            import random as _rnd
+            _r = _rnd.Random(int(round(span_m)))
+            mapping.inputs["Rotation"].default_value = (0.0, 0.0,
+                                                        _r.uniform(0.0, 6.283))
+            mapping.inputs["Location"].default_value = (_r.uniform(0.0, 1.0),
+                                                        _r.uniform(0.0, 1.0), 0.0)
+        except Exception:
+            pass
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.location = (-700, 300)
+    tex.image = img
+    tex.extension = "REPEAT"
+    tex.interpolation = "Linear"
+    nt.links.new(coord.outputs["Object"], mapping.inputs["Vector"])
+    nt.links.new(mapping.outputs["Vector"], tex.inputs["Vector"])
+    nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    # A photograph already carries the detail the procedural noise was faking.
+    try:
+        bsdf.inputs["Roughness"].default_value = 0.92
+        bsdf.inputs["Metallic"].default_value = 0.0
+    except Exception:
+        pass
+    return m
+
+
+def add_skin_texture(m):
+    """Connect the baked skin plate straight into Base Color.
+
+    This is deliberately the simplest wiring: a minimal Blender repro (a cube
+    with a checkerboard, 128 px, Cycles) rendered the pattern with exactly this
+    node chain, while the earlier coordinate-mapping + multiply chain rendered
+    nothing at all. The plate already holds albedo x modulation, so there is no
+    second node to get wrong.
+    """
+    opt = (cfg.get("optical") or {})
+    path = opt.get("skin_patch")
+    if not path or not os.path.isfile(path):
+        return m
+    try:
+        img = bpy.data.images.load(path, check_existing=True)
+    except Exception:
+        return m
+    try:
+        # The plate stores LINEAR albedo x modulation. Read as sRGB, Blender
+        # gamma-decodes it and the airframe came out far too dark (72 vs 95 DN).
+        img.colorspace_settings.name = "Non-Color"
+    except Exception:
+        pass
+    nt = m.node_tree
+    bsdf = nt.nodes.get("Principled BSDF")
+    if bsdf is None:
+        return m
+    # GENERATED coordinates, not UV. add_mesh_object builds the mesh with
+    # from_pydata, which creates no UV layer, so an image texture sampled one
+    # texel and the whole plate collapsed to a flat colour. Generated
+    # coordinates are normalised over the bounding box and exist on any mesh --
+    # which is why the minimal repro (a primitive cube, which does ship a UV
+    # map) rendered while the pipeline did not.
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    coord.location = (-1100, -200)
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.location = (-700, -200)
+    tex.image = img
+    tex.interpolation = "Linear"
+    tex.extension = "REPEAT"
+    nt.links.new(coord.outputs["Generated"], tex.inputs["Vector"])
+    nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    return m
+
+
 def add_mesh_object(name, mesh, mat_name, location, yaw_deg):
     me = bpy.data.meshes.new(name)
     me.from_pydata([tuple(v) for v in mesh.v], [], [tuple(f) for f in mesh.f])
     me.validate()
     me.update()
+    # Smooth shading. from_pydata leaves every polygon flat, which renders the
+    # airframe as a faceted polyhedron -- the strongest "this is a cheap model"
+    # cue in the frame. Real skins are continuous surfaces; interpolating the
+    # normals costs nothing and removes the faceting.
+    for poly in me.polygons:
+        poly.use_smooth = True
     ob = bpy.data.objects.new(name, me)
     ob.location = Vector(tuple(float(x) for x in location))
     ob.rotation_euler = (0.0, 0.0, math.radians(float(yaw_deg)))
@@ -295,7 +527,16 @@ def build_scene():
         gm = plane(float(g.get("size", 120.0)), float(g.get("z", 0.0)), 1, 1)
         gmat = g.get("mat", "asphalt")
         gob = add_mesh_object("ground", gm, gmat, (0, 0, 0), 0.0)
-        if opt.get("ground_detail", True) and gob.data.materials:
+        _bd = g.get("backdrop")
+        if _bd and gob.data.materials:
+            # Real plate wins over the procedural noise: the noise exists only to
+            # stop the plane reading as one flat field.
+            add_ground_backdrop(gob.data.materials[0], _bd,
+                                float(g.get("backdrop_span_m", 300.0)),
+                                bool(g.get("backdrop_aligned")),
+                                tuple(g.get("backdrop_offset") or (0.0, 0.0)),
+                                g.get("backdrop_span_y_m"))
+        elif opt.get("ground_detail", True) and gob.data.materials:
             is_sea = str(g.get("type", "ground")).lower() in ("sea", "ocean", "water")
             # Feature size has to be small compared with what the lens resolves:
             # a 2.2 deg seeker covers ~76 m at 2 km, so 45 m "patches" read as
@@ -318,8 +559,26 @@ def build_scene():
         ob = add_mesh_object(spec.get("name", "obj"), m, spec.get("mat", "painted_metal"),
                              spec.get("pos", (0, 0, 0)), spec.get("rot", 0.0))
         ob.pass_index = object_index+1
+        # Optional subdivision. The models are low-poly (a fighter is ~900
+        # faces), so smooth shading interpolates between very large facets and
+        # the surface still reads as a few big planes. A subdivision pass adds
+        # geometry for the normals to vary over; it is opt-in because it also
+        # rounds genuine hard edges.
+        subdiv = int(spec.get("subsurf") or 0)
+        if subdiv > 0:
+            try:
+                mod = ob.modifiers.new("subsurf", type="SUBSURF")
+                mod.levels = subdiv
+                mod.render_levels = subdiv
+            except Exception:
+                pass
         from blender.material_helpers import apply_source_materials
         material_report = apply_source_materials(ob, m, spec, cfg.get("_base_dir", "."))
+        base_mat = str(spec.get("mat", "painted_metal"))
+        if base_mat == "painted_metal" or base_mat.startswith("paint_"):
+            for slot in ob.data.materials:
+                if slot is not None:
+                    add_skin_texture(slot)
         meshes[spec.get("name", "obj")] = dict(ob=ob, size=sizes, lo=lo, hi=hi,
                                                label=bool(spec.get("label", True)),
                                                material_report=material_report)
@@ -332,7 +591,7 @@ def build_scene():
     # Blender's default clip range is 0.1..100 m, which silently clips any
     # target farther away than 100 m. Size the frustum to the actual scene, and
     # include the wide view, which reaches farther off-axis than the narrow one.
-    cam0 = cfg["sensors"][CAM_KEY]
+    cam0 = (cfg.get("sensors") or {}).get(CAM_KEY) or {}
     reach = 1.0
     for _n, _m in meshes.items():
         for _c in (_m["lo"], _m["hi"]):
@@ -354,11 +613,23 @@ def build_scene():
                base_bg=float(bg.inputs[1].default_value),
                base_turb=float(getattr(sky, "turbidity", 2.5)),
                grad_bg=None, grad_base=0.0)
+    # A photographic sky wins over both the Nishita model and the gradient: the
+    # caller supplied the actual sky it wants behind the target.
+    use_env = bool(opt.get("sky_image"))
     # An air-only frame has nothing but sky in it, so the sky is the picture. See
     # gradient_sky() for why the Nishita model is not used there.
-    use_grad = (str(opt.get("sky_mode", "")).lower() == "gradient"
-                or not cfg.get("ground", {}).get("enabled", True))
-    if use_grad:
+    use_grad = (not use_env and
+                (str(opt.get("sky_mode", "")).lower() == "gradient"
+                 or not cfg.get("ground", {}).get("enabled", True)))
+    if use_env:
+        env_bg = environment_sky(nt, opt, cfg)
+        env["env_bg"] = env_bg
+        env["bg"] = env_bg
+        env["base_bg"] = float(env_bg.inputs["Strength"].default_value)
+        # environment_sky() rebuilt the world node tree, so the Nishita node is
+        # gone; holding a stale reference would be a segfault, not an exception
+        env["sky"] = None
+    elif use_grad:
         g = gradient_sky(sc, bg, nt, opt, float(cfg["sun"].get("elev_deg", 35.0)), 0.2)
         env["grad_bg"] = g
         env["grad_base"] = float(g.inputs["Strength"].default_value)
@@ -505,7 +776,9 @@ def main():
             if nm in meshes:
                 ob = meshes[nm]["ob"]
                 ob.location = Vector(tuple(float(x) for x in pose["pos"]))
-                ob.rotation_euler = (0.0, 0.0, math.radians(float(pose["yaw"])))
+                ob.rotation_euler = (math.radians(float(pose.get("roll", 0))),
+                                     -math.radians(float(pose.get("pitch", 0))),
+                                     math.radians(float(pose["yaw"])))
         for v in VIEWS:
             pv = pose_for(fr0, v)
             if pv:
@@ -540,6 +813,12 @@ def main():
                 # overcast flattens and dims the gradient instead of tinting it
                 env["grad_bg"].inputs["Strength"].default_value = (
                     env["grad_base"] * (1.0 - 0.40 * min(max(cloud, 0.0), 1.0)))
+            elif env.get("env_bg") is not None:
+                # A photographic sky already carries its own cloud field, so the
+                # weather model must not modulate it again; sky_strength is the
+                # plate's exposure and stays fixed. Auto exposure still adapts
+                # the film to the actual frame.
+                env["env_bg"].inputs["Strength"].default_value = env["base_bg"]
             else:
                 env["bg"].inputs[1].default_value = env["base_bg"] * (0.55 + 1.2 * cloud)
             if env.get("sky") is not None:
@@ -554,7 +833,9 @@ def main():
             if name in meshes:
                 ob = meshes[name]["ob"]
                 ob.location = Vector(tuple(float(x) for x in pose["pos"]))
-                ob.rotation_euler = (0.0, 0.0, math.radians(float(pose["yaw"])))
+                ob.rotation_euler = (math.radians(float(pose.get("roll", 0))),
+                                     -math.radians(float(pose.get("pitch", 0))),
+                                     math.radians(float(pose["yaw"])))
         bpy.context.view_layer.update()
 
         for v in VIEWS:
@@ -629,6 +910,21 @@ def main():
                 os.makedirs(raw_dir, exist_ok=True)
                 np.savez_compressed(os.path.join(raw_dir, "%06d.npz" % fid), **raw_data)
 
+            camera_metadata = None
+            if CAMERA_POST:
+                frame_rgb = read_rendered_rgb8(path)
+                camera_fov = float(pose.get("fov_deg") or v["fov_deg"])
+                result = sk_camera.apply(
+                    frame_rgb, cfg,
+                    frame_seed=int(cfg.get("seed", 0))*100003+fid,
+                    fov_deg=camera_fov, skip=CAMERA_SKIP)
+                if result["changed"]:
+                    from simkit import png as png_writer
+                    png_writer.write_rgb8(path, result["image_u8"])
+                    camera_metadata = result["metadata"]
+                    for warning in camera_metadata.get("warnings", []):
+                        log("camera: " + warning)
+
             boxes = {}
             for name, info in meshes.items():
                 # scenery (buildings, barriers, decoys) is drawn but never
@@ -677,6 +973,7 @@ def main():
                            view=v["name"], fov_deg=float(v["fov_deg"]),
                            boxes=boxes, weather=dict(w or {}),
                            sensor_model=sensor_metadata,
+                           camera_model=camera_metadata,
                            motion_blur_simulated=bool(sc.render.use_motion_blur),
                            material_reports={name: info["material_report"] for name, info in meshes.items()},
                            geometry_passes=(dict(depth="camera_forward_z_m", instance="non-antialiased reference geometry")

@@ -1,0 +1,196 @@
+{
+  "date": "2026-11-03",
+  "scope": "generic image-code augmentation only",
+  "model": "assets/models/军用飞机/双发战斗机.obj",
+  "tests": {
+    "total": 78,
+    "passed": true,
+    "interference_regressions": 13,
+    "project_selftest": "ALL PASS",
+    "javascript_syntax": "passed"
+  },
+  "clean": {
+    "path": "out\\validation_interference_10",
+    "passed": true,
+    "image_counts": {
+      "optical": 10,
+      "radar": 10,
+      "lidar": 10,
+      "ir_mwir": 10
+    },
+    "max_centroid_delta_px": 0.017424636545528352
+  },
+  "variants": {
+    "mixed": {
+      "passed": true,
+      "errors": [],
+      "frames": 10,
+      "products": {
+        "ir_mwir": {
+          "images": 10,
+          "changed_frames": 7,
+          "mean_absolute_change": 3398.0654904966004,
+          "noise_std": 3388.994684271387
+        },
+        "ir_preview_mwir": {
+          "images": 10,
+          "changed_frames": 7,
+          "mean_absolute_change": 25.666594554759836,
+          "noise_std": 19.412591600535173
+        },
+        "optical": {
+          "images": 10,
+          "changed_frames": 7,
+          "mean_absolute_change": 12.5982888304157,
+          "noise_std": 14.718411494392962
+        },
+        "radar": {
+          "images": 10,
+          "changed_frames": 7,
+          "mean_absolute_change": 17.482583618164064,
+          "noise_std": 5.08726308954627
+        },
+        "radar_ra": {
+          "images": 10,
+          "changed_frames": 7,
+          "mean_absolute_change": 17.17340576171875,
+          "noise_std": 5.09522649320806
+        },
+        "lidar_intensity": {
+          "images": 10,
+          "changed_frames": 7,
+          "mean_absolute_change": 20.3151611328125,
+          "noise_std": 12.71603944004937
+        },
+        "lidar_range": {
+          "images": 10,
+          "changed_frames": 7,
+          "mean_absolute_change": 19.727260335286456,
+          "noise_std": 13.351458057403088
+        }
+      }
+    },
+    "active": {
+      "passed": true,
+      "errors": [],
+      "frames": 10,
+      "products": {
+        "ir_mwir": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 5052.907035319011,
+          "noise_std": 7427.938077863716
+        },
+        "ir_preview_mwir": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 15.359578676576968,
+          "noise_std": 23.8835195857527
+        },
+        "optical": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 19.65768085997782,
+          "noise_std": 28.89544511311348
+        },
+        "radar": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 4.419851684570313,
+          "noise_std": 6.136292861068457
+        },
+        "radar_ra": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 4.796589573451451,
+          "noise_std": 6.6565297428194015
+        },
+        "lidar_intensity": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 3.6642598470052077,
+          "noise_std": 5.381062125392558
+        },
+        "lidar_range": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 3.6508321126302086,
+          "noise_std": 5.384850429853577
+        }
+      }
+    },
+    "passive": {
+      "passed": true,
+      "errors": [],
+      "frames": 10,
+      "products": {
+        "ir_mwir": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 2646.680656602648,
+          "noise_std": 1761.1049142577347
+        },
+        "ir_preview_mwir": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 30.931753879123267,
+          "noise_std": 27.54414627306004
+        },
+        "optical": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 8.668312053915894,
+          "noise_std": 12.24368495763051
+        },
+        "radar": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 25.259295654296874,
+          "noise_std": 1.442752986640633
+        },
+        "radar_ra": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 24.823436802455358,
+          "noise_std": 1.5491481146719202
+        },
+        "lidar_intensity": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 30.985642496744795,
+          "noise_std": 21.417457412018706
+        },
+        "lidar_range": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 29.928865559895833,
+          "noise_std": 21.958401532124693
+        }
+      }
+    },
+    "sar": {
+      "passed": true,
+      "errors": [],
+      "frames": 10,
+      "products": {
+        "sar": {
+          "images": 10,
+          "changed_frames": 10,
+          "mean_absolute_change": 10.925282796223957,
+          "noise_std": 12.266558344230704
+        }
+      }
+    }
+  },
+  "yolo": {
+    "path": "datasets/interference_checks_10",
+    "flavours": [
+      "optical",
+      "ir_mwir",
+      "radar_rd"
+    ],
+    "images_per_flavour": 20,
+    "max_cross_flavour_box_deviation_px": 0
+  },
+  "boundary": "Clean raw echoes, point clouds, target kinematics and reference detections are not modified; derived images are explicitly image-domain data."
+}

@@ -1,3 +1,4 @@
 # CPU simulation and non-Blender regression checks.
 numpy>=1.24,<3
-# Optional preview montage: pip install Pillow
+# Image interference variants, preview montages and dataset exports.
+Pillow>=10,<13

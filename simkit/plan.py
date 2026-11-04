@@ -19,6 +19,18 @@ Chunking stays exact: clip index and local time are derived from the *global*
 frame id, so generating frames 0-99 in one worker and 100-199 in another
 reproduces the same path no matter how the split falls.
 
+State source
+------------
+Every object owns a motion.Track.  The primary target's is exposed as
+track_target (the seeker back-solve wrapped as a Track, or the authored path),
+and every other object is reachable through tracks / track(name).  A labelled
+secondary target without an explicit per-object trajectory defaults to a
+FormationTrack derived from the primary -- a body-frame offset, not a second
+absolute straight line -- which is what keeps a wingman in formation when the
+seeker drags the lead along its line of sight.  The ECM layer reads the same
+tracks, so a dispensed body's mount is rotated by the lead's actual body frame
+and its release state is evaluated at the lead's actual state.
+
 Seeker geometry
 ---------------
 For a seeker view the target is described in sensor-relative spherical
@@ -72,6 +84,148 @@ def object_size_m(spec, base_dir="."):
         return float(max(d[0], d[1], d[2] * 0.6, 0.2))
     except Exception:
         return 4.0
+
+
+class _FormationPath:
+    """A follower that mirrors the lead airframe's solved path with a fixed offset.
+
+    Giving every object its own straight line from pos+vel made a two-ship break
+    apart the instant the seeker started dragging the lead: one stayed on the
+    line of sight and the other flew off at 250 m/s. A formation has to share the
+    lead's motion; only its offset differs.
+    """
+
+    def __init__(self, plan, offset):
+        self.plan = plan
+        self.offset = np.asarray(offset, float)
+
+    def pos(self, t):
+        return np.asarray(self.plan.target_pos(t), float) + self.offset
+
+    def vel(self, t):
+        return np.asarray(self.plan.target_vel(t), float)
+
+    def accel(self, t, h=2e-3):
+        # The lead publishes no analytic acceleration, so differentiate velocity
+        # the same way the rest of the planner samples it.
+        t = float(t)
+        return ((np.asarray(self.plan.target_vel(t + h), float)
+                 - np.asarray(self.plan.target_vel(t - h), float)) / (2.0 * h))
+
+    def yaw(self, t):
+        return None
+
+
+class _FrameConfig(dict):
+    """One frame's config, with the planner's Track set attached as an attribute.
+
+    dataset.py deep-copies the frame config with json.loads(json.dumps(...))
+    for multi-band IR, so a live Track cannot ride inside the mapping.  An
+    attribute is invisible to that copy (and to JSON), which keeps the config
+    serialisable while the ECM layer can still ask "where was the parent when
+    this flare left the rail" instead of guessing from one world pose.
+    """
+
+    tracks = None
+
+
+class _ObjectTrack(motion.Track):
+    """A scene object's published state, with its own attitude rules applied.
+
+    This is where yaw_mode and attitude_mode are evaluated -- once.  Before,
+    the label yaw came from object_state, the mesh attitude from
+    object_attitude and the ECM parent pose from the built World: three places
+    that could (and did) drift apart.  A Track is now the only one.
+    """
+
+    kind = "object"
+
+    def __init__(self, base, spec):
+        self.base = base
+        self.spec = spec or {}
+        self.name = self.spec.get("name")
+        self.mode = str(getattr(base, "mode", "track"))
+        self.yaw_mode = str(self.spec.get("yaw_mode", "velocity"
+                                          if self.spec.get("label", True) else "fixed"))
+        if self.yaw_mode not in ("velocity", "fixed"):
+            raise ValueError("yaw_mode must be velocity or fixed")
+        self.attitude_mode = str(self.spec.get("attitude_mode", "fixed"))
+
+    def pos(self, t):
+        return np.asarray(self.base.pos(float(t)), float)
+
+    def vel(self, t):
+        return np.asarray(self.base.vel(float(t)), float)
+
+    def accel(self, t):
+        return np.asarray(self.base.accel(float(t)), float)
+
+    def jerk(self, t):
+        base_jerk = getattr(self.base, "jerk", None)
+        if base_jerk is None:
+            # the legacy world-offset follower publishes no jerk; derive it the
+            # way Track does everywhere else (centred difference of accel)
+            return motion.Track.jerk(self, float(t))
+        return np.asarray(base_jerk(float(t)), float)
+
+    def yaw(self, t):
+        t = float(t)
+        rot = float(self.spec.get("rot", 0.0))
+        off = float(self.spec.get("yaw_offset_deg", 0.0))
+        if self.yaw_mode == "fixed":
+            return rot
+        v = self.vel(t)
+        if float(np.hypot(v[0], v[1])) > 1e-6:
+            return float(np.degrees(np.arctan2(v[1], v[0]))) + off
+        # A stopped object keeps the heading its route ends on; a waypoint route
+        # has one even at zero speed, so it is tried before the static rot.
+        heading_path = self.base
+        while isinstance(heading_path, motion.GroundPath):
+            heading_path = heading_path.path
+        if isinstance(heading_path, motion.Waypoints):
+            h = heading_path.heading(t)
+            if h is not None:
+                return float(h) + off
+        h = getattr(self.base, "yaw", None)
+        if h is not None:
+            y = h(t)
+            if y is not None:
+                return float(y) + off
+        return rot + off
+
+    def pitch(self, t):
+        if self.attitude_mode != "coordinated":
+            return float(self.spec.get("pitch", 0.0))
+        return motion.climb_angle_deg(self.vel(t))
+
+    def roll(self, t):
+        if self.attitude_mode != "coordinated":
+            return float(self.spec.get("roll", 0.0))
+        return motion.coordinated_bank_deg(self.vel(t), self.accel(t))
+
+    def frame(self, t):
+        return motion.body_to_world(self.yaw(t), self.pitch(t), self.roll(t))
+
+
+class _SeekTrack(motion.Track):
+    """The seeker back-solve as a Track: position plus its analytic derivative.
+
+    _seek_state differentiates the range/az/el sweep by hand, so the published
+    velocity is the derivative of the published position and the 76.9 g first
+    frame cannot come back (docs/运动修正报告.md).  The acceleration is the
+    design's centred difference of that velocity (h = 1e-3).
+    """
+
+    kind = "seeker"
+
+    def __init__(self, plan):
+        self.plan = plan
+
+    def pos(self, t):
+        return np.asarray(self.plan._seek_state(float(t))[0], float)
+
+    def vel(self, t):
+        return np.asarray(self.plan._seek_state(float(t))[1], float)
 
 
 class ClipPlan:
@@ -132,8 +286,6 @@ class ClipPlan:
         if observer:
             if seeker:
                 raise ValueError("observer_trajectory and seeker are mutually exclusive")
-            if len(self.targets) != 1:
-                raise ValueError("independent-flight baseline requires one labelled target per scene")
             self.mode = "independent_flight"
             self.path = motion.make_path(spec.get("trajectory") or self._trajectory_from_objects())
             self.observer_path = motion.make_path(observer)
@@ -148,21 +300,207 @@ class ClipPlan:
                 self._plan_seeker(seeker)
         else:
             tspec = spec.get("trajectory") or self._trajectory_from_objects()
-            self.path = motion.make_path(tspec, ground_z=None)
+            self.path = motion.make_path(tspec, ground_z=(self.ground_z
+                if self.target.get("motion_type") == "ground" else None))
             self.rig = motion.Rig(dict(spec.get("rig") or {}), cam0, self.path, rng)
             self.rig_lag = self.rig.lag
 
+        # ---- state sources (docs/多目标运动仿真调研.md 5.1) ----------------
+        # One Track per object.  The primary target's track is derived (seeker
+        # back-solve) or authored (a path); every other object is an explicit
+        # trajectory, a formation member derived from the primary, or the
+        # legacy absolute line.  object_state, object_attitude, the labels and
+        # the ECM layer all read these tracks, so no consumer gets a second
+        # opinion about where a body is.
+        names = [o.get("name") for o in cfg.get("objects", [])]
+        if any(not n for n in names) or len(set(names)) != len(names):
+            raise ValueError("objects require unique, non-empty names")
+        self._objects = {o["name"]: o for o in cfg.get("objects", [])}
+        self.tracks = {}
+        self.object_paths = {}
+        self._lead_line_is_authored = self._lead_line_authored()
+        self.track_target = self._build_tracks()
         self.px0 = self.px_for_time(0.0)
         self.px1 = self.px_for_time(self.dur)
         self.r0 = self.range_for_time(0.0)
         self.r1 = self.range_for_time(self.dur)
 
+    # ---- Track construction ---------------------------------------------
+    def _lead_line_authored(self):
+        """True when the primary target flies the line its own pos+vel implies.
+
+        Then every object's absolute pos+vel is the same story in the same
+        world frame -- a parking lot does not become a formation because a car
+        sits beside another car.  When the primary's path is DERIVED (seeker)
+        or authored as something other than a line (arc, weave, waypoints,
+        drawn), an absolute line for a follower is a second reference frame,
+        and that is precisely the reported bug: the follower keeps flying its
+        own world line while the seeker drags the primary along another.
+        """
+        if self.mode == "seeker":
+            return False
+        if self.mode == "platform":
+            return True
+        traj = self.spec.get("trajectory")
+        if traj is None:
+            traj = self.target.get("trajectory")
+        mode = str((traj or {}).get("mode", "line")).lower()
+        return mode in ("line", "straight", "static", "hover", "parked")
+
+    def _lead_kinematics(self):
+        """The primary target's kinematic Track, before its attitude rules."""
+        if self.mode == "seeker":
+            return _SeekTrack(self)
+        if self.mode == "platform":
+            # the target holds station (or drives slowly); the platform moves
+            return motion.PathTrack(motion.Line(self.tgt_pos, self.tgt_vel))
+        return motion.PathTrack(self.path)
+
+    def _line_path(self, obj):
+        traj = dict(mode="line", vel=obj.get("vel", [0, 0, 0]))
+        traj.setdefault("origin", obj.get("pos", [0, 0, 0]))
+        ground = self.ground_z if obj.get("motion_type") == "ground" else None
+        return motion.PathTrack(motion.make_path(traj, ground_z=ground))
+
+    def _object_base(self, obj, lead_track, lead_nominal, build):
+        """Kinematic Track of one non-primary object."""
+        name = obj.get("name")
+        trajectory = obj.get("trajectory")
+        if trajectory is not None:
+            # An explicit per-object route always wins: the scene said where
+            # this one goes and it is not flying formation.
+            traj = dict(trajectory)
+            traj.setdefault("origin", obj.get("pos", [0, 0, 0]))
+            ground = self.ground_z if obj.get("motion_type") == "ground" else None
+            return motion.PathTrack(motion.make_path(traj, ground_z=ground))
+
+        formation = obj.get("formation")
+        link = str(obj.get("link") or ("formation" if formation is not None else "")).lower()
+        if link == "formation":
+            spec = dict(formation or {})
+            parent_name = spec.get("parent") or self.target["name"]
+            if parent_name == self.target["name"]:
+                parent = lead_track
+                parent_nominal = lead_nominal
+            else:
+                parent_obj = self._objects.get(parent_name)
+                if parent_obj is None:
+                    raise ValueError("%s: formation.parent names an unknown object %r"
+                                     % (name, parent_name))
+                parent = build(parent_obj)
+                parent_nominal = np.asarray(parent_obj.get("pos", [0.0, 0.0, 0.0]),
+                                            float)
+            offset_body = spec.get("offset_body")
+            if offset_body is None:
+                # a scene's objects[].pos is a world coordinate; rotate it into
+                # the parent's frame at t=0 so the authored placement holds
+                offset_world = (np.asarray(obj.get("pos", [0.0, 0.0, 0.0]), float)
+                                - parent_nominal)
+                offset_body = np.asarray(parent.frame(0.0), float).T @ offset_world
+            return motion.FormationTrack(
+                parent, offset_body, mode=spec.get("mode", "lag"),
+                tau_lag_s=spec.get("tau_lag_s", 0.3),
+                own_maneuver=spec.get("own_maneuver"),
+                max_offset_m=spec.get("max_offset_m"))
+
+        if link == "independent":
+            return self._line_path(obj)
+
+        # The default: a labelled secondary target follows the primary.  This
+        # replaces the "unconfigured means a straight line" fallback that let a
+        # wingman fly 180 m/s while the seeker dragged the lead along a
+        # different reference frame (docs ... 1.1).
+        if (obj.get("label", True) and obj.get("motion_type") != "ground"
+                and not self._lead_line_is_authored):
+            offset_world = np.asarray(obj.get("pos", [0.0, 0.0, 0.0]), float) - lead_nominal
+            offset_body = np.asarray(lead_track.frame(0.0), float).T @ offset_world
+            return motion.FormationTrack(lead_track, offset_body, mode="lag",
+                                         tau_lag_s=0.3)
+
+        # Unlabelled clutter keeps the legacy world-offset follower in a seeker
+        # clip: those objects were authored relative to the nominal target to
+        # occlude it or to lie on the ground under it, and a body-frame offset
+        # would rotate that geometry with the aircraft.
+        if self.mode == "seeker" and obj.get("motion_type") != "ground":
+            offset = np.asarray(obj.get("pos", [0.0, 0.0, 0.0]), float) - lead_nominal
+            return _FormationPath(self, offset)
+
+        return self._line_path(obj)
+
+    def _build_tracks(self):
+        lead = self.target
+        lead_track = _ObjectTrack(self._lead_kinematics(), lead)
+        self.tracks[lead["name"]] = lead_track
+        lead_nominal = np.asarray(lead.get("pos", [0.0, 0.0, 0.0]), float)
+        building = []
+
+        def build(obj):
+            name = obj.get("name")
+            hit = self.tracks.get(name)
+            if hit is not None:
+                return hit
+            if name in building:
+                raise ValueError("formation cycle: " + " -> ".join(building + [name]))
+            building.append(name)
+            try:
+                base = self._object_base(obj, lead_track, lead_nominal, build)
+            finally:
+                building.pop()
+            track = _ObjectTrack(base, obj)
+            self.tracks[name] = track
+            # object_paths stays the public "this object has its own motion
+            # model" set that tools/motion_diagnose reads; it never holds the
+            # primary target, whose envelope is judged by its own mode.
+            self.object_paths[name] = track
+            return track
+
+        for obj in self.cfg.get("objects", []):
+            if obj is not lead:
+                build(obj)
+        return lead_track
+
+    def track(self, name=None):
+        """The Track of the named object (the primary target by default)."""
+        if name is None:
+            return self.track_target
+        hit = self.tracks.get(name)
+        if hit is None:
+            raise KeyError("no track for object %r" % (name,))
+        return hit
+
+    def object_state(self, obj, t):
+        """Single pose/velocity source for world, labels and shutter samples."""
+        track = self.tracks.get(obj.get("name"))
+        if track is None:
+            track = self.track_target
+        p, v = track.pos(t), track.vel(t)
+        yaw = track.yaw(t)
+        if yaw is None:
+            yaw = float(obj.get("rot", 0.0)) + float(obj.get("yaw_offset_deg", 0.0))
+        return np.asarray(p, float), np.asarray(v, float), float(yaw)
+
+    def object_attitude(self, obj, t):
+        """Pitch is nose-up; roll is the right-hand rotation about body +X.
+
+        Both come from simkit.motion's single coordinated-turn definition, so the
+        label orientation, the flight envelope and the motion report cannot drift
+        apart: tan(bank) = a_lat / g with one g.  They are read off the object's
+        own Track, which is also what the ECM mounts and the body-frame offsets
+        are rotated by -- one attitude, not three.
+        """
+        track = self.tracks.get(obj.get("name"))
+        if track is None or obj.get("attitude_mode") != "coordinated":
+            return float(obj.get("pitch", 0.0)), float(obj.get("roll", 0.0))
+        return float(track.pitch(t)), float(track.roll(t))
+
     # ---- planning -------------------------------------------------------
     def _trajectory_from_objects(self):
         t = self.target
         p = list(t.get("pos", [0.0, 0.0, 0.0]))
-        v = list(t.get("vel", [1.0, 0.0, 0.0]))
-        return dict(mode="line", origin=p, vel=v)
+        v = list(t.get("vel", [0.0, 0.0, 0.0]))
+        tspec = dict(t.get("trajectory") or dict(mode="line", vel=v))
+        tspec.setdefault("origin", p)
+        return tspec
 
     def _plan_seeker(self, sk):
         rng = self.rng
@@ -287,6 +625,7 @@ class ClipPlan:
         # range is drawn from the scene's own [lo, hi] band per half, so the two
         # clips also differ in starting range and closing distance.
         var = dict(sk.get("per_clip_variation") or {})
+        vary = bool(var.get("enabled", p.get("randomize", True)))
         heading0 = float(p.get("heading_deg", 90.0))
         dive0 = float(p.get("dive_deg", -14.0))
         spread = float(var.get("bearing_deg", p.get("heading_spread_deg", 10.0)))
@@ -312,10 +651,13 @@ class ClipPlan:
         # rate stays ~speed instead of turning into a crossing pass.
         dive = -el + float(rng.uniform(-1.0, 1.0)) * float(
             p.get("dive_jitter_deg", var.get("dive_deg", 1.0)))
+        if not vary:
+            heading, dive = heading0, dive0
+            el = float(el_cfg) if el_cfg is not None else -dive0
 
         band = sk.get("range_m") or p.get("range_m")
         r0 = None
-        if band and bool(var.get("enabled", p.get("randomize", True))):
+        if band and vary:
             lo, hi = sorted(float(v) for v in list(band)[:2])
             frac = (0.5 if side > 0.0 else 0.0) + float(rng.uniform(0.12, 0.44))
             r0 = lo + (hi - lo) * frac
@@ -335,7 +677,17 @@ class ClipPlan:
 
         phase = p.get("phase")
         if phase is None:
-            phase = float(rng.uniform(0.0, 6.283185307179586))
+            phase = float(rng.uniform(0.0, 6.283185307179586)) if vary else 0.0
+        # The platform's own airframe limits come from the scene, so the weave
+        # cannot ask for a bank the aircraft does not have and the standoff solve
+        # cannot invent a speed it cannot fly.  Without this the shipped scenes
+        # asked for 2.5 g at 66 deg of bank (sk3_high_air2air) and for 63 m/s
+        # from a platform configured at 14 m/s (ds1102_air2air_quad), both of
+        # which the diagnostic flagged and neither of which is a path bug.
+        plat_env = motion.Envelope.from_spec(dict(
+            cls=str(p.get("flight_class") or "uav_fixed"),
+            kinematics=p.get("kinematics") or {}))
+        self.plat_env = plat_env
         self.path = motion.DiveWeave(
             origin, target,
             speed_mps=float(p.get("speed_mps", 180.0)),
@@ -348,6 +700,10 @@ class ClipPlan:
             phase=float(phase),
             target_vel=tvel,
             solve=str(p.get("solve", "standoff" if standoff is not None else "speed")).lower(),
+            # bank_max_deg at seeker level overrides the class default, which is
+            # how a scene says "this mount is limited" without restating the rest.
+            bank_max_deg=float(sk.get("bank_max_deg") or plat_env.max_bank_deg),
+            max_speed_mps=plat_env.max_speed_mps,
         )
         # NOTE: self.cam_pos is deliberately NOT moved to the track start.
         # state() translates every sensor by (camera(t) - cam_pos), so cam_pos
@@ -373,47 +729,111 @@ class ClipPlan:
 
     # ---- kinematics -----------------------------------------------------
     def _seek_dir(self, az_deg, el_deg):
+        return self._seek_null(az_deg, el_deg)[0]
+
+    def _seek_null(self, az_deg, el_deg):
+        """Line-of-sight unit vector and its partials w.r.t. az and el (degrees).
+
+        The partials are what make an analytic target velocity possible.  Without
+        them the only way to get a velocity is to difference two positions, and
+        differencing a clamped parameter is precisely how frame 0 of a seeker
+        scene came out at 75.8 m/s while frames 2+ read 150.8 m/s.
+        """
         _p, right, up, fwd = self._basis
-        ta = np.tan(np.radians(az_deg))
-        te = np.tan(np.radians(el_deg))
-        d = fwd + ta * right + te * up
-        return d / (np.linalg.norm(d) + 1e-12)
+        a, e = np.radians(az_deg), np.radians(el_deg)
+        d = fwd + np.tan(a) * right + np.tan(e) * up
+        n = float(np.linalg.norm(d)) + 1e-12
+        u = d / n
+        # d(tan x)/dx = sec^2 x, with x in radians; d/d(deg) carries pi/180.
+        k = np.pi / 180.0
+        dd_a = (right / max(np.cos(a) ** 2, 1e-12)) * k
+        dd_e = (up / max(np.cos(e) ** 2, 1e-12)) * k
+        # The derivative of a normalised vector has no radial component.
+        return (u,
+                (dd_a - u * float(np.dot(u, dd_a))) / n,
+                (dd_e - u * float(np.dot(u, dd_e))) / n)
+
+    def _seek_sweep(self, u):
+        """(w, dw/du) of the range/LOS sweep.  Exact derivative, no clamping.
+
+        u is deliberately *not* clamped to [0, 1]: the clip is a window onto a
+        longer approach, so letting the sweep continue outside the window keeps
+        the track C-infinity.  Clamping froze the geometry for t < 0 and made the
+        two-sided derivative at frame 0 exactly half the true one -- 75.8 m/s
+        instead of 150.8 m/s, i.e. 754 m/s^2 of acceleration between frames 0
+        and 1 and nothing at all afterwards.
+        """
+        prof = self.seek["profile"]
+        if prof == "smooth":
+            return u * u * (3.0 - 2.0 * u), 6.0 * u * (1.0 - u)
+        if prof in ("accelerating", "accel"):
+            return u * u, 2.0 * u
+        if prof == "decelerating":
+            return 1.0 - (1.0 - u) ** 2, 2.0 * (1.0 - u)
+        return u, 1.0
+
+    def _los_error(self, t):
+        """(d_az, d_el) pointing error of the mount, degrees.
+
+        los_jitter_deg and wander_deg are *stabilisation* errors: the gimbal does
+        not hold the line of sight perfectly.  They belong to the mount, not to
+        the target.  Baking them into the target's own position (the previous
+        arrangement) moved an 8 km target +/-2.8 m at 0.35 Hz, which is 13.5 m/s^2
+        -- 1.4 g of lateral zigzag and 54 deg of bank on a target flying straight
+        and level, and it is the single largest "the trajectory looks wrong"
+        contributor that is not a trajectory bug at all.  Applying the same
+        angular error to the aim instead puts an identical offset on screen while
+        leaving the world track of the aircraft smooth.
+        """
+        s = self.seek
+        j = float(s.get("los_jitter", 0.0))
+        ph = 2.0 * np.pi * float(s["bob_hz"]) * float(t) + s["phase"]
+        d_az = j * np.sin(ph)
+        d_el = 0.6 * j * np.sin(ph)
+        wd = float(self.seek.get("wander_deg", 0.0))
+        if wd > 0.0:
+            w = 2.0 * np.pi * float(self.seek.get("wander_hz", 0.09))
+            d_az += wd * np.sin(w * t + self.seek["wander_ph"])
+            d_el += wd * 0.7 * np.sin(w * 1.37 * t + self.seek["wander_ph2"])
+        return d_az, d_el
+
+    def _seek_state(self, t):
+        """Seeker target position and its analytic derivative.
+
+        One expression, differentiated once by hand, so position, velocity and
+        therefore Doppler cannot disagree; see the derivative contract in
+        simkit/motion.py.
+        """
+        s = self.seek
+        inv = 1.0 / self.dur if self.dur > 1e-9 else 0.0
+        u = float(t) * inv
+        w, wd = self._seek_sweep(u)
+        wd *= inv
+        r = s["r0"] + (s["r1"] - s["r0"]) * w
+        rdot = (s["r1"] - s["r0"]) * wd
+        az = s["az0"] + (s["az1"] - s["az0"]) * w
+        el = s["el0"] + (s["el1"] - s["el0"]) * w
+        az_dot = (s["az1"] - s["az0"]) * wd
+        el_dot = (s["el1"] - s["el0"]) * wd
+        u_hat, du_daz, du_del = self._seek_null(az, el)
+        p = self.cam_pos + u_hat * r
+        v = u_hat * rdot + (du_daz * az_dot + du_del * el_dot) * r
+        if s["keep_z"] and self.ground_z is not None:
+            p[2] = float(self.ground_z) + float(self.target.get("z_offset_m", 0.0))
+            # A pinned height is a sliding constraint, not a ride: whatever the
+            # free solve asked for vertically is removed from the velocity too,
+            # otherwise Doppler keeps reporting a climb the position does not have.
+            v[2] = 0.0
+        return p, v
 
     def target_pos(self, t):
-        t = float(t)
-        if self.mode == "seeker":
-            s = self.seek
-            u = 0.0 if self.dur <= 1e-9 else min(max(t / self.dur, 0.0), 1.0)
-            prof = s["profile"]
-            if prof == "smooth":
-                w = u * u * (3.0 - 2.0 * u)
-            elif prof in ("accelerating", "accel"):
-                w = u * u
-            elif prof == "decelerating":
-                w = 1.0 - (1.0 - u) ** 2
-            else:
-                w = u
-            r = s["r0"] + (s["r1"] - s["r0"]) * w
-            j = s["los_jitter"]
-            wob = j * np.sin(2.0 * np.pi * s["bob_hz"] * t + s["phase"])
-            az = s["az0"] + (s["az1"] - s["az0"]) * w + wob
-            el = s["el0"] + (s["el1"] - s["el0"]) * w + 0.6 * wob
-            p = self.cam_pos + self._seek_dir(az, el) * r
-            if s["keep_z"] and self.ground_z is not None:
-                p[2] = float(self.ground_z) + float(self.target.get("z_offset_m", 0.0))
-            return p
-        if self.mode == "platform":
-            # the target sits (or drives slowly); the platform is the mover
-            return self.tgt_pos + self.tgt_vel * t
-        return self.path.pos(t)
+        # One definition, read back off the primary target's Track: the seeker
+        # back-solve, the platform's stationary target and the world path are
+        # all Tracks, so a consumer can never be looking at a second copy.
+        return self.track_target.pos(float(t))
 
     def target_vel(self, t, h=2e-3):
-        t = float(t)
-        if self.mode == "seeker":
-            return (self.target_pos(t + h) - self.target_pos(t - h)) / (2.0 * h)
-        if self.mode == "platform":
-            return self.tgt_vel.copy()
-        return self.path.vel(t)
+        return self.track_target.vel(float(t))
 
     def target_yaw(self, t):
         v = self.target_vel(t)
@@ -463,23 +883,24 @@ class ClipPlan:
             lag = float((self.spec.get("seeker") or {}).get("lag_s", 0.12))
             pos, _dyaw = self.rig.jitter(t)
             pos = self.cam_pos + pos
-            aim = self.target_pos(max(0.0, t - lag))
-            wd = float(self.seek.get("wander_deg", 0.0))
-            if wd > 0.0:
-                w = 2.0 * np.pi * float(self.seek.get("wander_hz", 0.09))
-                azw = wd * np.sin(w * t + self.seek["wander_ph"])
-                elw = wd * 0.7 * np.sin(w * 1.37 * t + self.seek["wander_ph2"])
+            # The lag is a pure delay of an analytic state, so negative time is
+            # meaningful: clamping it at zero froze the aim for the first lag_s
+            # of every clip and then released it, which is a step in line-of-sight
+            # rate -- the mount's version of the frame-0 half-velocity bug.
+            aim = self.target_pos(t - lag)
+            d_az, d_el = self._los_error(t)
+            if d_az or d_el:
                 _p, right, up, _f = self._basis
                 d = float(np.linalg.norm(aim - pos))
-                aim = aim + (np.tan(np.radians(azw)) * right +
-                             np.tan(np.radians(elw)) * up) * d
+                aim = aim + (np.tan(np.radians(d_az)) * right +
+                             np.tan(np.radians(d_el)) * up) * d
             return pos, aim
         if self.mode == "platform":
             # camera rides the track; the mount adds its own vibration, then the
             # gimbal looks where the target *was* lag_s ago (causal, chunk-safe)
             jit, _dyaw = self.rig.jitter(t)
             pos = self.path.pos(t) + jit
-            aim = self.target_pos(max(0.0, t - self.gimbal_lag))
+            aim = self.target_pos(t - self.gimbal_lag)
             wd = float(self.wander.get("deg", 0.0))
             if wd > 0.0:
                 w = 2.0 * np.pi * float(self.wander.get("hz", 0.09))
@@ -527,7 +948,18 @@ class ClipPlan:
     def state(self, i, frame):
         t = float(i) * self.dt
         wst = self.wstates[min(int(i), len(self.wstates) - 1)]
-        fr_cfg = json.loads(json.dumps(self.cfg))
+        # The frame config carries this clip's Track set as an attribute (not as
+        # a mapping entry): the ECM layer needs the parent's analytic state at
+        # the release instant and at lagged times, and dataset.py deep-copies
+        # the mapping for multi-band IR, which a live Track would break.
+        fr_cfg = _FrameConfig(json.loads(json.dumps(self.cfg)))
+        fr_cfg.tracks = self.tracks
+        # The frame clock the ECM layer reads (ecm.frame_time).  dataset.py sets
+        # the same key before building the world; setting it here as well means
+        # a caller that builds the world straight from state() (tests, tools,
+        # the manifest writer) still gets every entity at THIS frame's t instead
+        # of at the figure-0 pose.
+        fr_cfg["_ecm_t"] = t
         fr_cfg["weather"] = dict(wst)
         fr_cfg["_weather"] = weather.derive(wst)
         air = fr_cfg.setdefault("air", {})
@@ -576,23 +1008,19 @@ class ClipPlan:
         jit, poses = {}, {}
         for spec in self.cfg.get("objects", []):
             name = spec.get("name")
-            if spec.get("label", True):
-                P = self.target_pos(t)
-                V = self.target_vel(t)
-                yaw = self.target_yaw(t)
-            else:
-                P = np.array(spec.get("pos", [0, 0, 0]), float)
-                V = np.array(spec.get("vel", [0, 0, 0]), float)
-                yaw = float(spec.get("rot", 0.0))
+            P, V, yaw = self.object_state(spec, t)
+            pitch, bank = self.object_attitude(spec, t)
             base = np.array(spec.get("pos", [0, 0, 0]), float)
             jit[name] = dict(dpos=[float(P[0] - base[0]), float(P[1] - base[1]),
                                    float(P[2] - base[2])],
                              dyaw=float(yaw - float(spec.get("rot", 0.0))),
-                             vel=[float(V[0]), float(V[1]), float(V[2])])
+                             vel=[float(V[0]), float(V[1]), float(V[2])],
+                             pitch=pitch, roll=bank)
             poses[name] = dict(pos=[round(float(v), 4) for v in P], yaw=round(float(yaw), 3),
-                               velocity_mps=[float(v) for v in V])
+                               pitch=pitch, roll=bank, velocity_mps=[float(v) for v in V])
         state = dict(frame=int(frame), t=t, jitter=jit, cfg=fr_cfg, weather=dict(wst),
-                    poses=poses, clip=self.clip,
+                    poses=poses, clip=self.clip, sequence_start=(int(i) == 0),
+                    sequence_timestamp_s=int(frame)*self.dt,
                     range_m=round(rng_m, 2),
                     target_px=round(self.px_for_time(t), 1),
                     views=views, view_px=view_px,
@@ -612,12 +1040,9 @@ class ClipPlan:
                         look_at=self._view_look(pp, aa, view, tt).tolist(), roll_deg=self.roll_deg(tt))
                 sample_poses = {}
                 for obj in self.cfg.get("objects", []):
-                    if obj.get("label", True):
-                        P, yaw = self.target_pos(tt), self.target_yaw(tt)
-                    else:
-                        P = np.array(obj.get("pos", [0, 0, 0]))+np.array(obj.get("vel", [0, 0, 0]))*tt
-                        yaw = obj.get("rot", 0.0)
-                    sample_poses[obj["name"]] = dict(pos=P.tolist(), yaw=float(yaw))
+                    P, _V, yaw = self.object_state(obj, tt)
+                    pitch, bank = self.object_attitude(obj, tt)
+                    sample_poses[obj["name"]] = dict(pos=P.tolist(), yaw=float(yaw), pitch=pitch, roll=bank)
                 samples.append(dict(offset_s=offset, views=sample_views, poses=sample_poses))
             state["shutter_samples"] = samples
         return state
@@ -630,19 +1055,36 @@ def clip_of(frame, fpc):
 def frames_per_clip(cfg, n_frames):
     spec = cfg.get("clip") or {}
     fpc = spec.get("frames_per_clip")
-    return int(fpc) if fpc else int(n_frames)
+    # A validation prefix must not rescale the engagement's duration/speed.
+    count = int(fpc if fpc is not None else (cfg.get("frames") or {}).get("n", n_frames))
+    if count < 1:
+        raise ValueError("frames_per_clip must be positive")
+    return count
 
 
 def plan_frames(cfg, n_frames, base_seed, dt, frame_offset=0, total_frames=None):
-    """Yield one state per frame, clips cached so a chunk builds each once."""
+    """Yield one state per frame.
+
+    Exactly one ClipPlan is held at a time: a chunk that crosses a clip boundary
+    rebuilds, which is required (the clip index is part of the plan) and is why
+    this is a single slot rather than a growing dict. It used to be written as
+    `if c not in cache: cache = {c: ...}`, which reassigned the dict on every
+    build so the name promised a cache it never was. The rebuild cost is the
+    real issue here (see the build_world profile in docs/架构评估.md); caching
+    more clips would only hide it, so the slot is explicit about what it does.
+    """
     fpc = frames_per_clip(cfg, int(total_frames or n_frames))
-    cache = {}
+    current_clip = None
+    current_plan = None
     for i in range(int(n_frames)):
         f = int(i) + int(frame_offset)
         c = clip_of(f, fpc)
-        if c not in cache:
-            cache = {c: ClipPlan(cfg, c, fpc, dt, base_seed)}
-        yield cache[c].state(f - c * fpc, f)
+        if c != current_clip:
+            # A new clip (start of run, or a chunk straddling a boundary):
+            # the old plan is meaningless because the clip index is its input.
+            current_plan = ClipPlan(cfg, c, fpc, dt, base_seed)
+            current_clip = c
+        yield current_plan.state(f - c * fpc, f)
 
 
 def summary(cfg, n_frames, base_seed, dt):

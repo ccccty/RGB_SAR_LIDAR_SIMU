@@ -82,9 +82,60 @@ def cmd_selftest(args):
     return 0 if run() else 1
 
 
+def cmd_validate(args):
+    from . import validation, labels
+    cfg = scene.load_config(args.scene)
+    sensors = tuple(s.strip() for s in args.sensors.split(",") if s.strip())
+    if "all" in sensors:
+        sensors = ("optical", "ir", "radar", "lidar", "sar")
+    unknown = set(sensors)-{"optical", "ir", "radar", "lidar", "sar"}
+    if unknown or not sensors:
+        raise ValueError("choose configured sensors: optical,ir,radar,lidar,sar")
+    # Refuse reuse before touching any existing validation report.
+    if not args.dry_run and (os.path.exists(os.path.join(args.out, "meta.json")) or any(
+            os.path.isdir(os.path.join(args.out, d)) for d in ("images", "labels", "lidar"))):
+        raise ValueError("validation output already contains a dataset; choose a fresh directory")
+    report = validation.inspect(cfg, args.frames, sensors)
+    report["stage"] = "preflight"
+    os.makedirs(args.out, exist_ok=True)
+    path = os.path.join(args.out, "validation.json")
+    labels.write_json(path, report)
+    if report.pop("motion_ok") and not args.dry_run:
+        try:
+            dataset.run(args.scene, args.out, n_frames=args.frames, sensors=sensors)
+            report["artifacts"] = validation.artifacts(args.out, args.frames, sensors)
+            if report["interference"]["enabled"]:
+                report["interference_artifacts"] = validation.artifacts(
+                    os.path.join(args.out, "interfered"), args.frames, sensors, allow_empty_targets=True)
+        except Exception as exc:
+            report.update(passed=False, stage="generation_failed")
+            report["errors"].append(str(exc))
+            labels.write_json(path, report)
+            raise
+        report["stage"] = "rendered"
+        report["passed"] = report["artifacts"]["passed"]
+        if "interference_artifacts" in report:
+            report["passed"] = report["passed"] and report["interference_artifacts"]["passed"]
+        labels.write_json(path, report)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report["passed"] else 1
+
+
 def cmd_vega(args):
     from . import vega
     vega.describe()
+    return 0
+
+
+def cmd_augment(args):
+    from . import interference
+    spec = (scene.load_config(args.scene).get("interference") if args.scene
+            else interference.preset(args.preset))
+    if spec is None:
+        raise ValueError("scene has no interference configuration")
+    result = interference.export(args.source, args.out, spec)
+    print(json.dumps({k: result[k] for k in ("status", "source", "domain", "products")},
+                     ensure_ascii=False, indent=2))
     return 0
 
 
@@ -129,6 +180,22 @@ def main(argv=None):
 
     s = sub.add_parser("selftest", help="run internal correctness checks")
     s.set_defaults(func=cmd_selftest)
+
+    val = sub.add_parser("validate", help="motion preflight and a minimal dataset (default 10 frames)")
+    val.add_argument("-c", "--scene", required=True)
+    val.add_argument("-o", "--out", required=True)
+    val.add_argument("-n", "--frames", type=int, default=10)
+    val.add_argument("-s", "--sensors", default="optical,ir,radar")
+    val.add_argument("--dry-run", action="store_true", help="check full clip motion without rendering")
+    val.set_defaults(func=cmd_validate)
+
+    aug = sub.add_parser("augment", help="derive image-domain interference samples from a clean dataset")
+    aug.add_argument("-i", "--source", required=True)
+    aug.add_argument("-o", "--out", required=True)
+    choice = aug.add_mutually_exclusive_group(required=True)
+    choice.add_argument("--preset", choices=("off", "active", "passive", "mixed"))
+    choice.add_argument("-c", "--scene", help="scene JSON containing interference configuration")
+    aug.set_defaults(func=cmd_augment)
 
     v = sub.add_parser("vega", help="check the Vega Prime integration status")
     v.set_defaults(func=cmd_vega)

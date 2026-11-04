@@ -1,0 +1,46 @@
+{
+ "name": "trilateral_sky_headon",
+ "title": "天空 · 双发战斗机 · 三模态 · 迎头",
+ "environment": {
+  "kind": "sky",
+  "weather": "clear",
+  "background": {
+   "mode": "none"
+  }
+ },
+ "objects": [
+  {
+   "asset": "军用飞机/双发战斗机.obj",
+   "cls": "fighter",
+   "scale": 1,
+   "count": 1
+  }
+ ],
+ "ecm": {
+  "mode": "none",
+  "entities": []
+ },
+ "view": {
+  "range_km": 8,
+  "aspect": "head_on",
+  "fov_deg": 2.2,
+  "views": "single"
+ },
+ "capture": {
+  "sensors": [
+   "optical",
+   "ir",
+   "radar"
+  ],
+  "frames": 20,
+  "fps": 10,
+  "seed": 7
+ },
+ "output": {
+  "preview": true,
+  "coco": true,
+  "yolo": true,
+  "readme": true
+ },
+ "_saved_at": "seed"
+}

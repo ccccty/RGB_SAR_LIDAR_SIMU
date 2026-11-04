@@ -95,7 +95,8 @@ def simulate(world, cfg):
     # material lookup
     names = sorted(matlib.MATERIALS)
     alb = np.array([sum(matlib.MATERIALS[n]["albedo"]) / 3.0 for n in names])
-    normals = _face_normals(world)
+    normals = (world.face_normals() if hasattr(world, "face_normals")
+               else _face_normals(world))
 
     # atmosphere: one-way extinction is beta per metre, two-way doubles it
     w = cfg.get("_weather") or {}

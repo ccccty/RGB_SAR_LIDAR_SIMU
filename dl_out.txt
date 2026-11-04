@@ -1,0 +1,19 @@
+  island 01_Aerial-View-Minamitori-Island-1987.jpg.jpg        2824x1789 Public domain
+  island 02_Aerial_image_of_Giannutri_(view_from_the_south).j 5200x3200 CC BY-SA 4.0
+  island 03_Aerial_image_of_Gorgona_(view_from_the_east).jpg. 5400x3000 CC BY-SA 4.0
+  island 04_Aerial_image_of_Montecristo_(view_from_the_west). 5500x2800 CC BY-SA 4.0
+  island 05_Aerial_view_of_Coast_Guard_Island,_May_2025.JPG.j 5184x3888 CC BY-SA 4.0
+  island 06_Aerial_view_of_Government_Island_in_Oakland,_Cali 3264x2448 Public domain
+  open   01_Aerial_View_of_Sea_Point,_Cape_Town_South_Africa. 1600x1066 CC BY-SA 3.0
+  open   02_Air_views_of_Palestine._Flight_from_Gaza_to_Cairo 4440x3245 Public domain
+  open   03_Drone_view_of_ocean_waves_(Unsplash).jpg.jpg      2367x2367 CC0
+python.exe : Traceback (most recent call last):
+所在位置 行:3 字符: 1
++ & 'D:\work\多模态数据集生成\RGB_SAR_LIDAR_SIMU\env\Scripts\python.exe' 'dl_ba ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "D:\work\��ģ̬���ݼ�����\RGB_SAR_LIDAR_SIMU\dl_backdrops.py", line 56, in <module>
+    print("  %-6s %-52s %dx%d %s" % (cat, fn[:52], w, h, lic[:14]))
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

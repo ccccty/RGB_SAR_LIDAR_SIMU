@@ -3,272 +3,422 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>simkit 数据集工作台</title>
+<title>simkit · 数据集工作台</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<header>
+
+<header class="top">
   <div class="brand">
-    <h1>simkit 数据集工作台</h1>
-    <p class="sub">本地离线仿真 · 连续轨迹 · 双视场 · SAR · COCO 输出</p>
+    <span class="mark" aria-hidden="true"></span>
+    <div class="brand-text">
+      <h1>simkit</h1>
+      <p>多模态仿真数据集</p>
+    </div>
   </div>
-  <div class="badges">
-    <span class="badge" id="sceneCount">场景 …</span>
-    <span class="badge">零依赖 · 离线</span>
+  <div class="top-actions">
+    <span class="conn" id="conn"><i></i><span id="connText">连接中</span></span>
   </div>
 </header>
 
-<main>
-  <section class="col">
-    <form class="panel" id="form" autocomplete="off" onsubmit="return false">
-      <div class="panel-head">
-        <h2>参数</h2>
-        <span class="hint-inline">改任意一项都会更新下方的中文摘要</span>
+<div class="taskbar">
+  <div class="taskbar-inner">
+    <label class="task-field task-name">
+      <span>数据集名</span>
+      <input type="text" id="dataName" maxlength="40" spellcheck="false" value="我的数据集" title="中文会保留在界面；后端配方名会自动转成 ASCII">
+    </label>
+    <label class="task-field task-seed">
+      <span>种子</span>
+      <input type="number" id="seed" min="0" max="4294967295" step="1" value="7">
+    </label>
+    <span class="task-hint" id="nameHint"></span>
+    <span class="task-label">配方</span>
+    <div class="task-actions">
+      <button type="button" class="btn quiet small" id="recipeLoadBtn">载入</button>
+      <button type="button" class="btn quiet small" id="recipeSaveBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="layout">
+  <main class="stack" id="stack">
+    <div class="stack-head">
+      <p class="eyebrow">数据集配置</p>
+      <p class="lede">一次只展开一个箱子；合上后，标题栏仍显示当前取值。</p>
+    </div>
+
+    <!-- ① 场景 -->
+    <section class="box open" id="box-scene" data-box="scene">
+      <header class="box-head" role="button" tabindex="0" aria-expanded="true" aria-controls="body-scene">
+        <span class="num">①</span><span class="title">场景</span>
+        <span class="summary" id="sum-scene">天空 · 晴 · 无背景</span>
+        <span class="chev" aria-hidden="true"></span>
+      </header>
+      <div class="box-body" id="body-scene"><div class="box-inner">
+        <div class="field">
+          <span class="label">环境</span>
+          <div class="seg" id="envSeg"></div>
+        </div>
+        <div class="field">
+          <span class="label">天气</span>
+          <div class="chips" id="weatherChips"></div>
+        </div>
+        <div class="field">
+          <span class="label">背景图</span>
+          <div class="seg" id="bgSeg"></div>
+          <p class="note" id="bgBuiltinNote" hidden>按天气自动匹配，首次需联网下载，之后离线可用。</p>
+        <div class="bg-library" id="bgLibraryWrap" hidden>
+          <span class="label">背景库（真实航拍照片）</span>
+          <div class="bg-cats" id="bgCats"></div>
+          <p class="note" id="bgLibNote">按种子在同类照片间轮换，避免整套数据集背景雷同。</p>
+          <div class="place-wrap" id="placeWrap">
+            <div class="place-head">
+              <span class="label">在背景图上放置目标</span>
+              <div class="seg small" id="placeModeSeg"></div>
+            </div>
+            <div class="place-canvas" id="placeCanvas">
+              <img id="placeImg" alt="" />
+              <div class="place-markers" id="placeMarkers"></div>
+            </div>
+            <p class="note" id="placeHint">点一下图面即把目标放到该位置；切到「画轨迹」可以点多个点。</p>
+            <div class="place-actions">
+              <button type="button" class="btn small" id="placePreviewBtn">渲染预览</button>
+              <button type="button" class="btn small quiet" id="placeClearBtn">清除轨迹</button>
+              <span class="place-status" id="placeStatus"></span>
+            </div>
+            <div class="place-out" id="placeOut" hidden>
+              <img id="placePreviewImg" alt="预览" />
+            </div>
+          </div>
+        </div>
+          <div class="bg-file" id="bgFileWrap" hidden>
+            <div class="file-row">
+              <label class="filepick">
+                <input type="file" id="bgFile" accept="image/*">
+                <span>选择图片</span>
+              </label>
+              <div class="thumb" id="bgThumb" aria-hidden="true"></div>
+            </div>
+            <label class="field">
+              <span class="label">服务器可读路径</span>
+              <input type="text" id="bgPath" placeholder="例如 D:\textures\sky_clear.hdr" spellcheck="false">
+            </label>
+            <p class="hint">后端在服务器进程里读取这个路径；浏览器选中的文件只做本地预览，不会上传。</p>
+          </div>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- ② 目标 -->
+    <section class="box" id="box-target" data-box="target">
+      <header class="box-head" role="button" tabindex="0" aria-expanded="false" aria-controls="body-target">
+        <span class="num">②</span><span class="title">目标</span>
+        <span class="summary" id="sum-target">双发战斗机 ×1</span>
+        <span class="chev" aria-hidden="true"></span>
+      </header>
+      <div class="box-body" id="body-target"><div class="box-inner">
+        <div class="row2" id="assetPickers">
+          <label class="field">
+            <span class="label">类别</span>
+            <select id="catSel"></select>
+          </label>
+          <label class="field">
+            <span class="label">模型</span>
+            <select id="assetSel"></select>
+          </label>
+        </div>
+        <div class="notice" id="assetState" hidden></div>
+        <div class="asset-meta" id="assetMeta"></div>
+        <div class="row2">
+          <div class="field">
+            <span class="label">尺寸档</span>
+            <div class="seg" id="sizeSeg"></div>
+          </div>
+          <label class="field">
+            <span class="label">数量</span>
+            <input type="number" id="objCount" min="1" max="8" step="1" value="1">
+          </label>
+        </div>
+        <details class="adv">
+          <summary>高级</summary>
+          <div class="adv-body">
+            <div class="row2">
+              <label class="field">
+                <span class="label">缩放倍率</span>
+                <input type="number" id="objScale" min="0.1" max="10" step="0.05" value="1">
+                <span class="prov">按模型包围盒自动取值；只改画面占比，不改资产登记尺寸。</span>
+              </label>
+              <label class="field">
+                <span class="label">类别标签 cls</span>
+                <input type="text" id="objCls" spellcheck="false" value="fighter">
+                <span class="prov">写入 COCO / YOLO 的类别名，建议沿用资产库的 cls。</span>
+              </label>
+            </div>
+            <label class="field">
+              <span class="label">模型路径（相对 assets/models）</span>
+              <input type="text" id="objPath" spellcheck="false" placeholder="军用飞机/双发战斗机.obj">
+              <span class="prov">资产库不可用时手填；后端会校验文件确实存在。</span>
+            </label>
+          </div>
+        </details>
+      </div></div>
+    </section>
+
+    <!-- ③ 干扰 -->
+    <section class="box" id="box-ecm" data-box="ecm">
+      <header class="box-head" role="button" tabindex="0" aria-expanded="false" aria-controls="body-ecm">
+        <span class="num">③</span><span class="title">干扰</span>
+        <span class="summary" id="sum-ecm">无干扰</span>
+        <span class="chev" aria-hidden="true"></span>
+      </header>
+      <div class="box-body" id="body-ecm"><div class="box-inner">
+        <div class="field">
+          <span class="label">干扰实体（可多选）</span>
+          <div class="ecm-picks" id="ecmPicks"></div>
+          <p class="hint" id="ecmHint">勾选即添加；不勾选则本次无干扰。模式会按实体自动推断。</p>
+        </div>
+        <div class="field">
+          <span class="label">干扰增广（图像级）</span>
+          <select id="augmentSel">
+            <option value="inherit">继承场景</option>
+            <option value="off">关闭</option>
+            <option value="active">有源类</option>
+            <option value="passive">无源类</option>
+            <option value="mixed">混合</option>
+          </select>
+          <p class="hint" id="augmentHint">沿用场景文件自带的干扰增广设置。</p>
+        </div>
+        <div class="ecm-blocks" id="ecmBlocks"></div>
+      </div></div>
+    </section>
+
+    <!-- ④ 视角 -->
+    <section class="box" id="box-view" data-box="view">
+      <header class="box-head" role="button" tabindex="0" aria-expanded="false" aria-controls="body-view">
+        <span class="num">④</span><span class="title">视角</span>
+        <span class="summary" id="sum-view">8 km · 迎头</span>
+        <span class="chev" aria-hidden="true"></span>
+      </header>
+      <div class="box-body" id="body-view"><div class="box-inner">
+        <div class="field">
+          <span class="label">轨迹</span>
+          <div class="seg" id="trajModeSeg"></div>
+          <p class="prov" id="trajModeNote"></p>
+        </div>
+        <div id="fixedView">
+          <div class="field">
+            <span class="label">距离</span>
+            <div class="range-row">
+              <input type="range" id="rangeSlider" min="0.3" max="40" step="0.1" value="8" aria-label="拍摄距离（公里）">
+              <input type="number" id="rangeNum" class="num-mini" min="0.1" max="200" step="0.1" value="8">
+              <span class="unit">km</span>
+            </div>
+          </div>
+          <div class="field">
+            <span class="label">方位</span>
+            <div class="seg" id="aspectSeg"></div>
+          </div>
+        </div>
+        <div id="drawnView" hidden>
+          <div class="traj-canvas-wrap">
+            <canvas id="trajCanvas" width="480" height="480" aria-label="俯视轨迹画布"></canvas>
+            <div class="traj-legend"><span>网格 1 km</span><span>俯视 X-Y · 相机在中心</span></div>
+          </div>
+          <div class="traj-tools">
+            <button type="button" class="btn small quiet" id="trajUndo">撤销上一点</button>
+            <button type="button" class="btn small quiet" id="trajClear">清空</button>
+            <button type="button" class="btn small primary" id="trajOptimize" disabled>优化轨迹</button>
+          </div>
+          <div class="row3">
+            <label class="field">
+              <span class="label">高度（m）</span>
+              <input type="number" id="trajAlt" min="10" max="30000" step="50" value="2500">
+              <span class="prov">天空场景常用 2500 m。</span>
+            </label>
+            <label class="field">
+              <span class="label">速度（m/s）</span>
+              <input type="number" id="trajSpeed" min="1" max="1000" step="10" value="250">
+              <span class="prov">战斗机典型接近率约 250 m/s，不是实测。</span>
+            </label>
+            <div class="field">
+              <span class="label">闭合</span>
+              <button type="button" class="chip" id="trajClosed">否</button>
+              <span class="prov">闭合后回到起点再结束。</span>
+            </div>
+          </div>
+          <p class="traj-stats" id="trajStats"></p>
+          <p class="traj-warn" id="trajWarn"></p>
+          <p class="hint">左键加点，右键撤销；生成时只使用优化后的平滑曲线，不用原始折线。</p>
+        </div>
+        <div class="field">
+          <span class="label">视场档</span>
+          <div class="seg" id="fovSeg"></div>
+        </div>
+        <details class="adv">
+          <summary>高级 · 视场与轨迹</summary>
+          <div class="adv-body">
+            <div class="row2">
+              <label class="field">
+                <span class="label">视场角（度）</span>
+                <input type="number" id="fovDeg" min="0.1" max="120" step="0.1" value="2.2">
+                <span class="prov">视场越窄，同一距离目标像素越多；低于 1 px 无法标注。</span>
+              </label>
+              <div class="field">
+                <span class="label">视场模式</span>
+                <div class="seg" id="viewsSeg"></div>
+                <span class="prov">双视场 = 2.2° 导引 + 18° 搜索，同帧两路渲染。</span>
+              </div>
+            </div>
+            <div class="plan-box">
+              <button type="button" class="btn small quiet" id="planBtn">预览轨迹事实</button>
+              <span class="prov">只算轨迹与像素，不渲染，约 0.1 秒。</span>
+              <div class="plan-out" id="planOut"></div>
+            </div>
+          </div>
+        </details>
+      </div></div>
+    </section>
+
+    <!-- ⑤ 采集 -->
+    <section class="box" id="box-capture" data-box="capture">
+      <header class="box-head" role="button" tabindex="0" aria-expanded="false" aria-controls="body-capture">
+        <span class="num">⑤</span><span class="title">采集</span>
+        <span class="summary" id="sum-capture">可见光+红外+雷达 · 20 帧</span>
+        <span class="chev" aria-hidden="true"></span>
+      </header>
+      <div class="box-body" id="body-capture"><div class="box-inner">
+        <div class="field">
+          <span class="label">模态</span>
+          <div class="sensors" id="sensorCards"></div>
+        </div>
+        <label class="field">
+          <span class="label">帧数</span>
+          <input type="number" id="frames" min="1" max="20000" step="1" value="20">
+          <span class="prov">正式生成按此帧数；右栏「预览 8 帧」只跑 8 帧，用于确认视角。</span>
+        </label>
+        <details class="adv">
+          <summary>高级 · 时间基准</summary>
+          <div class="adv-body">
+            <label class="field">
+              <span class="label">帧率 fps</span>
+              <input type="number" id="fps" min="0.5" max="120" step="0.5" value="10">
+              <span class="prov">10 Hz 是现有场景的编排值；改成 20 Hz 会让同一段里程翻倍。</span>
+            </label>
+          </div>
+        </details>
+      </div></div>
+    </section>
+
+    <!-- ⑥ 输出 -->
+    <section class="box" id="box-output" data-box="output">
+      <header class="box-head" role="button" tabindex="0" aria-expanded="false" aria-controls="body-output">
+        <span class="num">⑥</span><span class="title">输出</span>
+        <span class="summary" id="sum-output">拼接图 + COCO + YOLO + 文档</span>
+        <span class="chev" aria-hidden="true"></span>
+      </header>
+      <div class="box-body" id="body-output"><div class="box-inner">
+        <div class="toggles" id="outputToggles"></div>
+
+        <div class="field outloc">
+          <span class="label">输出位置</span>
+          <div class="out-row">
+            <input type="text" id="outputDir" spellcheck="false" placeholder="留空使用默认目录">
+            <button type="button" class="btn quiet small" id="browseBtn">浏览…</button>
+          </div>
+          <span class="prov" id="outStatus">默认：out/studio_runs</span>
+          <p class="hint">填写本机文件夹路径，服务器会把数据集写到这里；留空则用默认：<span id="defaultOut">out/studio_runs</span>。</p>
+          <div class="browser" id="browser" hidden>
+            <div class="browser-head">
+              <button type="button" class="link-btn" id="browserUp">↑ 上一级</button>
+              <code id="browserPath">…</code>
+            </div>
+            <div class="browser-dirs" id="browserDirs"></div>
+            <div class="browser-foot">
+              <button type="button" class="btn small primary" id="browserPick">选这个文件夹</button>
+              <span class="prov" id="browserNote"></span>
+            </div>
+          </div>
+        </div>
+
+        <p class="hint">拼接图每模态取 4 帧；COCO / YOLO 由后端按同源投影写成标准标注。</p>
+      </div></div>
+    </section>
+  </main>
+
+  <aside class="rail" id="rail">
+    <div class="rail-card">
+      <div class="rail-head">
+        <h3>预检</h3>
+        <span class="state-dot" id="pfDot"></span>
       </div>
-
-      <details class="grp" open>
-        <summary>1 · 场景与目标</summary>
-        <div class="grp-body">
-          <div class="field">
-            <label for="scene">场景（自动扫描 <code>scenes/*.json</code>）</label>
-            <select id="scene"></select>
-            <div class="hint" id="sceneNote"></div>
-          </div>
-          <div class="field">
-            <label>目标像素区间（画面里的跨度）</label>
-            <div class="chips" id="size">
-              <button type="button" data-v="small">小</button>
-              <button type="button" data-v="medium" class="on">中</button>
-              <button type="button" data-v="large">大</button>
-            </div>
-            <div class="row2 tight">
-              <input id="pxLo" type="number" min="1" max="4000" step="1" value="18" aria-label="目标像素下限">
-              <input id="pxHi" type="number" min="1" max="4000" step="1" value="42" aria-label="目标像素上限">
-            </div>
-            <div class="hint">下限 / 上限，单位 px；视场越窄，同一距离上的像素越多</div>
-          </div>
-          <div class="field">
-            <label>接近方式</label>
-            <div class="chips" id="closing">
-              <button type="button" data-v="in" class="on">接近</button>
-              <button type="button" data-v="out">远离</button>
-              <button type="button" data-v="hold">保持</button>
-            </div>
-          </div>
-          <div class="row2">
-            <div class="field">
-              <label for="closingMps">接近速率 m/s（0 = 按段时长推）</label>
-              <input id="closingMps" type="number" min="0" max="3000" step="10" value="0">
-            </div>
-            <div class="field">
-              <label for="rngLo">视线距离区间 m</label>
-              <input id="rngLo" type="number" min="1" max="400000" step="100" value="1500">
-              <input id="rngHi" type="number" min="1" max="400000" step="100" value="16000">
-            </div>
-          </div>
-        </div>
-      </details>
-
-      <details class="grp">
-        <summary>2 · 视场（单 / 双）</summary>
-        <div class="grp-body">
-          <div class="field">
-            <label>视场模式</label>
-            <div class="chips" id="viewsMode">
-              <button type="button" data-v="single" class="on">单视场</button>
-              <button type="button" data-v="dual">双视场</button>
-            </div>
-            <div class="hint">双视场 = 窄 2.2°@960×720 机载导引 + 宽 18°@1280×960 搜索，同一帧两路都渲染</div>
-          </div>
-          <div class="field">
-            <label>窄视场（机载导引）</label>
-            <div class="row3">
-              <label class="mini">FOV°<input id="nFov" type="number" min="0.1" max="120" step="0.1" value="2.2"></label>
-              <label class="mini">宽 px<input id="nW" type="number" min="64" max="4096" step="1" value="960"></label>
-              <label class="mini">高 px<input id="nH" type="number" min="64" max="4096" step="1" value="720"></label>
-            </div>
-          </div>
-          <div class="field" id="wideBox">
-            <label>宽视场（搜索）</label>
-            <div class="row3">
-              <label class="mini">FOV°<input id="wFov" type="number" min="0.1" max="120" step="0.5" value="18"></label>
-              <label class="mini">宽 px<input id="wW" type="number" min="64" max="4096" step="1" value="1280"></label>
-              <label class="mini">高 px<input id="wH" type="number" min="64" max="4096" step="1" value="960"></label>
-            </div>
-            <div class="hint">宽视场角必须大于窄视场角</div>
-          </div>
-        </div>
-      </details>
-
-      <details class="grp">
-        <summary>3 · SAR</summary>
-        <div class="grp-body">
-          <div class="field">
-            <label class="switch"><input id="sarOn" type="checkbox"> 生成 SAR 模态</label>
-            <div class="hint">SAR 由主控集成到 <code>simkit/dataset.py</code>；未集成时该传感器被忽略，其余模态不受影响</div>
-          </div>
-          <div class="sar-box" id="sarBox">
-            <div class="field">
-              <label>波段</label>
-              <div class="chips" id="sarBand">
-                <button type="button" data-v="X" class="on">X</button>
-                <button type="button" data-v="C">C</button>
-                <button type="button" data-v="Ku">Ku</button>
-              </div>
-              <div class="hint" id="sarBandNote"></div>
-            </div>
-            <div class="row2">
-              <div class="field">
-                <label for="sarBw">带宽 MHz</label>
-                <input id="sarBw" type="number" min="1" max="2000" step="10" value="100">
-              </div>
-              <div class="field">
-                <label>距离分辨率（由带宽推）</label>
-                <div class="readout" id="sarRes">1.50 m</div>
-              </div>
-            </div>
-            <div class="row2">
-              <div class="field">
-                <label for="swathC">测绘带中心 m</label>
-                <input id="swathC" type="number" min="10" max="200000" step="100" value="4000">
-              </div>
-              <div class="field">
-                <label for="swathW">测绘带宽度 m</label>
-                <input id="swathW" type="number" min="10" max="200000" step="100" value="1200">
-              </div>
-            </div>
-            <div class="row2">
-              <div class="field">
-                <label for="sarAlt">平台高度 m</label>
-                <input id="sarAlt" type="number" min="10" max="30000" step="100" value="3000">
-              </div>
-              <div class="field">
-                <label for="sarSpeed">平台速度 m/s</label>
-                <input id="sarSpeed" type="number" min="0" max="3000" step="10" value="150">
-              </div>
-            </div>
-            <div class="row2">
-              <div class="field">
-                <label for="sarSquint">斜视°</label>
-                <input id="sarSquint" type="number" min="-75" max="75" step="1" value="0">
-              </div>
-              <div class="field">
-                <label for="sarPol">极化</label>
-                <select id="sarPol">
-                  <option>VV</option><option>HH</option><option>VH</option><option>HV</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-      </details>
-
-      <details class="grp">
-        <summary>4 · 轨迹</summary>
-        <div class="grp-body">
-          <div class="field">
-            <label>轨迹模式</label>
-            <div class="chips" id="traj">
-              <button type="button" data-v="platform" class="on">平台俯冲 + 蛇形</button>
-              <button type="button" data-v="seeker">相机静立 · 目标飞行</button>
-              <button type="button" data-v="world">世界轨迹（旧）</button>
-            </div>
-            <div class="hint">「平台」模式相机沿俯冲航路前进，地速效应落在画面上；另两种是旧模式</div>
-          </div>
-          <div class="plat-box" id="platBox">
-            <div class="row2">
-              <div class="field"><label for="pAlt">平台高度 m</label>
-                <input id="pAlt" type="number" min="10" max="30000" step="50" value="1200"></div>
-              <div class="field"><label for="pSpeed">平台速度 m/s</label>
-                <input id="pSpeed" type="number" min="0" max="3000" step="10" value="180"></div>
-            </div>
-            <div class="row2">
-              <div class="field"><label for="pHeading">航向°</label>
-                <input id="pHeading" type="number" min="0" max="360" step="5" value="90"></div>
-              <div class="field"><label for="pDive">俯冲角°</label>
-                <input id="pDive" type="number" min="-89" max="89" step="1" value="-14"></div>
-            </div>
-            <div class="row2">
-              <div class="field"><label for="pWeave">蛇形振幅 m</label>
-                <input id="pWeave" type="number" min="0" max="500" step="1" value="18"></div>
-              <div class="field"><label for="pWeaveHz">蛇形频率 Hz</label>
-                <input id="pWeaveHz" type="number" min="0" max="5" step="0.01" value="0.22"></div>
-            </div>
-            <div class="row2">
-              <div class="field"><label for="pBack">起点后撤 m</label>
-                <input id="pBack" type="number" min="0" max="200000" step="100" value="3000"></div>
-              <div class="field"><label for="pStandoff">结束距离 m</label>
-                <input id="pStandoff" type="number" min="10" max="50000" step="10" value="260"></div>
-            </div>
-          </div>
-        </div>
-      </details>
-
-      <details class="grp" open>
-        <summary>5 · 采集与天气</summary>
-        <div class="grp-body">
-          <div class="field">
-            <label>天气</label>
-            <div class="chips" id="weather"></div>
-            <div class="hint">「混合」= 每段随机一种；「演变」= 段内平滑过渡</div>
-          </div>
-          <div class="field">
-            <label>传感器（可多选）</label>
-            <div class="chips" id="sensors"></div>
-          </div>
-          <div class="row2">
-            <div class="field"><label for="frames">总帧数</label>
-              <input id="frames" type="number" min="1" max="20000" step="10" value="240"></div>
-            <div class="field"><label for="fps">帧率 fps</label>
-              <input id="fps" type="number" min="0.5" max="120" step="0.5" value="10"></div>
-          </div>
-          <div class="row2">
-            <div class="field"><label for="fpc">每段帧数</label>
-              <input id="fpc" type="number" min="1" max="5000" step="10" value="120"></div>
-            <div class="field"><label for="seed">随机种子</label>
-              <input id="seed" type="number" step="1" value="7"></div>
-          </div>
-          <div class="field"><label for="name">输出名后缀（可选）</label>
-            <input id="name" type="text" maxlength="40" placeholder="例如 dual_ku_rain"></div>
-        </div>
-      </details>
-
-      <div class="summary-strip" id="summary">正在读取场景…</div>
-
-      <div class="actions">
-        <button type="button" id="btnPlan" class="ghost">预览轨迹事实</button>
-        <button type="button" id="btnPreview" class="ghost">渲染 8 帧小样</button>
-        <button type="button" id="btnGen" class="primary">生成数据集</button>
+      <div class="pf-body" id="pfBody">
+        <p class="pf-idle">正在读取选项…</p>
       </div>
-      <div class="alert" id="formErr" hidden></div>
-    </form>
-  </section>
-
-  <section class="col side">
-    <div class="panel">
-      <div class="panel-head"><h2>任务与进度</h2><span class="hint-inline" id="jobHint"></span></div>
-      <div id="jobs"></div>
     </div>
-    <div class="panel">
-      <div class="panel-head"><h2>样张</h2><span class="hint-inline">点任务或「已生成的运行」里的「看」</span></div>
-      <div id="gallery"><div class="empty">还没有可看的样张。</div></div>
-    </div>
-  </section>
 
-  <section class="panel wide">
-    <div class="panel-head">
-      <h2>轨迹事实</h2>
-      <span class="hint-inline">来自 <code>plan.summary()</code>，只算轨迹，不渲染</span>
+    <div class="rail-card">
+      <div class="rail-head"><h3>预估</h3></div>
+      <div class="est">
+        <div class="est-main" id="estTime">—</div>
+        <div class="est-sub" id="estDisk">—</div>
+      </div>
+      <div class="est-meta" id="estMeta"></div>
     </div>
-    <div id="plan"><div class="empty">选好参数后点「预览轨迹事实」。</div></div>
-  </section>
 
-  <section class="panel wide">
-    <div class="panel-head"><h2>已生成的运行</h2><span class="hint-inline" id="runsHint"></span></div>
-    <div id="datasets"></div>
-  </section>
-</main>
+    <div class="rail-card">
+      <button type="button" class="btn primary block" id="genBtn" disabled>生成数据集</button>
+      <div class="rail-row two">
+        <button type="button" class="btn quiet" id="stillBtn">预览一张</button>
+        <button type="button" class="btn quiet" id="prevBtn">预览 8 帧</button>
+      </div>
+      <button type="button" class="btn danger block" id="cancelBtn" hidden>取消任务</button>
+      <p class="rail-hint" id="genHint">等待预检结果…</p>
+      <div class="job" id="job" hidden>
+        <div class="job-top"><span id="jobState">排队中</span><span id="jobPct">0%</span></div>
+        <div class="bar"><i id="jobBar"></i></div>
+        <div class="job-out" id="jobOutWrap" hidden>
+          <div class="job-out-head">
+            <span>输出到</span>
+            <button type="button" class="link-btn" id="copyOutBtn">复制路径</button>
+          </div>
+          <code id="jobOut"></code>
+        </div>
+        <div class="job-log" id="jobLog"></div>
+        <a class="link" id="jobLink" href="#" target="_blank" rel="noopener" hidden>查看产物 →</a>
+      </div>
+      <div class="still" id="stillBox" hidden>
+        <img id="stillImg" alt="第 1 帧预览" hidden>
+        <div class="still-msg" id="stillMsg"></div>
+        <p class="still-note">这是第 1 帧的预览，正式生成会产出全部帧</p>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<div class="drawer" id="drawer">
+  <button type="button" class="drawer-bar" id="drawerBar" aria-expanded="false">
+    <span class="drawer-title">运行历史</span><span class="count" id="runCount">0</span>
+    <span class="drawer-sub">已完成与进行中的生成</span>
+    <span class="chev up" aria-hidden="true"></span>
+  </button>
+  <div class="drawer-panel"><div class="drawer-inner" id="runList"></div></div>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-backdrop" id="modalBackdrop"></div>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <header class="modal-head">
+      <h2 id="modalTitle">产物</h2>
+      <button type="button" class="icon-btn" id="modalClose" aria-label="关闭">×</button>
+    </header>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<noscript><div class="noscript">这个界面需要 JavaScript 才能连接本地服务。</div></noscript>
 
 <script src="app.js"></script>
+<script src="bench.js"></script>
 </body>
 </html>

@@ -46,6 +46,7 @@ def describe(state, world):
         objects.append(dict(track_id=obj["name"], cls=obj["cls"],
                             center_world_m=center.tolist(), origin_world_m=np.asarray(obj["pos"]).tolist(),
                             velocity_mps=np.asarray(obj["vel"]).tolist(), yaw_deg=float(obj["yaw"]),
+                            pitch_deg=float(obj.get("pitch", 0)), roll_deg=float(obj.get("roll", 0)),
                             range_m=distance, relative_velocity_mps=relative_v.tolist(),
                             closing_speed_mps=closing, projections=projections,
                             source_material_report=obj.get("source_material_report"),
