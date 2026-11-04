@@ -54,6 +54,77 @@ def chk(name, val, lo, hi, unit="", why=""):
     return ok
 
 
+def netd_check(scene_path, work):
+    """Verify that the configured NETD actually lands in the digital counts.
+
+    Rendered twice, once with NETD zeroed: the difference on the TARGET pixels
+    is the temporal noise. It must be measured there and nowhere else -- a plate
+    scene replaces ~95% of the frame with the photograph after the sensor chain,
+    so a whole-frame statistic reports the plate, not the detector, and read 0.09
+    counts on a model that was actually delivering 7.2.
+    """
+    import copy as _copy
+    sys.path.insert(0, ROOT)
+    from simkit import engine, ir, scene, thermal
+    base = scene.load_config(scene_path)
+    w = scene.build_world(base, 0.0)
+    T = thermal.solve(w, base)
+    netd = float((base.get("ir") or {}).get("netd_mk", 30.0))
+    frames = {}
+    for value in (0.0, netd):
+        c = _copy.deepcopy(base)
+        c.setdefault("ir", {})["netd_mk"] = value
+        c["ir"]["nuc"] = dict(c["ir"].get("nuc") or {}, enabled=False)
+        out = ir.render(w, c, T, cam=c["sensors"]["ir_camera"])
+        frames[value] = (out["counts_u16"].astype(float), out["obj_id"])
+    pid = frames[netd][1]
+    mask = pid >= 0
+    if not mask.any():
+        return
+    d = (frames[netd][0] - frames[0.0][0])[mask]
+    expected = (netd / 1000.0) / 250.0 * 65535.0
+    ratio = float(d.std() / max(expected, 1e-9))
+    chk("红外 NETD 兑现比", ratio, 0.5, 1.6, "",
+        "配置的 NETD 应体现在数字计数上")
+
+
+def clutter_check(work, scene_file):
+    """Range-Doppler statistics: noise floor, target SNR and clutter occupancy.
+
+    The label counts only clutter that passed the detector gate, and at these
+    carrier-to-noise ratios the patches sit below it, so that count is zero on
+    a scene whose RD map is far from empty. The statistics have to come from
+    the map itself: a noise floor that is not degenerate, a target peak well
+    above it, and a small fraction of cells lifted by clutter -- none at all
+    would mean a ground radar looking at an empty world.
+    """
+    sys.path.insert(0, ROOT)
+    from simkit import radar, scene
+    # load_config, not the raw JSON: it resolves ../assets model paths
+    cfg = scene.load_config(scene_file)
+    if not cfg:
+        return
+    world = scene.build_world(cfg, 0.0)
+    out = radar.simulate(world, cfg)
+    rd = np.abs(np.asarray(out["rd_map"], dtype=float))
+    floor = float(np.median(rd))
+    peak = float(rd.max())
+    if floor <= 0.0:
+        chk("雷达 RD 噪声底", floor, 1e-30, None, "", "噪声底不能是零")
+        return
+    chk("雷达 RD 噪声底", floor, 1e-30, None, "", "地图必须要有噪声")
+    chk("雷达 峰值信杂比", 10.0 * np.log10(max(peak, 1e-30) / floor), 10.0, 45.0, "dB",
+        "目标应明显高于噪声底")
+    chk("雷达 杂波占用", float((rd > 6.0 * floor).mean() * 100.0), 0.5, 25.0, "%",
+        "应有杂波但不应铺满距离多普勒面")
+    # The radar equation and the detection stage live in the same module,
+    # so they have to agree. A gap here means a gain is counted twice.
+    eq = np.asarray(out.get("snr_db"), float).ravel()
+    tg = [d for d in (out.get("detections") or []) if float(d.get("obj", -1)) >= 0]
+    if eq.size and tg and float(tg[0].get("snr_db", 0.0)) > 0.0:
+        chk("雷达 方程/检测一致性", abs(float(tg[0]["snr_db"]) - float(eq[0])),
+            0.0, 8.0, "dB", "链路预算与检测门限必须自洽")
+
 def report():
     bad = [r for r in RESULTS if not r[5]]
     print()
@@ -181,6 +252,9 @@ def main():
         chk("跨模态 目标中心偏移", max(dx, dy) * 100, 0.0, 2.0, "%",
             "光学与红外必须看到同一个目标")
 
+    # NETD must show up where a detector shows it, on the target's own pixels
+    netd_check(a.scene, work)
+    clutter_check(work, a.scene)
     return report()
 
 
