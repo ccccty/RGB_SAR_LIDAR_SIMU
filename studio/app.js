@@ -1127,18 +1127,12 @@
     var st = $("placeStatus");
     S.place.busy = true;
     renderPlace();
-    /* 用 ajax：app.js 里没有 api() 这个函数（那是 bench.js 内部的），
-       之前 api("/place") 会抛 ReferenceError，按钮永久卡在"渲染中"。 */
-    ajax("POST", API + "/place", {
-      category: S.bg.category,
-      u: u, v: v,
-      span_m: 600,
-      fov_deg: 10,
-      width: 320,
-      samples: 12,
-      asset: S.obj.asset,
-      cls: S.obj.cls || "vehicle"
-    }, function (err, d) {
+    /* 发送与「生成」完全相同的表单：预览必须走同一条 compose 路径，
+       否则目标数、轨迹、环境类型都可能和实际生成不一致。 */
+    var payload = buildPayload();
+    payload.width = 320;
+    payload.samples = 12;
+    ajax("POST", API + "/place", payload, function (err, d) {
       S.place.busy = false;
       if (err) {
         if (st) { st.textContent = "预览失败：" + (err.error || err.message || "未知错误"); }
@@ -1146,7 +1140,10 @@
         return;
       }
       S.place.url = d.url + "?t=" + Date.now();
-      if (st) { st.textContent = "世界坐标 " + d.world.join(", ") + " · " + d.seconds + " 秒"; }
+      if (st) {
+        st.textContent = (d.targets || 1) + " 个目标 · " + d.sensor
+          + " · " + (d.size || []).join("×") + " · " + d.seconds + " 秒";
+      }
       renderPlace();
     });
   }

@@ -160,7 +160,10 @@ class PlacementTests(unittest.TestCase):
         from simkit import scenegen
         r = scenegen.default_recipe()
         r['name'] = 'place_test'
-        r['environment'].update(kind='ground', weather='clear')
+        # A plate view needs an actual plate: without a backdrop the planner is
+        # right to fall back to the scene's own engagement.
+        r['environment'].update(kind='ground', weather='clear',
+                                background={'mode': 'library', 'category': 'city'})
         r['objects'] = [dict(asset='军用地面车辆/主战坦克.obj', cls='vehicle',
                              scale=1.0, count=1, uv=list(uv))]
         r['view'].update(aspect='top_down', ground_span_m=span, fov_deg=10.0)
@@ -192,6 +195,30 @@ class PlacementTests(unittest.TestCase):
         self.assertTrue(g['backdrop_aligned'])
         self.assertEqual(g['backdrop_offset'], [0.5, 0.5])
         self.assertAlmostEqual(g['backdrop_span_y_m'], g['backdrop_span_m'] * 0.75, places=2)
+
+    def test_sky_plate_accepts_top_down_and_places_exactly(self):
+        """A photograph is a plate regardless of domain.
+
+        The sky category used to be refused a plate view (top_down only made
+        sense over a surface), so the click coordinates were silently ignored
+        and the target rendered wherever the fallback seeker pointed.
+        """
+        from simkit import scenegen
+        r = scenegen.default_recipe()
+        r['name'] = 'sky_plate_test'
+        r['environment'].update(kind='sky', weather='clear',
+                                background={'mode': 'library', 'category': 'sky'})
+        r['objects'] = [dict(asset='军用飞机/双发战斗机.obj', cls='fighter',
+                             scale=1.0, count=1, uv=[0.32, 0.30])]
+        r['view'].update(aspect='top_down', ground_span_m=600.0, fov_deg=10.0)
+        r['capture'].update(sensors=['optical'], frames=1)
+        cfg = scenegen.build_scene(scenegen.validate_recipe(r))
+        self.assertEqual(str(cfg['view']['aspect']), 'top_down')
+        self.assertNotIn('seeker', cfg.get('clip') or {})
+        x, y, z = cfg["objects"][0]["pos"]
+        self.assertAlmostEqual(x, (0.32 - 0.5) * 600.0, places=1)
+        self.assertAlmostEqual(y, (0.5 - 0.30) * 600.0 * 0.75, places=1)
+
 
 class BackdropLibraryTests(unittest.TestCase):
     """The collected plate library and its nadir filter."""

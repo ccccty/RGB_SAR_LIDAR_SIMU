@@ -1493,16 +1493,23 @@ def build_scene(recipe):
     # "auto" lets the environment pick the engagement: aircraft are met head-on
     # or chased, ground and sea targets are looked down on. An explicit aspect
     # still wins, so a curated scene can pin its own geometry.
-    aspect_allowed = ASPECT_BY_ENV.get(env, ('head_on', 'pursuit'))
-    aspect = view['aspect']
-    top_down = (aspect == 'top_down')
-    if top_down and env not in ('ground', 'sea'):
-        # A nadir plate view only makes sense over a surface; asking for it in an
-        # air scene falls back to the environment default rather than producing a
-        # camera staring at the ground under an aircraft.
+    aspect_allowed = ASPECT_BY_ENV.get(env, ("head_on", "pursuit"))
+    aspect = view["aspect"]
+    top_down = (aspect == "top_down")
+    _bg_mode = str(((r.get("environment") or {}).get("background") or {}).get("mode") or "")
+    _has_plate = _bg_mode in ("library", "upload")
+    if top_down and not _has_plate:
+        # A plate view needs a plate. Without one there is nothing to click on,
+        # so an air scene falls back to its own engagement instead of pointing a
+        # camera at the ground under an aircraft.
         top_down = False
         aspect = aspect_allowed[0]
-    elif aspect == 'auto' or aspect not in ('head_on', 'pursuit', 'look_down', 'top_down'):
+    elif top_down:
+        # With a photograph under it the plate view is valid in any domain: the
+        # camera frames a picture and the target stands on it. Refusing it for
+        # the sky category silently discarded every click coordinate.
+        aspect = "top_down"
+    elif aspect == "auto" or aspect not in ("head_on", "pursuit", "look_down", "top_down"):
         aspect = aspect_allowed[0]
     elif aspect not in aspect_allowed:
         # Asking for head_on on a ship is not an error the operator can see:
@@ -1618,13 +1625,17 @@ def build_scene(recipe):
                 label=True,
             )
             if _route:
-                # The drawn points are world offsets around the placement; anchor
-                # them on it so the route starts where the operator clicked.
+                # Anchor the route on the placement: point 0 becomes exactly the
+                # clicked position and the rest keep their shape. Adding the
+                # placement to raw offsets started the aircraft wherever the
+                # operator's first stroke landed, one click away from the dot.
+                _p0 = _route["points"][0]
                 obj["trajectory"] = dict(
                     mode="waypoints",
-                    points=[[round(_pos[0] + float(p[0]), 3),
-                             round(_pos[1] + float(p[1]), 3),
-                             round(_pos[2] + float(p[2]), 3)] for p in _route["points"]],
+                    points=[[round(_pos[0] + float(p[0]) - float(_p0[0]), 3),
+                             round(_pos[1] + float(p[1]) - float(_p0[1]), 3),
+                             round(_pos[2] + float(p[2]) - float(_p0[2]), 3)]
+                            for p in _route["points"]],
                     speed_mps=float(_route.get("speed_mps") or speed),
                     loop=bool(_route.get("loop", False)))
             if surface:

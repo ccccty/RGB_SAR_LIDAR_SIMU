@@ -1034,10 +1034,15 @@ def _compose(q, cfg):
     # the planner would then have two motion sources and the run would stop
     # matching the scene it claims to be. Only an explicit traj_mode overrides.
     scene_drives_camera = bool(clip.get("observer_trajectory") or clip.get("trajectory"))
+    # A plate view is one static camera over one photograph. Re-adding the form's
+    # default seeker here put a moving platform behind the plate: the camera was
+    # no longer where the placement maths put it, so a target clicked at
+    # (0.32, 0.30) rendered at (0.49, 0.47).
+    _plate_view = str(q.get("aspect") or "") == "top_down"
     if scene_drives_camera and "traj_mode" not in q["_present"]:
         clip.pop("seeker", None)
         cfg.pop("seeker", None)
-    elif q["traj_mode"] == "world":
+    elif _plate_view or q["traj_mode"] == "world":
         clip.pop("seeker", None)
         cfg.pop("seeker", None)
     else:
@@ -1427,49 +1432,50 @@ def _load_known_out_dirs():
     return []
 
 def _place_preview(body):
-    """Render one fast frame of a target placed on a backdrop plate.
+    """Render one fast frame of the form exactly as it is now configured.
 
-    This is what makes placement interactive: the operator clicks, the server
-    returns a 320x240 frame in about two seconds. It reuses the normal engine
-    path so what they see is what a full run will produce, not a separate
-    approximation that drifts from it.
+    This has to go through the same _parse/_compose path a real run uses. The
+    first version built its own little recipe from a category and a single
+    plate coordinate, so the preview genuinely was a different scene: it ignored
+    every extra target, ignored the drawn routes, and mapped the sky category to
+    a ground scene. The operator saw one thing and generation produced another.
+
+    Only resolution and sample count are reduced; nothing else is approximated.
     """
-    from . import scenegen
-    q = _parse_place(body)
-    rec = scenegen.default_recipe()
-    rec["name"] = "placement_preview"
-    rec["environment"].update(kind=q["env"], weather="clear",
-                              background=({"mode": "library", "category": q["category"]}
-                                          if q["category"] else {"mode": "none"}))
-    rec["objects"] = [dict(asset=q["asset"], cls=q["cls"], scale=1.0,
-                           count=1, uv=[q["u"], q["v"]])]
-    rec["view"].update(aspect="top_down", ground_span_m=q["span_m"],
-                       fov_deg=q["fov_deg"])
-    rec["capture"].update(sensors=[q["sensor"]], frames=1, seed=7)
-    cfg = scenegen.build_scene(scenegen.validate_recipe(rec))
-    # The scene file is written into a deep run folder, and the recipe's model
-    # paths are relative to it ('../assets/models/...'). Resolve them to absolute
-    # once, here, or every preview dies with FileNotFoundError.
+    q = _parse(body)
+    cfg = _compose(q, _load_scene(q["scene_path"]))
+    width = max(160, min(960, int(body.get("width") or 320)))
+    height = int(round(width * 0.75))
+    views = ((cfg.get("clip") or {}).get("views") or [])
+    if views:
+        for v in views:
+            v["width"], v["height"] = width, height
+    else:
+        # legacy path: dataset.py reads the size from the camera block
+        for key in ("optical", "ir_camera"):
+            blk = (cfg.get("sensors") or {}).get(key)
+            if isinstance(blk, dict):
+                blk["width"], blk["height"] = width, height
+    cfg.setdefault("optical", {})["samples"] = int(body.get("samples") or 12)
     _abs_models(cfg)
-    # Cheap render: a quarter of the pixels and a quarter of the samples is
-    # what turns ten seconds into two.
-    for v in (cfg.get("clip") or {}).get("views") or []:
-        v["width"] = int(q["width"])
-        v["height"] = int(round(q["width"] * 0.75))
-    opt = cfg.setdefault("optical", {})
-    opt["samples"] = int(q["samples"])
+    sensors = [s for s in q["sensors"] if s in ("optical", "ir", "radar", "sar", "lidar")]
+    sensor = sensors[0] if sensors else "optical"
     out_dir = os.path.join(RUNS, "_place_preview")
     if os.path.isdir(out_dir):
         for nm in os.listdir(out_dir):
             fp = os.path.join(out_dir, nm)
             if os.path.isfile(fp):
-                os.remove(fp)
+                try:
+                    os.remove(fp)
+                except OSError:
+                    pass
     os.makedirs(out_dir, exist_ok=True)
     cfg_path = os.path.join(out_dir, "scene.json")
     with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(cfg, fh, ensure_ascii=False, indent=1)
     argv = [sys.executable, "-m", "simkit", "gen", "-c", cfg_path,
-            "-o", out_dir, "-n", "1", "-s", q["sensor"], "--seed", "7"]
+            "-o", out_dir, "-n", "1", "-s", sensor,
+            "--seed", str(int(q["seed"]))]
     env = dict(os.environ)
     env["PYTHONPATH"] = ROOT
     env.setdefault("PYTHONIOENCODING", "utf-8")
@@ -1479,49 +1485,20 @@ def _place_preview(body):
     if proc.returncode != 0:
         tail = (proc.stderr or b"").decode("utf-8", "replace").strip().splitlines()
         raise BadRequest("预览渲染失败：" + " | ".join(tail[-3:]))
-    sub = "ir_mwir" if q["sensor"] == "ir" else q["sensor"]
+    sub = {"ir": "ir_mwir", "optical": "optical"}.get(sensor, sensor)
     rel = "images/%s/000000.png" % sub
     if not os.path.isfile(os.path.join(out_dir, rel)):
+        boom = [nm for nm in os.listdir(os.path.join(out_dir, "images"))
+                if os.path.isdir(os.path.join(out_dir, "images", nm))]
+        if boom:
+            rel = "images/%s/000000.png" % sorted(boom)[0]
+    if not os.path.isfile(os.path.join(out_dir, rel)):
         raise BadRequest("预览没有产出图像：%s" % rel)
-    return dict(ok=True,
-                url="/api/img/_place_preview/" + rel,
-                world=[round((q["u"] - 0.5) * q["span_m"], 2),
-                       round((0.5 - q["v"]) * q["span_m"] * 0.75, 2)],
-                seconds=round(time.time() - t0, 2),
-                span_y_m=round(q["span_m"] * 0.75, 2))
-
-
-def _parse_place(body):
-    if not isinstance(body, dict):
-        raise BadRequest("请求体必须是 JSON 对象")
-    def uv(name, default):
-        v = body.get(name, default)
-        try:
-            x = float(v)
-        except (TypeError, ValueError):
-            raise BadRequest("%s 必须是 0..1 的数字" % name)
-        if not (0.0 <= x <= 1.0):
-            # Silently clamping a click that lands outside the plate would put
-            # the target on an edge the operator never pointed at.
-            raise BadRequest("%s 必须在 0..1 之间（收到 %s）" % (name, x))
-        return x
-    cat = str(body.get("category") or "").strip()
-    from . import scenegen
-    if cat and cat not in scenegen.BACKDROP_CATEGORIES:
-        raise BadRequest("未知背景类别：%s" % cat)
-    env = str(body.get("env") or ("sea" if cat in ("port", "island", "open") else "ground"))
-    if env not in ("ground", "sea"):
-        raise BadRequest("env 只能是 ground 或 sea")
-    asset = str(body.get("asset") or "军用地面车辆/主战坦克.obj").strip()
-    return dict(u=uv("u", 0.5), v=uv("v", 0.5),
-                span_m=float(body.get("span_m") or 600.0),
-                fov_deg=float(body.get("fov_deg") or 10.0),
-                width=int(body.get("width") or 320),
-                samples=int(body.get("samples") or 16),
-                sensor=str(body.get("sensor") or "optical"),
-                category=cat, env=env, asset=asset,
-                cls=str(body.get("cls") or "vehicle"))
-
+    return dict(ok=True, url="/api/img/_place_preview/" + rel,
+                seconds=round(time.time() - t0, 2), sensor=sensor,
+                size=[width, height],
+                targets=len([o for o in cfg.get("objects") or []
+                             if o.get("label", True)]))
 
 def start_job(body, preview=False, still=False):
     q = _parse(body)
