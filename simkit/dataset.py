@@ -7,7 +7,8 @@ import time
 
 import numpy as np
 
-from . import interference, ir, labels, lidar, png, radar, scene, thermal, weather
+from . import (engine, interference, ir, labels, lidar, png, radar, scene,
+               thermal, weather)
 
 
 def _read_json(path):
@@ -698,6 +699,19 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
 
         if "ir" in sensors:
             T = thermal.solve(w, fr_cfg, shadow=cfg.get("ir", {}).get("shadow", True))
+            # Engine heat: the nozzle ring is a temperature override on the
+            # airframe; the plume is extra geometry with a prescribed field.
+            # Both are computed from the ORIGINAL world so the exhaust never
+            # shadows the aircraft or answers a radar pulse.
+            _hot_i, _hot_t = engine.nozzle_faces(w, fr_cfg)
+            if len(_hot_i):
+                T = np.array(T, float)
+                T[_hot_i] = _hot_t
+            _ir_world, _plume_t = engine.attach(w, fr_cfg)
+            # T stays sized to the original world: the label block indexes it with
+            # w.face_obj, and the plume faces are not objects.
+            T_render = (np.concatenate([np.asarray(T, float), _plume_t])
+                        if len(_plume_t) else np.asarray(T, float))
             for bnm in ir_bands:
                 bt = "" if bnm is None else "_" + bnm
                 fc = fr_cfg
@@ -706,7 +720,7 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                     fc.setdefault("ir", {})["band"] = bnm
                 for v in views:
                     vp = _view_pose(s, v, cfg)
-                    out = ir.render(w, fc, T, cam=vp)
+                    out = ir.render(_ir_world, fc, T_render, cam=vp)
                     H, W = out["counts_u16"].shape
                     name = "%06d.png" % f
                     vt = v["tag"]

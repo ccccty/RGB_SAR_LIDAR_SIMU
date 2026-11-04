@@ -18,6 +18,12 @@ emitter everywhere but worse in MWIR, so a bare-metal target looks colder in a
 3-5 um image than in 8-12 um at the same physical temperature.
 """
 MATERIALS = {
+    # Exhaust gas volume, not a surface. The emissivity is the path-averaged
+    # value of a hot CO2/H2O column, which is why it reads low next to painted
+    # metal. simkit.engine prescribes its temperature; thermal.solve never does.
+    "exhaust_plume": dict(rf_rho=0.02, rough_m=0.05, emissivity=0.30,
+                          emissivity_mwir=0.28, emissivity_lwir=0.32,
+                          alpha_solar=0.05, albedo=(0.30, 0.30, 0.32), h_int=0.0),
     "painted_metal": dict(rf_rho=0.55, rough_m=0.0020, emissivity=0.92,
                           emissivity_mwir=0.85, emissivity_lwir=0.92,
                           alpha_solar=0.35, albedo=(0.22, 0.24, 0.28), h_int=0.0),

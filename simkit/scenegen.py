@@ -1692,12 +1692,14 @@ def build_scene(recipe):
         'air': {'temp_c': SITE[env]['air_temp_c'], 'rh': SITE[env]['rh'],
                 'wind_mps': wind},
         'ir': {'bands': ['mwir', 'lwir'], 'netd_mk': 28.0, 'psf_px': 1.3,
-               # A real thermal display runs a fixed ~20 K window. The default
-               # percentile stretch spanned 41.7 K on a sky+target frame, which
-               # maps 28 mK NETD onto 0.17 of a grey level -- the noise exists in
-               # the 16-bit product and vanishes in the 8-bit preview. Measured:
-               # 0.17 DN invisible -> 0.36 DN at 20 K.
-               'preview_span_c': 20.0,
+               # The preview runs an automatic gain control over the frame, not a
+               # fixed 20 K window. A 20 K window around the median was chosen so
+               # the 28 mK NETD survives into the 8-bit sheet, but it also clipped
+               # every hot part of the target to flat white: the exhaust, the
+               # nozzle and the canopy all read 255 and the image looked like a
+               # cut-out. NETD is still measured on the 16-bit product, which is
+               # what a detector actually consumes.
+               'preview_span_c': None,
                'nuc': {'enabled': True, 'prnu': 0.008, 'dsnu_counts': 25,
                        'column_fpn_counts': 6, 'dead_px': 0.0002,
                        'seed': 12345}},

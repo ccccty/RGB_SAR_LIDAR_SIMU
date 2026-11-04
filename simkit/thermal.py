@@ -85,6 +85,101 @@ def region_overrides(world):
     return temperature, flux
 
 
+#: Classes that have a cockpit the thermal model should treat as glass. A
+#: canopy reflects the cold sky and conducts badly, so it reads far cooler than
+#: the skin around it -- one of the few shapes that identifies an aircraft in a
+#: low-resolution thermal frame.
+COCKPIT_CLS = frozenset(("fighter", "airliner", "helicopter", "uav_fixed"))
+
+
+def aero_heating(world, cfg, nrm):
+    """Extra convective conductance and recovery temperature per face.
+
+    A target moving at 250 m/s is not in natural convection. The boundary layer
+    is turbulent and forced, so the surface is pinned near the recovery
+    temperature instead of the air temperature, and the stagnation side runs
+    warmer than the lee side. That difference is the only reason a fast aircraft
+    shows any structure at all: without it the whole airframe solves to one
+    value and renders as a flat cut-out.
+
+    Returns (h_extra, t_ref) where t_ref is the effective air temperature the
+    face convects against.
+    """
+    count = len(nrm)
+    h_extra = np.zeros(count)
+    t_ref = np.full(count, np.nan)
+    air = cfg.get("air", {})
+    if not cfg.get("ir", {}).get("aero_heat", True):
+        return h_extra, t_ref
+    T_air = float(air.get("temp_c", 20.0)) + 273.15
+    rho = float(air.get("density_kg_m3", 1.112))
+    cp = 1005.0
+    gamma = 1.4
+    r_cov = 0.89
+    for obj in world.objs:
+        if not obj.get("label", True):
+            continue
+        vel = np.asarray(obj.get("vel", [0.0, 0.0, 0.0]), float)
+        speed = float(np.linalg.norm(vel))
+        if speed < 15.0:
+            continue
+        mask = world.face_obj == obj["id"]
+        if not mask.any():
+            continue
+        vhat = vel / speed
+        # turbulent flat plate: h ~ 0.0025 rho v cp is the right order for the
+        # whole airframe; the exact correlation is not worth its parameters here
+        h_extra[mask] += 0.0025 * rho * speed * cp
+        mach2 = (speed / 340.0) ** 2
+        # recovery factor on the windward side, falling off to the freestream on
+        # the lee side; cos(incidence) is the natural weight
+        cosv = np.clip(-(nrm[mask] @ vhat), 0.0, 1.0)
+        rise = T_air * r_cov * 0.5 * (gamma - 1.0) * mach2
+        t_ref[mask] = T_air + rise * cosv
+    return h_extra, t_ref
+
+
+def canopy_cooling(world, cfg, T, nrm, cent):
+    """Drop canopy faces toward the sky temperature.
+
+    Glass is opaque out of band and reflective in band, so a canopy does not
+    reach radiative equilibrium with the sun the way painted metal does. The
+    patch is approximated from geometry only: the upper front of a fuselage,
+    which is where every one of these models puts its cockpit.
+    """
+    if not cfg.get("ir", {}).get("canopy_cool", True):
+        return T
+    w = cfg.get("_weather")
+    T_sky = float(w["t_sky_k"]) if w else 0.0552 * (float(cfg.get("air", {}).get("temp_c", 20.0)) + 273.15) ** 1.5
+    out = np.array(T, float, copy=True)
+    for obj in world.objs:
+        if not obj.get("label", True) or obj.get("cls") not in COCKPIT_CLS:
+            continue
+        mask = world.face_obj == obj["id"]
+        if not mask.any():
+            continue
+        pos = np.asarray(obj.get("pos", [0.0, 0.0, 0.0]), float)
+        vel = np.asarray(obj.get("vel", [0.0, 0.0, 0.0]), float)
+        speed = float(np.linalg.norm(vel))
+        fwd = vel / speed if speed > 1e-6 else np.array([1.0, 0.0, 0.0])
+        rel = cent[mask] - pos
+        along = rel @ fwd
+        lo, hi = float(along.min()), float(along.max())
+        length = max(hi - lo, 1e-6)
+        # front 45 % of the fuselage, upper 40 % of its height, and either
+        # facing up or into the wind -- a canopy, not the whole nose
+        forward = (along - lo) > 0.55 * length
+        up = nrm[mask][:, 2] > 0.15
+        top = rel[:, 2] > np.percentile(rel[:, 2], 55.0)
+        sel = forward & (up | top)
+        if not sel.any():
+            continue
+        idx = np.flatnonzero(mask)[sel]
+        cold = 0.55 * out[idx] + 0.45 * T_sky
+        out[idx] = np.clip(cold, 200.0, out[idx])
+    return out
+
+
 def solve(world, cfg, shadow=True):
     """Return per-face temperature in Kelvin."""
     mat_names = sorted(matlib.MATERIALS)
@@ -153,6 +248,11 @@ def solve(world, cfg, shadow=True):
     wet = float(w["wetness"]) if w else 0.0
     h = 5.7 + 3.8 * wind
     h = np.full(len(cent), h)
+    # Forced convection from the target's own airspeed. A 250 m/s airframe is
+    # pinned near its recovery temperature, not the ambient one; without this
+    # every face solved to a single value and the frame had no structure.
+    _h_extra, _t_ref = aero_heating(world, cfg, nrm)
+    h = h + _h_extra
     if wet > 0.0:
         # rain: wet ground evaporates (extra cooling) and darkens (albedo drop)
         gnd = world.face_obj == -1
@@ -171,9 +271,12 @@ def solve(world, cfg, shadow=True):
             + eps * SIGMA * (vf_sky * T_sky ** 4 + vf_gnd * T_ground ** 4)
             + q_int)
 
-    T = np.full(len(cent), T_air, float)
+    # The air a face convects against: ambient, or the recovery temperature on
+    # the windward side of a fast target.
+    T_conv = np.where(np.isfinite(_t_ref), _t_ref, T_air)
+    T = np.array(T_conv, float)
     for _ in range(60):
-        fval = eps * SIGMA * T ** 4 + h * (T - T_air) - q_in
+        fval = eps * SIGMA * T ** 4 + h * (T - T_conv) - q_in
         dfun = 4.0 * eps * SIGMA * T ** 3 + h
         T = T - fval / dfun
         T = np.clip(T, 180.0, 1200.0)
@@ -185,4 +288,5 @@ def solve(world, cfg, shadow=True):
             T[world.face_obj == o["id"]] = float(o["temp_c"]) + 273.15
     mask = np.isfinite(region_temperature)
     T[mask] = region_temperature[mask]
+    T = canopy_cooling(world, cfg, T, nrm, cent)
     return T
