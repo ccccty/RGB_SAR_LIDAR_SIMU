@@ -1001,6 +1001,13 @@ _PAINT_BY_CLS = {
     'airliner': 'paint_civil_air', 'uav_fixed': 'paint_uav_fixed',
     'uav_rotor': 'paint_uav_rotor', 'ship': 'paint_warship',
     'boat': 'paint_vessel', 'scenery': 'paint_scenery',
+    # Ground vehicles are painted for IR camouflage: a matte, high-absorptance
+    # topcoat, not the semi-gloss aircraft finish. Left on painted_metal a tank
+    # in sunshine solved to within 1 K of the road and disappeared from the
+    # thermal frame.
+    'vehicle': 'matte_paint', 'tank': 'matte_paint',
+    'artillery': 'matte_paint', 'launcher': 'matte_paint',
+    'person': 'matte_paint',
 }
 
 
@@ -1617,7 +1624,14 @@ def build_scene(recipe):
                 yaw_mode='velocity',
                 scale=float(spec['scale']),
                 mat=_paint_material(spec['asset'], spec['cls']),
-                temp_c=temp_c,
+                # No hard temperature pin. thermal.solve runs a radiative-
+                # convective balance per face using the material's absorptance
+                # and internal heat flux; pinning one class number here threw
+                # that away and made every airframe isothermal, which is exactly
+                # the flat cut-out the thermal model had to fix. The curated
+                # per-asset value survives as a hint for hand-authored scenes.
+                temp_c=None,
+                temp_c_hint=temp_c,
                 rcs_db=rcs_db,
                 attitude_mode='coordinated',
                 kinematics=_envelope(spec['cls']),

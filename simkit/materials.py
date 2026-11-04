@@ -24,6 +24,14 @@ MATERIALS = {
     "exhaust_plume": dict(rf_rho=0.02, rough_m=0.05, emissivity=0.30,
                           emissivity_mwir=0.28, emissivity_lwir=0.32,
                           alpha_solar=0.05, albedo=(0.30, 0.30, 0.32), h_int=0.0),
+    # Matte military topcoat: ground vehicles and ships are painted for IR
+    # camouflage, so the paint is a high-absorptance matte, not the semi-gloss
+    # low-alpha finish of an aircraft top coat. With the aircraft's alpha (0.35)
+    # a tank in sunshine solved to within 1 K of the road and vanished from the
+    # thermal frame entirely.
+    "matte_paint": dict(rf_rho=0.35, rough_m=0.0120, emissivity=0.93,
+                        emissivity_mwir=0.91, emissivity_lwir=0.93,
+                        alpha_solar=0.82, albedo=(0.12, 0.13, 0.11), h_int=0.0),
     "painted_metal": dict(rf_rho=0.55, rough_m=0.0020, emissivity=0.92,
                           emissivity_mwir=0.85, emissivity_lwir=0.92,
                           alpha_solar=0.35, albedo=(0.22, 0.24, 0.28), h_int=0.0),
@@ -83,13 +91,16 @@ MATERIALS = {
                             emissivity_mwir=0.85, emissivity_lwir=0.92,
                             alpha_solar=0.40, albedo=(0.108, 0.130, 0.129),
                             h_int=0.0),
-    "paint_warship": dict(rf_rho=0.55, rough_m=0.0020, emissivity=0.92,
+    # Haze grey is a high-absorptance matte, not a gloss: a warship in sunshine
+    # runs 15-25 K above the sea surface, and at alpha 0.40 it solved to about
+    # 1 K and disappeared from the thermal frame.
+    "paint_warship": dict(rf_rho=0.55, rough_m=0.0060, emissivity=0.92,
                           emissivity_mwir=0.85, emissivity_lwir=0.92,
-                          alpha_solar=0.40, albedo=(0.188, 0.150, 0.123),
+                          alpha_solar=0.58, albedo=(0.188, 0.150, 0.123),
                           h_int=0.0),
-    "paint_vessel": dict(rf_rho=0.55, rough_m=0.0020, emissivity=0.92,
+    "paint_vessel": dict(rf_rho=0.55, rough_m=0.0060, emissivity=0.92,
                          emissivity_mwir=0.85, emissivity_lwir=0.92,
-                         alpha_solar=0.42, albedo=(0.140, 0.092, 0.104),
+                         alpha_solar=0.55, albedo=(0.140, 0.092, 0.104),
                          h_int=0.0),
     "paint_scenery": dict(rf_rho=0.45, rough_m=0.0080, emissivity=0.93,
                           emissivity_mwir=0.90, emissivity_lwir=0.93,

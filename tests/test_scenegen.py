@@ -499,7 +499,11 @@ class SceneContractTests(unittest.TestCase):
                             obj['model'])
             self.assertEqual(len(obj['pos']), 3)
             self.assertIsInstance(obj['rcs_db'], float)
-            self.assertIsInstance(obj['temp_c'], float)
+            # temp_c is an OPTIONAL hard pin. Generated scenes leave it None so
+            # thermal.solve runs its radiative-convective balance per face; the
+            # curated per-asset value survives as temp_c_hint.
+            self.assertIsNone(obj['temp_c'])
+            self.assertIsInstance(obj['temp_c_hint'], float)
 
     def test_count_expands_into_a_formation(self):
         r = scenegen.default_recipe()

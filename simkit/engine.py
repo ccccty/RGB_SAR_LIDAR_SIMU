@@ -39,9 +39,13 @@ ENGINE_PROFILES = {
     "helicopter": dict(t_nozzle=620.0, t_exit=680.0, dia_m=0.32, len_m=12.0),
     "uav_fixed": dict(t_nozzle=560.0, t_exit=620.0, dia_m=0.26, len_m=10.0),
     "uav_rotor": dict(t_nozzle=430.0, t_exit=480.0, dia_m=0.16, len_m=4.0),
-    "vehicle": dict(t_nozzle=520.0, t_exit=610.0, dia_m=0.09, len_m=2.0),
-    "ship": dict(t_nozzle=470.0, t_exit=550.0, dia_m=0.32, len_m=5.0),
-    "tank": dict(t_nozzle=500.0, t_exit=590.0, dia_m=0.09, len_m=1.8),
+    "vehicle": dict(t_nozzle=392.0, t_exit=430.0, dia_m=0.09, len_m=2.0,
+                     hot_frac=0.26),
+    # A ship shows its funnel and engine casing, warm rather than hot.
+    "ship": dict(t_nozzle=358.0, t_exit=392.0, dia_m=0.32, len_m=5.0,
+                 hot_frac=0.18),
+    "tank": dict(t_nozzle=400.0, t_exit=440.0, dia_m=0.09, len_m=1.8,
+                 hot_frac=0.28),
 }
 DEFAULT_PROFILE = dict(t_nozzle=520.0, t_exit=590.0, dia_m=0.18, len_m=5.0)
 
@@ -53,8 +57,8 @@ PLUME_MATERIAL = "exhaust_plume"
 
 #: Rear fraction of the fuselage treated as the nozzle, and the radius limit
 #: around the axis (as a fraction of length) so tail fins are not painted 900 K.
-NOZZLE_LENGTH_FRAC = 0.07
-NOZZLE_RADIUS_FRAC = 0.16
+NOZZLE_LENGTH_FRAC = 0.035
+NOZZLE_RADIUS_FRAC = 0.06
 
 PLUME_RINGS = 14
 PLUME_SEGMENTS = 10
@@ -97,6 +101,18 @@ def _pose(world, obj):
     return pos, _unit(np.array([np.cos(yaw), np.sin(yaw), 0.0]))
 
 
+def _hot_frac(cls):
+    """Rear fraction of the body treated as the engine hot region.
+
+    A jet's nozzle is a couple of percent of the airframe; a tank's engine bay
+    and a ship's funnel are a large plate of the hull. One constant could not
+    describe both -- at 3.5 % a tank had no hot region at all and rendered as a
+    flat patch the same temperature as the road.
+    """
+    p = profile_for(cls)
+    return float(p.get("hot_frac", NOZZLE_LENGTH_FRAC))
+
+
 def _rear_span(world, obj, cent):
     """(forward unit, tail coordinate, head coordinate, length, rear mask)."""
     pos, fwd = _pose(world, obj)
@@ -104,7 +120,7 @@ def _rear_span(world, obj, cent):
     along = rel @ fwd
     lo, hi = float(along.min()), float(along.max())
     length = max(hi - lo, 1e-6)
-    rear = along <= (lo + NOZZLE_LENGTH_FRAC * length)
+    rear = along <= (lo + _hot_frac(obj.get("cls")) * length)
     if rear.any():
         radial = np.linalg.norm(rel - np.outer(along, fwd), axis=1)
         rear = rear & (radial <= NOZZLE_RADIUS_FRAC * length)
