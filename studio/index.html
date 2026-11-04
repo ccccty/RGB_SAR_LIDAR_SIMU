@@ -76,11 +76,18 @@
               <span class="label">在背景图上放置目标</span>
               <div class="seg small" id="placeModeSeg"></div>
             </div>
+            <div class="target-tabs" id="targetTabs"></div>
+            <div class="target-asset" id="targetAsset"></div>
             <div class="place-canvas" id="placeCanvas">
               <img id="placeImg" alt="" />
               <div class="place-markers" id="placeMarkers"></div>
             </div>
             <p class="note" id="placeHint">点一下图面即把目标放到该位置；切到「画轨迹」可以点多个点。</p>
+            <div class="place-speed">
+              <span class="label">统一速度</span>
+              <input type="number" id="placeSpeed" min="1" max="1200" step="1" value="80" />
+              <span class="note">m/s（所有目标共用）</span>
+            </div>
             <div class="place-actions">
               <button type="button" class="btn small" id="placePreviewBtn">渲染预览</button>
               <button type="button" class="btn small quiet" id="placeClearBtn">清除轨迹</button>

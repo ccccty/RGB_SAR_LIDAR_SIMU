@@ -142,6 +142,18 @@ SURFACE_CLS = frozenset(('vehicle', 'tank', 'ship', 'building', 'person',
 AIR_CLS = frozenset(('fighter', 'airliner', 'uav_fixed', 'uav_rotor',
                      'helicopter'))
 
+# Which domain a target class belongs to. A dataset may mix models freely inside
+# one domain -- a fighter beside a UAV is a real formation -- but a ship in an
+# air scene is not a scene, it is a mistake.
+DOMAIN_OF_CLS = {
+    "fighter": "sky", "airliner": "sky", "helicopter": "sky",
+    "uav_fixed": "sky", "uav_rotor": "sky",
+    "vehicle": "ground", "tank": "ground", "artillery": "ground",
+    "launcher": "ground", "person": "ground", "building": "ground",
+    "ship": "sea",
+}
+DOMAIN_LABELS = {"sky": "空域", "ground": "陆域", "sea": "海域"}
+
 # Fallbacks used when the asset index has no profile for a model. RCS is a
 # front-aspect order of magnitude, temperature is skin temperature in sunshine.
 CLS_RCS_DB = {'fighter': 14.0, 'airliner': 18.0, 'uav_fixed': 1.0,
@@ -637,7 +649,32 @@ def validate_recipe(recipe):
             item['uv'] = vals
         if raw.get('z') is not None:
             item['z'] = _number(raw.get('z'), field + '.z', -50.0, 1000.0, ' m')
+        # A per-target route. plan.py already lets obj["trajectory"] win over
+        # formation and over the primary's line, so this only has to survive
+        # validation; dropping it here was why "custom route per aircraft" did
+        # nothing.
+        _tj = raw.get('trajectory')
+        if _tj is not None:
+            if not isinstance(_tj, dict):
+                raise ValueError('%s.trajectory 必须是字典（收到 %r）' % (field, _tj))
+            item['trajectory'] = _norm_target_route(_tj, field + '.trajectory')
         objects.append(item)
+
+    # Domain consistency: models may be mixed freely inside one domain (a
+    # fighter beside a UAV), but not across them. A ship in an air scene is a
+    # mistake that otherwise renders happily.
+    _doms = {}
+    for _i, _o in enumerate(objects):
+        _d = DOMAIN_OF_CLS.get(_o["cls"])
+        if _d is None:
+            continue
+        _doms.setdefault(_d, []).append("objects[%d](%s)" % (_i, _o["cls"]))
+    if len(_doms) > 1:
+        raise ValueError("目标类别跨域混搭：%s。同一数据集里的目标必须属于同一域"
+                         "（空域只能混不同飞行器，陆域只能混不同车辆，"
+                         "海域只能混不同船舶）"
+                         % "；".join("%s: %s" % (DOMAIN_LABELS.get(k, k), "、".join(v))
+                                    for k, v in sorted(_doms.items())))
 
     ecm_raw = recipe.get('ecm')
     if ecm_raw is None:
@@ -801,6 +838,34 @@ def _ground_block(env, weather, site):
 
 
 # --------------------------------------------------------------------- objects
+def _norm_target_route(raw, field):
+    """Validate one target's drawn route: waypoints the scene placed on a plate.
+
+    Only waypoints are accepted here. A per-target line/arc would need the same
+    handling as the primary target's and nobody has asked for it; refusing is
+    better than silently dropping the points and flying a straight line.
+    """
+    mode = str(raw.get("mode") or "waypoints").lower()
+    if mode not in ("waypoints", "drawn"):
+        raise ValueError("%s.mode 目前只支持 waypoints（收到 %r）" % (field, mode))
+    pts = raw.get("points")
+    if not isinstance(pts, (list, tuple)) or len(pts) < 2:
+        raise ValueError("%s.points 至少需要 2 个点（收到 %r）" % (field, type(pts).__name__))
+    out = []
+    for i, p in enumerate(pts):
+        if not isinstance(p, (list, tuple)) or len(p) not in (2, 3):
+            raise ValueError("%s.points[%d] 必须是 [x, y] 或 [x, y, z]" % (field, i))
+        xyz = [_number(p[0], "%s.points[%d][0]" % (field, i), -50000.0, 50000.0, " m"),
+               _number(p[1], "%s.points[%d][1]" % (field, i), -50000.0, 50000.0, " m")]
+        xyz.append(_number(p[2], "%s.points[%d][2]" % (field, i), -50.0, 20000.0, " m")
+                   if len(p) == 3 else 0.0)
+        out.append([round(v, 3) for v in xyz])
+    speed = _number(raw.get("speed_mps") or 0.0, field + ".speed_mps",
+                    0.0, 1200.0, " m/s")
+    return dict(mode="waypoints", points=out, speed_mps=float(speed),
+                loop=bool(raw.get("loop", False)))
+
+
 def _object_size(asset, scale):
     """Characteristic size, matching plan.object_size_m's convention."""
     row = _asset_row(asset) or {}
@@ -1509,6 +1574,12 @@ def build_scene(recipe):
         # A placed object carries view-space coordinates from the operator's click
         # on the plate; that is a real position, not a formation offset.
         _uv = spec.get('uv')
+        _route = spec.get('trajectory')
+        if _route:
+            # An explicit per-target route means one airframe per entry: copying
+            # it count times is how two aircraft ended up stacked at the same
+            # pixel and the frame looked like it had one.
+            count = 1
         for k in range(count):
             counter += 1
             lateral = cursor + (k - (count - 1) / 2.0) * spacing
@@ -1546,6 +1617,16 @@ def build_scene(recipe):
                 visible=True,
                 label=True,
             )
+            if _route:
+                # The drawn points are world offsets around the placement; anchor
+                # them on it so the route starts where the operator clicked.
+                obj["trajectory"] = dict(
+                    mode="waypoints",
+                    points=[[round(_pos[0] + float(p[0]), 3),
+                             round(_pos[1] + float(p[1]), 3),
+                             round(_pos[2] + float(p[2]), 3)] for p in _route["points"]],
+                    speed_mps=float(_route.get("speed_mps") or speed),
+                    loop=bool(_route.get("loop", False)))
             if surface:
                 obj['z_offset_m'] = 0.0
             objects.append(obj)

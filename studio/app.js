@@ -134,9 +134,14 @@
       bgUi: { open: "", domains: {} },
       /* 在背景图上的放置：uv 是归一化图面坐标，orig 为左上角。
          points 是同一条轨迹的 uv 序列。 */
+      /* 自定义模式下每个目标各自一份：在背景图上的位置 + 一条轨迹。
+         targets 的长度始终等于 obj.count。 */
+      targets: [],
+      targetIdx: 0,
       /* placed 只有在用户真的在图面上点过之后才为 true：否则默认的 0.5/0.5
          会让"只要选了背景库就强制正俯视"，把迎头/追击都盖掉。 */
-      place: { mode: "place", u: 0.5, v: 0.5, points: [], busy: false, url: "", placed: false },
+      place: { mode: "place", u: 0.5, v: 0.5, points: [], busy: false, url: "", placed: false,
+               speed: 80 },
       obj: {
         category: "军用飞机", asset: "军用飞机/双发战斗机.obj",
         cls: "fighter", scale: 1.0, count: 1
@@ -536,16 +541,39 @@
     var recipe = buildRecipe();
     /* 在背景图上放置过目标时，视角必须锁成俯视正下方：uv 只有在 top_down
        的板面坐标系里才等于像素位置。 */
-    if (S.bg.mode === "library" && S.place.placed) {
+    if (isCustomMode()) {
+      /* 自定义模式：每个目标一条 objects 记录，各自的位置和轨迹。
+         count 固定 1，目标数量由数组长度表达。 */
       recipe.view.aspect = "top_down";
       recipe.view.ground_span_m = 600;
-      recipe.objects[0].uv = [S.place.u, S.place.v];
-      if (S.place.points.length > 1) {
-        var _pts = [];
-        each(S.place.points, function (p) {
-          _pts.push([(p[0] - 0.5) * 600, (0.5 - p[1]) * 600 * 0.75, 0]);
-        });
-        recipe.view.trajectory = { mode: "drawn", points: _pts, speed_mps: 12, closed: false };
+      recipe.view.trajectory = null;
+      var _sy = 600 * 0.75;
+      var _objs = [];
+      var _spd = num(S.place.speed, 80);
+      each(S.targets, function (t) {
+        if (!t.uv) { return; }
+        var _o = {
+          asset: t.asset || trim(S.obj.asset),
+          cls: t.cls || trim(S.obj.cls) || "fighter",
+          scale: num(S.obj.scale, 1),
+          count: 1,
+          uv: [t.uv[0], t.uv[1]]
+        };
+        if (t.points && t.points.length > 1) {
+          /* 图上的点转成相对该目标起点的世界偏移，引擎再加上 pos。 */
+          var ox = (t.uv[0] - 0.5) * 600;
+          var oy = (0.5 - t.uv[1]) * _sy;
+          var _pp = [];
+          each(t.points, function (p) {
+            _pp.push([(p[0] - 0.5) * 600 - ox, (0.5 - p[1]) * _sy - oy, 0]);
+          });
+          _o.trajectory = { mode: "waypoints", points: _pp,
+                            speed_mps: _spd, loop: false };
+        }
+        _objs.push(_o);
+      });
+      if (_objs.length) {
+        recipe.objects = _objs;
       }
     }
     var payload = {
@@ -869,6 +897,45 @@
     return row;
   }
 
+  /* ------------------------------------------------- 多目标（自定义模式） */
+  var TARGET_COLORS = ["#ffd166", "#7ee0a6", "#8ab4ff", "#ff9ec4", "#c6a8ff",
+                       "#7fe6e0", "#ffb86b", "#b6e388"];
+
+  function targetCount() {
+    return Math.max(1, Math.min(8, intval(S.obj.count, 1)));
+  }
+
+  /* 把 targets 数组补齐/截断到当前目标数量，缺的用当前选择继承。 */
+  function syncTargets() {
+    var n = targetCount();
+    while (S.targets.length < n) {
+      S.targets.push({
+        asset: trim(S.obj.asset),
+        cls: trim(S.obj.cls) || "fighter",
+        uv: null,
+        points: [],
+        placed: false
+      });
+    }
+    if (S.targets.length > n) { S.targets.length = n; }
+    if (S.targetIdx >= n) { S.targetIdx = 0; }
+    return S.targets;
+  }
+
+  function activeTarget() {
+    syncTargets();
+    return S.targets[S.targetIdx] || S.targets[0];
+  }
+
+  /* 自定义模式：选了背景库且至少有一个目标被放置过。 */
+  function isCustomMode() {
+    if (S.bg.mode !== "library") { return false; }
+    for (var i = 0; i < S.targets.length; i++) {
+      if (S.targets[i] && S.targets[i].placed) { return true; }
+    }
+    return false;
+  }
+
   function placeCoverUrl() {
     if (S.bg.file) {
       return "/api/backdrop/" + S.bg.category + "/" + encodeURIComponent(S.bg.file);
@@ -878,12 +945,91 @@
     return cur ? cur.cover : "";
   }
 
+  /* 目标标签页：切到哪个目标，画布就编辑哪个。 */
+  /* 轨迹画完后算一下需要多少帧，用户按需采纳。 */
+  function suggestFrames() {
+    var spd = num(S.place.speed, 80);
+    if (spd <= 0) { return 0; }
+    var fps = num(S.capture.fps, 10);
+    var longest = 0;
+    each(S.targets, function (t) {
+      if (!t.points || t.points.length < 2) { return; }
+      var L = 0;
+      for (var i = 1; i < t.points.length; i++) {
+        var dx = (t.points[i][0] - t.points[i - 1][0]) * 600;
+        var dy = (t.points[i][1] - t.points[i - 1][1]) * 600 * 0.75;
+        L += Math.sqrt(dx * dx + dy * dy);
+      }
+      if (L > longest) { longest = L; }
+    });
+    if (longest <= 0) { return 0; }
+    return Math.max(2, Math.ceil(longest / spd * fps));
+  }
+
+  function renderTargetTabs() {
+    var box = $("targetTabs");
+    if (!box) { return; }
+    clear(box);
+    syncTargets();
+    if (!isCustomMode() && S.targets.length <= 1) { return; }
+    each(S.targets, function (t, i) {
+      var col = TARGET_COLORS[i % TARGET_COLORS.length];
+      var b = ce("button", "tgt-tab" + (i === S.targetIdx ? " on" : ""), "");
+      b.type = "button";
+      var sw = ce("span", "tgt-swatch");
+      sw.style.background = col;
+      b.appendChild(sw);
+      var nm = t.asset ? t.asset.split("/").pop().replace(/\.obj$/i, "") : "未选";
+      b.appendChild(ce("span", "", "目标" + (i + 1) + " · " + nm));
+      if (t.uv) { b.appendChild(ce("span", "tgt-ok", "●")); }
+      b.onclick = function () {
+        S.targetIdx = i;
+        var cur = S.targets[i];
+        S.place.u = cur.uv ? cur.uv[0] : 0.5;
+        S.place.v = cur.uv ? cur.uv[1] : 0.5;
+        S.place.points = (cur.points || []).slice(0);
+        renderPlace();
+        renderTargetAsset();
+      };
+      box.appendChild(b);
+    });
+  }
+
+  /* 当前目标的类别/模型选择。 */
+  function renderTargetAsset() {
+    var wrap = $("targetAsset");
+    if (!wrap) { return; }
+    clear(wrap);
+    if (!isCustomMode() && S.targets.length <= 1) { return; }
+    var t = activeTarget();
+    var lab = ce("span", "label", "目标" + (S.targetIdx + 1) + " 型号");
+    wrap.appendChild(lab);
+    var sel = ce("select", "");
+    each(ASSETS, function (a) {
+      var o = ce("option", "", a.category + " / " + a.name);
+      o.value = a.path;
+      if (a.path === t.asset) { o.selected = true; }
+      sel.appendChild(o);
+    });
+    sel.onchange = function () {
+      var a = null;
+      each(ASSETS, function (x) { if (x.path === sel.value) { a = x; } });
+      t.asset = sel.value;
+      t.cls = a ? a.cls : t.cls;
+      renderPlace();
+      touch();
+    };
+    wrap.appendChild(sel);
+  }
+
   function renderPlace() {
     var wrap = $("placeWrap");
     if (!wrap) { return; }
     var on = S.bg.mode === "library";
     show(wrap, on);
     if (!on) { return; }
+    renderTargetTabs();
+    renderTargetAsset();
     var img = $("placeImg");
     var cover = placeCoverUrl();
     if (img && cover && img.getAttribute("src") !== cover) { img.src = cover; }
@@ -900,24 +1046,45 @@
     var marks = $("placeMarkers");
     if (marks) {
       clear(marks);
-      each(S.place.points, function (p, i) {
-        var d = ce("div", "place-dot" + (i === 0 ? " first" : ""));
-        d.style.left = (p[0] * 100) + "%";
-        d.style.top = (p[1] * 100) + "%";
-        marks.appendChild(d);
+      syncTargets();
+      /* 一次画出所有目标：位置点 + 轨迹折线，当前编辑的加粗高亮。 */
+      each(S.targets, function (t, ti) {
+        var col = TARGET_COLORS[ti % TARGET_COLORS.length];
+        var act = ti === S.targetIdx;
+        if (t.uv) {
+          var dot = ce("div", "place-dot" + (act ? " first" : ""));
+          dot.style.left = (t.uv[0] * 100) + "%";
+          dot.style.top = (t.uv[1] * 100) + "%";
+          dot.style.borderColor = col;
+          if (act) { dot.style.background = col; }
+          dot.title = "目标 " + (ti + 1);
+          marks.appendChild(dot);
+        }
+        if (t.points && t.points.length > 1) {
+          for (var i = 0; i < t.points.length; i++) {
+            var p = t.points[i];
+            var d2 = ce("div", "place-dot");
+            d2.style.left = (p[0] * 100) + "%";
+            d2.style.top = (p[1] * 100) + "%";
+            d2.style.borderColor = col;
+            d2.style.opacity = act ? "1" : "0.55";
+            d2.style.width = act ? "8px" : "6px";
+            d2.style.height = act ? "8px" : "6px";
+            marks.appendChild(d2);
+          }
+        }
       });
-      if (!S.place.points.length && (S.place.u !== null)) {
-        var one = ce("div", "place-dot first");
-        one.style.left = (S.place.u * 100) + "%";
-        one.style.top = (S.place.v * 100) + "%";
-        marks.appendChild(one);
-      }
     }
     var hint = $("placeHint");
     if (hint) {
-      hint.textContent = S.place.mode === "place"
-        ? "点一下图面即把目标放到该位置。"
-        : "依次点击生成轨迹（" + S.place.points.length + " 个点）；再点「渲染预览」看效果。";
+      if (S.place.mode === "place") {
+        hint.textContent = "点一下图面即把「目标" + (S.targetIdx + 1) + "」放到该位置。";
+      } else {
+        var n = suggestFrames();
+        hint.textContent = "依次点击为「目标" + (S.targetIdx + 1) + "」画轨迹（当前 "
+          + S.place.points.length + " 个点）"
+          + (n ? "；按当前速度约需 " + n + " 帧" : "") + "。";
+      }
     }
     var status = $("placeStatus");
     if (status) { status.textContent = S.place.busy ? "渲染中…" : ""; }
@@ -936,13 +1103,19 @@
     if (!rect.width || !rect.height) { return; }
     var u = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
     var v = Math.max(0, Math.min(1, (ev.clientY - rect.top) / rect.height));
-    S.place.placed = true;
+    var t = activeTarget();
     if (S.place.mode === "place") {
-      S.place.u = u; S.place.v = v; S.place.points = [];
+      t.uv = [u, v];
+      t.points = [];
+      t.placed = true;
     } else {
-      S.place.points.push([u, v]);
-      if (S.place.points.length === 1) { S.place.u = u; S.place.v = v; }
+      if (!t.uv) { t.uv = [u, v]; t.placed = true; }
+      t.points.push([u, v]);
     }
+    S.place.u = t.uv ? t.uv[0] : u;
+    S.place.v = t.uv ? t.uv[1] : v;
+    S.place.points = t.points.slice(0);
+    S.place.placed = isCustomMode();
     renderPlace();
     touch();
   }
@@ -3378,6 +3551,16 @@
     if (pc) { pc.addEventListener("click", placeClick); }
     var pb = $("placePreviewBtn");
     if (pb) { pb.addEventListener("click", placePreview); }
+    var sp = $("placeSpeed");
+    if (sp && !sp.dataset.bound) {
+      sp.dataset.bound = "1";
+      sp.value = String(S.place.speed || 80);
+      sp.addEventListener("change", function () {
+        S.place.speed = num(sp.value, 80);
+        renderPlace();
+        touch();
+      });
+    }
     var cb = $("placeClearBtn");
     if (cb) {
       cb.addEventListener("click", function () {

@@ -253,6 +253,67 @@ class BackdropLibraryTests(unittest.TestCase):
         self.assertTrue(cfg['ground']['backdrop_aligned'])
         self.assertEqual(cfg['ground']['backdrop_offset'], [0.5, 0.5])
 
+class MultiTargetRouteTests(unittest.TestCase):
+    """Each target gets its own placement and its own route.
+
+    The reported bug: two aircraft plus a custom background and a custom route
+    produced one aircraft, because every object of a spec was placed at the same
+    plate pixel and the route was dropped in validation.
+    """
+
+    def _recipe(self, objects):
+        from simkit import scenegen
+        r = scenegen.default_recipe()
+        r['name'] = 'multi_target_test'
+        r['environment'].update(kind='ground', weather='clear',
+                                background={'mode': 'library', 'category': 'city'})
+        r['objects'] = objects
+        r['view'].update(aspect='top_down', ground_span_m=600.0, fov_deg=10.0)
+        r['capture'].update(sensors=['optical'], frames=4)
+        return r
+
+    def test_two_targets_get_distinct_positions_and_routes(self):
+        from simkit import scenegen
+        r = self._recipe([
+            dict(asset='军用飞机/双发战斗机.obj', cls='fighter', scale=1.0, count=1,
+                 uv=[0.30, 0.60],
+                 trajectory=dict(mode='waypoints', speed_mps=80,
+                                 points=[[-60, 0, 0], [0, 30, 0]])),
+            dict(asset='固定翼无人机/中空长航时无人机.obj', cls='uav_fixed', scale=1.0,
+                 count=1, uv=[0.70, 0.35],
+                 trajectory=dict(mode='waypoints', speed_mps=80,
+                                 points=[[0, -40, 0], [40, 0, 0]])),
+        ])
+        cfg = scenegen.build_scene(scenegen.validate_recipe(r))
+        objs = [o for o in cfg["objects"] if o.get("label", True)]
+        self.assertEqual(len(objs), 2)
+        self.assertNotEqual(objs[0]["pos"], objs[1]["pos"])
+        for o in objs:
+            self.assertIn("trajectory", o)
+            self.assertEqual(len(o["trajectory"]["points"]), 2)
+
+    def test_models_may_mix_inside_one_domain(self):
+        from simkit import scenegen
+        r = self._recipe([
+            dict(asset='军用飞机/双发战斗机.obj', cls='fighter', scale=1.0, count=1,
+                 uv=[0.3, 0.6]),
+            dict(asset='固定翼无人机/中空长航时无人机.obj', cls='uav_fixed', scale=1.0,
+                 count=1, uv=[0.7, 0.4]),
+        ])
+        cfg = scenegen.build_scene(scenegen.validate_recipe(r))
+        classes = {o["cls"] for o in cfg["objects"] if o.get("label", True)}
+        self.assertEqual(classes, {"fighter", "uav_fixed"})
+
+    def test_crossing_domains_is_refused(self):
+        from simkit import scenegen
+        r = self._recipe([
+            dict(asset='军用飞机/双发战斗机.obj', cls='fighter', scale=1.0, count=1),
+            dict(asset='军舰/导弹艇.obj', cls='ship', scale=1.0, count=1),
+        ])
+        with self.assertRaises(ValueError) as ctx:
+            scenegen.validate_recipe(r)
+        self.assertIn("跨域", str(ctx.exception))
+
     def test_unknown_keys_are_dropped_not_carried_into_the_scene(self):
         r = scenegen.default_recipe()
         r['ui_only'] = {'slider': 3}

@@ -1134,3 +1134,18 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent-line); outli
 .bg-thumb-any { display: flex; align-items: center; justify-content: center;
   height: 46px; color: #8b99a8; font-size: 11px; background: #0d1218; }
 .bg-thumb-any.on { color: #dbe9f6; }
+/* ---- 多目标标签页 ---- */
+.target-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; }
+.tgt-tab { display: flex; align-items: center; gap: 5px; padding: 3px 8px;
+  background: #0d1218; border: 1px solid #223040; border-radius: 14px;
+  color: #9fb0c2; font-size: 11px; cursor: pointer; max-width: 180px; }
+.tgt-tab span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tgt-tab.on { border-color: #56b6ff; color: #dbe9f6; background: #0f1822; }
+.tgt-swatch { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.tgt-ok { color: #7ee0a6; font-size: 9px; }
+.target-asset { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.target-asset select { flex: 1; }
+.place-speed { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; }
+.place-speed input { width: 74px; background: #0b0f15; color: #e6edf5;
+  border: 1px solid #26303d; border-radius: 6px; padding: 3px 6px; }
+.place-speed .note { color: #6d7a88; font-size: 11px; }
