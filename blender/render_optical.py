@@ -621,6 +621,13 @@ def build_scene():
     use_grad = (not use_env and
                 (str(opt.get("sky_mode", "")).lower() == "gradient"
                  or not cfg.get("ground", {}).get("enabled", True)))
+    _sky_path = str(opt.get("sky_image") or "")
+    _sky_ext = os.path.splitext(_sky_path)[1].lower()
+    # A real panorama (.hdr/.exr) is an environment; a photograph is a backdrop.
+    # Feeding a JPEG to the environment node is what blurred the visible band.
+    _photo_sky = bool(_sky_path) and _sky_ext in (".jpg", ".jpeg", ".png")
+    if _photo_sky:
+        use_env = False
     if use_env:
         env_bg = environment_sky(nt, opt, cfg)
         env["env_bg"] = env_bg
@@ -629,7 +636,25 @@ def build_scene():
         # environment_sky() rebuilt the world node tree, so the Nishita node is
         # gone; holding a stale reference would be a segfault, not an exception
         env["sky"] = None
-    elif use_grad:
+    elif _photo_sky:
+        # Put the photo on a card parented to the camera; the world background
+        # stays a neutral tone so nothing squeezes through at the edges.
+        # Must sit BEHIND the target: at 5 km it was in front of an aircraft at
+        # 6 km and simply covered the frame with a flat plate.
+        _tgt = cfg.get("objects") or [{}]
+        _tgt_pos = (_tgt[0] or {}).get("pos") or [0.0, 0.0, 0.0]
+        _cam_pos = ((cfg.get("sensors") or {}).get("optical") or {}).get("pos") or [0, 0, 0]
+        _reach = math.sqrt(sum((float(a) - float(b)) ** 2
+                               for a, b in zip(_tgt_pos, _cam_pos)))
+        _card_dist = max(20000.0, _reach * 3.0)
+        _sky_card, _sky_geo = sky_backdrop_card(sc, cam, _sky_path, _card_dist)
+        if _sky_card is not None:
+            env["sky_card"] = _sky_card
+            env["sky_card_geo"] = _sky_geo
+            # aim_camera() sizes the card per view and has no access to env, so
+            # the handle goes in a module global.
+            globals()["_SKY_CARD"] = _sky_card
+            globals()["_SKY_CARD_GEO"] = _sky_geo
         g = gradient_sky(sc, bg, nt, opt, float(cfg["sun"].get("elev_deg", 35.0)), 0.2)
         env["grad_bg"] = g
         env["grad_base"] = float(g.inputs["Strength"].default_value)
@@ -638,6 +663,61 @@ def build_scene():
         env["sky"] = None
         env["bg"] = g
     return sc, cam, meshes, env
+
+
+def sky_backdrop_card(sc, cam, path, distance_m):
+    """Put a photograph behind the target as a backdrop card.
+
+    optical.sky_image used to be fed to an environment texture no matter what it
+    was, so an ordinary aerial photo was sampled as if it were a 360 degree
+    equirect panorama. Through a 2.2 degree lens that is 0.6% of the panorama:
+    about twelve source pixels stretched over the whole frame, which is why the
+    visible band looked blurred while the IR band, composited at frame
+    resolution, looked sharp.
+
+    A photograph is not a panorama. It becomes a plane parented to the camera at
+    a fixed distance, sized to fill the frame, shaded emissive so it reads as
+    distant background rather than a lit surface.
+    """
+    from simkit.mesh import plane as _plane
+    try:
+        img = bpy.data.images.load(path, check_existing=True)
+    except Exception:
+        return None, None
+    w, h = (int(v) for v in img.size)
+    if w <= 0 or h <= 0:
+        return None, None
+    mesh = _plane(1.0, 0.0, 1, 1)
+    # from_pydata conversion lives in add_mesh_object; bpy.data.objects.new wants
+    # a Blender mesh, not simkit's numpy Mesh.
+    me = bpy.data.meshes.new("sky_card")
+    me.from_pydata([tuple(v) for v in mesh.v], [], [tuple(f) for f in mesh.f])
+    me.validate()
+    me.update()
+    ob = bpy.data.objects.new("sky_card", me)
+    sc.collection.objects.link(ob)
+    mat = bpy.data.materials.new("sky_card_mat")
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out_n = nt.nodes.new("ShaderNodeOutputMaterial")
+    emis = nt.nodes.new("ShaderNodeEmission")
+    emis.inputs["Strength"].default_value = 1.0
+    # Generated coordinates, not UV: add_mesh_object / from_pydata create no UV
+    # layer, so an image texture would sample a single texel and the card would
+    # render as one flat colour (measured: uniform grey over the whole frame).
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    texn = nt.nodes.new("ShaderNodeTexImage")
+    texn.image = img
+    texn.extension = "CLIP"
+    nt.links.new(coord.outputs["Generated"], texn.inputs["Vector"])
+    nt.links.new(texn.outputs["Color"], emis.inputs["Color"])
+    nt.links.new(emis.outputs["Emission"], out_n.inputs["Surface"])
+    ob.data.materials.append(mat)
+    ob.parent = cam
+    ob.location = (0.0, 0.0, -float(distance_m))
+    ob.rotation_euler = (0.0, 0.0, 0.0)
+    return ob, (float(distance_m), float(w) / float(h))
 
 
 def aim_camera(sc, cam, pose, view, cam_key):
@@ -663,6 +743,21 @@ def aim_camera(sc, cam, pose, view, cam_key):
             q = q @ Quaternion((0.0, 0.0, 1.0), math.radians(roll))
         cam.rotation_mode = "QUATERNION"
         cam.rotation_quaternion = q
+    # Size the backdrop card to fill this view's frame exactly: the plane lives
+    # in camera space at a fixed depth, so its size is a function of the lens.
+    _card = globals().get("_SKY_CARD")
+    if _card is not None:
+        _geo = globals().get("_SKY_CARD_GEO") or (5000.0, 16.0 / 9.0)
+        _dist, _ar = float(_geo[0]), float(_geo[1])
+        # The card lives in camera space; make sure the frustum reaches it.
+        cam.data.clip_end = max(float(cam.data.clip_end), _dist * 2.0)
+        _half_h = _dist * math.tan(math.radians(fov) / 2.0) * 1.15
+        _half_w = _half_h * (float(w) / float(h))
+        # the plate keeps its own aspect inside that footprint
+        if _ar >= (float(w) / float(h)):
+            _card.scale = (_half_w * 2.0, _half_w * 2.0 / _ar, 1.0)
+        else:
+            _card.scale = (_half_h * 2.0 * _ar, _half_h * 2.0, 1.0)
     bpy.context.view_layer.update()
     # Model-local bounds omit object translation. The old far plane could clip
     # a 22 km aircraft while still exporting its projected label. Recompute
