@@ -140,6 +140,13 @@ def main():
 
     # ---- 雷达 ----------------------------------------------------------
     rl = _lab(os.path.join(base, "labels", "radar", "000000.json"))
+    # RCS comes from the scene, not the label: it is a scene input,
+    # and comparing it with published cross sections is the only way
+    # to catch a target that is orders of magnitude off.
+    try:
+        rcs = float((_lab(a.scene).get("objects") or [{}])[0].get("rcs_db"))
+    except (TypeError, ValueError):
+        rcs = None
     if rl:
         rd = rl.get("boxes_rd") or {}
         tgt = [k for k in rd if not k.startswith("ecm#")]
@@ -150,6 +157,20 @@ def main():
         if pk is not None:
             chk("雷达 峰值电平", float(pk), -40.0, 20.0, "dB",
                 "过低头部方向图或功率有问题")
+        if rcs is not None:
+            chk("雷达 RCS 量级", float(rcs), -5.0, 32.0, "dBsm",
+                "应与公开量级同阶")
+        # range_window_m is a scalar in some writers and a list in others
+        rw = rl.get("range_window_m")
+        if isinstance(rw, (list, tuple)):
+            rw = rw[-1] if rw else None
+        if rw:
+            chk("雷达 量程窗口", float(rw), 500.0, None, "m",
+                "距离窗必须覆盖目标斜距")
+        npts = rl.get("num_points")
+        if npts is not None:
+            chk("雷达 点云点数", float(npts), 1.0, None, "个",
+                "目标应产生至少一个回波点")
 
     # ---- 一致性 --------------------------------------------------------
     if boxes and ob:

@@ -1690,8 +1690,15 @@ def build_scene(recipe):
     # Occluders around the target. Derived from the backdrop category so a city
     # plate gets buildings and a forest plate gets trees; both are real geometry,
     # which is the only way radar and lidar stop seeing through them.
+    #
+    # Not in a plate view. A top-down plate is a photograph of terrain that
+    # already contains its own buildings; pasting flat grey boxes on top of it
+    # reads as cardboard cut-outs and destroys the plate's realism, which is the
+    # whole point of collecting the photographs. Occlusion in that mode is the
+    # operator's job -- put the target behind a building that is already in the
+    # picture -- and the non-plate scenes keep their geometry occluders.
     _cat = str(((r.get('environment') or {}).get('background') or {}).get('category') or '')         if (r.get('environment') or {}).get('background') else ''
-    if env in ('ground', 'sea') and _cat:
+    if env in ('ground', 'sea') and _cat and not top_down:
         _span = float(view.get('ground_span_m') or (2.0 * range_m)) or 600.0
         objects.extend(_clutter_block(env, _cat, _span, int(cap['seed'])))
     wind = float(WIND_MS.get(weather, 8.0))
