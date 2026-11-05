@@ -652,6 +652,13 @@ def _plate_view_ground(gray, cam, cfg, w, h):
     the same target.
     """
     g = cfg.get("ground") or {}
+    # Only when a plate is actually attached to the ground. backdrop_span_m
+    # survives in scenes whose backdrop is empty, and using the span without the
+    # photograph sent a sky plate through the ground projection: the IR band then
+    # showed a different crop of the file than the optical band did, which is
+    # exactly the "why are the backgrounds different" report.
+    if not g.get("backdrop"):
+        return None
     span = float(g.get("backdrop_span_m") or 0.0)
     if span <= 0.0:
         return None

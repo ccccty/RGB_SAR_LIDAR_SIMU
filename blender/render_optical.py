@@ -751,13 +751,28 @@ def aim_camera(sc, cam, pose, view, cam_key):
         _dist, _ar = float(_geo[0]), float(_geo[1])
         # The card lives in camera space; make sure the frustum reaches it.
         cam.data.clip_end = max(float(cam.data.clip_end), _dist * 2.0)
-        _half_h = _dist * math.tan(math.radians(fov) / 2.0) * 1.15
-        _half_w = _half_h * (float(w) / float(h))
-        # the plate keeps its own aspect inside that footprint
-        if _ar >= (float(w) / float(h)):
-            _card.scale = (_half_w * 2.0, _half_w * 2.0 / _ar, 1.0)
+        # cam.data.angle is the HORIZONTAL field of view for a landscape frame,
+        # so tan(fov/2) is the half-width, not the half-height. Treating it as a
+        # vertical fov made the card 4/3 too large on each axis, and the frame
+        # then showed a crop 0.75x the intended one -- measured by fitting the
+        # photograph to the render, which peaked at a 1.5x zoom instead of the
+        # 1.125x a cover fit of a 3:2 photo in a 4:3 frame calls for.
+        _half_w = _dist * math.tan(math.radians(fov) / 2.0)
+        _half_h = _half_w / (float(w) / float(h))
+        # Cover, not contain: fill the frame and crop the excess.
+        #
+        # Matching the photo width to the frame width (contain) showed the whole
+        # photograph with bands of gradient sky above and below it, while the IR
+        # band centre-cropped the same file to 4:3 and showed its full height
+        # with the sides cut. The two modalities of one scene displayed
+        # complementary crops of one photo and looked like two different skies.
+        _frame_ar = float(w) / float(h)
+        if _ar >= _frame_ar:
+            _ch = _half_h * 2.0
+            _card.scale = (_ch * _ar, _ch, 1.0)
         else:
-            _card.scale = (_half_h * 2.0 * _ar, _half_h * 2.0, 1.0)
+            _cw = _half_w * 2.0
+            _card.scale = (_cw, _cw / _ar, 1.0)
     bpy.context.view_layer.update()
     # Model-local bounds omit object translation. The old far plane could clip
     # a 22 km aircraft while still exporting its projected label. Recompute
