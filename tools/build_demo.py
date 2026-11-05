@@ -38,24 +38,34 @@ SPECS = {
         title="双目标 · 各自航线", kind="ground", cat="rural",
         asset="军用地面车辆/主战坦克.obj", cls="vehicle",
         aspect="top_down", fov_deg=8.0, span=260.0, multi=True),
-    # 天气对照：与 demo_ground_plate 同场景同机位，只换光照状态
-    "demo_ground_golden": dict(
-        title="地面 · 多云", kind="ground", cat="city", weather="cloudy",
+    # 天气对照：故意不用实地背景板。板视图里照片会替换掉约 95% 的像素，
+    # 天气只剩目标上那一点变化——三张图看着一模一样（实测差 2.3/255）。
+    # 换成程序化地形后，太阳高度角、云量、雨强才作用到整幅画面。
+    # 三档亮度/天气。实测：多云与雾只调天空和云量，俯视地面几乎不变
+    # （差 1.4/255），只有太阳高度角和降雨真正改变画面。所以用
+    # 正午 / 低太阳 / 降雨，三者分别是光照角度、光照角度、天气。
+    "demo_wx_clear": dict(
+        title="正午 · 晴", kind="ground", cat="city", wx=True, weather="clear", sun_elev=58.0,
         asset="军用地面车辆/主战坦克.obj", cls="vehicle",
-        aspect="top_down", fov_deg=8.0, span=220.0),
-    "demo_ground_rain": dict(
-        title="地面 · 降雨", kind="ground", cat="city", weather="rain",
+        aspect="look_down", range_km=0.35, fov_deg=9.0),
+    "demo_wx_cloudy": dict(
+        title="低太阳 · 晴", kind="ground", cat="city", wx=True, weather="clear", sun_elev=7.0,
         asset="军用地面车辆/主战坦克.obj", cls="vehicle",
-        aspect="top_down", fov_deg=8.0, span=220.0),
+        aspect="look_down", range_km=0.35, fov_deg=9.0),
+    "demo_wx_rain": dict(
+        title="降雨", kind="ground", cat="city", wx=True, weather="rain", sun_elev=35.0,
+        asset="军用地面车辆/主战坦克.obj", cls="vehicle",
+        aspect="look_down", range_km=0.35, fov_deg=9.0),
 }
 
 
 def build(name, spec):
     r = scenegen.default_recipe()
     r["name"] = name
-    r["environment"].update(kind=spec["kind"],
-                            weather=spec.get("weather", "clear"),
-                            background={"mode": "library", "category": spec["cat"]})
+    _cat = spec.get("cat")
+    r["environment"].update(
+        kind=spec["kind"], weather=spec.get("weather", "clear"),
+        background=({"mode": "library", "category": _cat} if _cat else {"mode": "none"}))
     if spec.get("span"):
         r["view"].update(aspect=spec["aspect"], ground_span_m=spec["span"],
                          fov_deg=spec["fov_deg"])
@@ -79,6 +89,17 @@ def build(name, spec):
     r["capture"].update(sensors=["optical", "ir", "radar"],
                         frames=DEMO_FRAMES, fps=10.0, seed=7)
     cfg = scenegen.build_scene(scenegen.validate_recipe(r))
+    if spec.get("wx"):
+        # 天气对照关自动曝光：开着它会把太阳/云量/雨强带来的整体亮度差
+        # 归一化掉，三张图只剩 1.8% 的差别，看不出「换了天气」。
+        cfg.setdefault("optical", {})["auto_exposure"] = False
+        if spec.get("sun_elev") is not None:
+            cfg.setdefault("sun", {})["elev_deg"] = float(spec["sun_elev"])
+        # 非俯视时地面照片默认带随机旋转，斜着铺上去很扎眼；天气对照要的是
+        # 同一片地形在不同光照下，所以固定成无旋转、居中对齐。
+        _g = cfg.setdefault("ground", {})
+        _g["backdrop_aligned"] = True
+        _g["backdrop_offset"] = [0.5, 0.5]
     for v in ((cfg.get("clip") or {}).get("views") or []):
         v["width"], v["height"] = DEMO_W, DEMO_H
     for key in ("optical", "ir_camera"):

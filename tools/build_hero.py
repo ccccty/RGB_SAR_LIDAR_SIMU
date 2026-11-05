@@ -8,11 +8,16 @@ HERO = os.path.join(ROOT, "assets", "hero")
 W, H = 1280, 960
 
 
-def frame(run, modality, n=0):
+def frame(run, modality, n=0, keep_color=False):
     p = os.path.join(ROOT, "out", run, "images", modality, "%06d.png" % n)
     if not os.path.isfile(p):
         return None
-    a = np.asarray(Image.open(p)).astype(float)
+    im = Image.open(p)
+    if keep_color:
+        # 可见光必须是彩色。此前这里把所有图都取了通道平均，
+        # 于是「可见光」和「红外」在页面上长得一模一样。
+        return im.convert("RGB").resize((W, H))
+    a = np.asarray(im).astype(float)
     if a.ndim == 3:
         a = a.mean(axis=2)
     lo, hi = np.percentile(a, [1, 99])
@@ -27,9 +32,9 @@ JOBS = [
     ("ground_lwir", "demo_ground_plate", "ir_preview_lwir", "地面 · 长波红外", "ground", "ir"),
     ("sea_optical", "demo_sea_plate", "optical", "海面 · 可见光", "sea", "opt"),
     ("sea_lwir", "demo_sea_plate", "ir_preview_lwir", "海面 · 长波红外", "sea", "ir"),
-    ("ground_wx_clear", "demo_ground_plate", "optical", "地面 · 晴", "ground", "wx"),
-    ("ground_golden", "demo_ground_golden", "optical", "地面 · 多云", "ground", "wx"),
-    ("ground_rain", "demo_ground_rain", "optical", "地面 · 降雨", "ground", "wx"),
+    ("ground_wx_clear", "demo_wx_clear", "optical", "正午 · 晴", "ground", "wx"),
+    ("ground_golden", "demo_wx_cloudy", "optical", "低太阳 · 晴", "ground", "wx"),
+    ("ground_rain", "demo_wx_rain", "optical", "降雨", "ground", "wx"),
 ]
 
 
@@ -37,7 +42,8 @@ def main():
     os.makedirs(HERO, exist_ok=True)
     index = []
     for tag, run, mod, label, scene, group in JOBS:
-        im = frame(run, mod)
+        # 光学通道保留彩色，红外通道本身就是灰阶产品
+        im = frame(run, mod, keep_color=(mod == "optical"))
         if im is None:
             print("  缺 %s / %s" % (run, mod))
             continue
