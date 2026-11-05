@@ -21,7 +21,15 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 SCENES = [
-    ("final_air", "空中 · Global Hawk", "uav", "Ka"),
+    # 最新演示批排在最前：站点默认展示的第一个场景就是它
+    ("demo_air_headon", "空中 · 迎头", "fighter", "Ku"),
+    ("demo_air_pursuit", "空中 · 追击", "fighter", "Ku"),
+    ("demo_ground_plate", "地面 · 俯视板", "vehicle", "W"),
+    ("demo_sea_plate", "海面 · 俯视板", "ship", "Ka"),
+    ("demo_multi", "双目标 · 各自航线", "vehicle", "W"),
+    ("demo_ground_golden", "地面 · 多云", "vehicle", "W"),
+    ("demo_ground_rain", "地面 · 降雨", "vehicle", "W"),
+    ("final_air", "空中 · 大型无人机", "uav", "Ka"),
     ("final_ground", "地面 · 巡视器", "vehicle", "W"),
     ("final_sea", "海面 · 帆船", "boat", "Ka"),
 ]
@@ -29,6 +37,14 @@ SCENES = [
 # Scene title/class/band lookup for runs exported by name. Anything not listed
 # still exports; it just gets a generic title.
 SCENE_META = {
+    # 本次上线的演示批：真实背景照片 + 当前引擎
+    "demo_air_headon": ("空中 · 迎头", "fighter", "Ku"),
+    "demo_air_pursuit": ("空中 · 追击", "fighter", "Ku"),
+    "demo_ground_plate": ("地面 · 俯视板", "vehicle", "W"),
+    "demo_sea_plate": ("海面 · 俯视板", "ship", "Ka"),
+    "demo_multi": ("双目标 · 各自航线", "vehicle", "W"),
+    "demo_ground_golden": ("地面 · 多云", "vehicle", "W"),
+    "demo_ground_rain": ("地面 · 降雨", "vehicle", "W"),
     "final_air": ("空中 · 大型无人机", "uav", "Ka"),
     "ds_air_uav": ("空中 · 无人机", "uav", "Ka"),
     "ds_ground_vehicle": ("地面 · 巡视器", "vehicle", "W"),

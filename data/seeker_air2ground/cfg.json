@@ -440,6 +440,10 @@
   "seeker": {
    "mode": "platform",
    "platform": {
+    "_why_kinematics": "this pass is cleared down to 40 m: the whole point of a low air-to-ground sequence is the ground rush, and the class default of 60 m would reject the profile the scene is built around",
+    "kinematics": {
+      "min_altitude_m": 40.0
+    },
     "origin": [
      0,
      -3646.872508664289,

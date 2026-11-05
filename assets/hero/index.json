@@ -6,25 +6,7 @@
   "group": "opt",
   "w": 1280,
   "h": 960,
-  "bytes": 4738
- },
- {
-  "file": "ground_optical.webp",
-  "label": "地面 · 可见光",
-  "scene": "ground",
-  "group": "opt",
-  "w": 1280,
-  "h": 960,
-  "bytes": 12674
- },
- {
-  "file": "sea_optical.webp",
-  "label": "海面 · 可见光",
-  "scene": "sea",
-  "group": "opt",
-  "w": 1280,
-  "h": 960,
-  "bytes": 12388
+  "bytes": 134700
  },
  {
   "file": "air_lwir.webp",
@@ -33,7 +15,16 @@
   "group": "ir",
   "w": 1280,
   "h": 960,
-  "bytes": 18124
+  "bytes": 201040
+ },
+ {
+  "file": "ground_optical.webp",
+  "label": "地面 · 可见光",
+  "scene": "ground",
+  "group": "opt",
+  "w": 1280,
+  "h": 960,
+  "bytes": 143414
  },
  {
   "file": "ground_lwir.webp",
@@ -42,7 +33,16 @@
   "group": "ir",
   "w": 1280,
   "h": 960,
-  "bytes": 63428
+  "bytes": 253356
+ },
+ {
+  "file": "sea_optical.webp",
+  "label": "海面 · 可见光",
+  "scene": "sea",
+  "group": "opt",
+  "w": 1280,
+  "h": 960,
+  "bytes": 138862
  },
  {
   "file": "sea_lwir.webp",
@@ -51,25 +51,25 @@
   "group": "ir",
   "w": 1280,
   "h": 960,
-  "bytes": 52962
+  "bytes": 209814
  },
  {
-  "file": "ground_optical.webp",
-  "label": "地面 · 晴（默认天气）",
+  "file": "ground_wx_clear.webp",
+  "label": "地面 · 晴",
   "scene": "ground",
   "group": "wx",
   "w": 1280,
   "h": 960,
-  "bytes": 12674
+  "bytes": 143414
  },
  {
   "file": "ground_golden.webp",
-  "label": "地面 · 低太阳高度",
+  "label": "地面 · 多云",
   "scene": "ground",
   "group": "wx",
   "w": 1280,
   "h": 960,
-  "bytes": 12128
+  "bytes": 148712
  },
  {
   "file": "ground_rain.webp",
@@ -78,6 +78,6 @@
   "group": "wx",
   "w": 1280,
   "h": 960,
-  "bytes": 14180
+  "bytes": 150532
  }
 ]

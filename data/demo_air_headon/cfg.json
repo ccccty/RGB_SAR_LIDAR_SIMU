@@ -1,0 +1,347 @@
+{
+ "name": "demo_air_headon",
+ "seed": 7,
+ "ground": {
+  "enabled": false
+ },
+ "weather": {
+  "mode": "fixed",
+  "preset": "clear"
+ },
+ "sun": {
+  "elev_deg": 38.0,
+  "az_deg": 120.0,
+  "irradiance": 900.0,
+  "on": true
+ },
+ "air": {
+  "temp_c": -22.0,
+  "rh": 0.15,
+  "wind_mps": 6.0
+ },
+ "ir": {
+  "bands": [
+   "mwir",
+   "lwir"
+  ],
+  "netd_mk": 28.0,
+  "psf_px": 1.3,
+  "preview_span_c": null,
+  "nuc": {
+   "enabled": true,
+   "prnu": 0.008,
+   "dsnu_counts": 25,
+   "column_fpn_counts": 6,
+   "dead_px": 0.0002,
+   "seed": 12345
+  },
+  "background_image": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\sky\\08_2016-08_Paris_Montreal_flight_15_jpg.jpg"
+ },
+ "optical": {
+  "samples": 16,
+  "exposure": -0.6,
+  "export_geometry": true,
+  "skin": true,
+  "camera": {
+   "diffraction": {
+    "f_number": 2.8
+   }
+  },
+  "sky_zenith_rgb": [
+   0.03,
+   0.075,
+   0.22
+  ],
+  "sky_horizon_rgb": [
+   0.52,
+   0.6,
+   0.72
+  ],
+  "sky_strength": 1.0,
+  "sky_weather": "clear",
+  "sky_image": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\sky\\08_2016-08_Paris_Montreal_flight_15_jpg.jpg"
+ },
+ "frames": {
+  "n": 8,
+  "dt": 0.1
+ },
+ "objects": [
+  {
+   "name": "fighter_01",
+   "cls": "fighter",
+   "shape": "obj",
+   "model": "../assets/models/军用飞机/双发战斗机.obj",
+   "pos": [
+    0.0,
+    0.0,
+    2500.0
+   ],
+   "vel": [
+    -109.593,
+    -224.699,
+    -0.0
+   ],
+   "rot": -116.0,
+   "yaw_mode": "velocity",
+   "scale": 1.0,
+   "mat": "painted_metal",
+   "temp_c": null,
+   "temp_c_hint": 26.0,
+   "rcs_db": 13.98,
+   "attitude_mode": "coordinated",
+   "kinematics": {
+    "min_speed_mps": 60.0,
+    "max_speed_mps": 700.0,
+    "max_accel_mps2": 30.0,
+    "max_climb_mps": 250.0,
+    "min_altitude_m": 50.0,
+    "max_bank_deg": 65.0
+   },
+   "visible": true,
+   "label": true
+  }
+ ],
+ "sensors": {
+  "optical": {
+   "pos": [
+    -526.045,
+    -1078.553,
+    2500.0
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    2500.0
+   ],
+   "fov_deg": 2.2,
+   "width": 1280,
+   "height": 960
+  },
+  "ir_camera": {
+   "pos": [
+    -526.045,
+    -1078.553,
+    2500.0
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    2500.0
+   ],
+   "fov_deg": 2.2,
+   "width": 1280,
+   "height": 960
+  },
+  "radar": {
+   "band": "Ku",
+   "az_span_deg": 2.0,
+   "el_span_deg": 1.6,
+   "n_az": 40,
+   "n_el": 20,
+   "bandwidth_mhz": 50.0,
+   "n_samples": 2048,
+   "chirp_us": 8.192,
+   "pri_us": 16.384,
+   "v_nyq_mps": 295.13,
+   "unambiguous": true,
+   "range_res_m": 3.0,
+   "r_max_m": 3069.9,
+   "beamwidth_el_deg": 6.0,
+   "n_chirps": 64,
+   "tx_power_dbm": 43.0,
+   "noise_figure_db": 8.0,
+   "clutter_density": 0.0,
+   "mti_min_vr_mps": 0.8,
+   "pfa": 1e-06,
+   "swerling": "I",
+   "clutter_db": -12.0,
+   "ground_clutter_db": -35.0,
+   "pos": [
+    -526.045,
+    -1078.553,
+    2500.0
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    2500.0
+   ],
+   "up": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  "lidar": {
+   "pos": [
+    -526.045,
+    -1078.553,
+    2500.0
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    2500.0
+   ],
+   "fov_deg": 2.2,
+   "width": 960,
+   "height": 720,
+   "n_az": 256,
+   "n_el": 192,
+   "max_range_m": 1920.0,
+   "range_spec_m": 1320.0,
+   "pulse_energy_nj": 4000.0,
+   "aperture_mm": 50.0
+  },
+  "sar": {
+   "band": "X",
+   "fc_ghz": 9.6,
+   "bandwidth_mhz": 300.0,
+   "prf_hz": 1200.0,
+   "n_pulses": 512,
+   "n_samples": 512,
+   "n_cross": 512,
+   "altitude_m": 2500.0,
+   "speed_mps": 120.0,
+   "heading_deg": 90.0,
+   "squint_deg": 90.0,
+   "side": "right",
+   "swath_center_m": 360.0,
+   "swath_width_m": 120.0,
+   "az_extent_m": 120.0,
+   "polarization": "VV",
+   "tx_power_w": 40.0,
+   "noise_figure_db": 4.0,
+   "loss_db": 3.0,
+   "antenna_len_m": 1.2,
+   "antenna_h_m": 0.35,
+   "resolution_scale": 1.0,
+   "looks": 2,
+   "oversample": 2,
+   "anchor": [
+    0.0,
+    0.0,
+    2500.0
+   ]
+  }
+ },
+ "clip": {
+  "frames_per_clip": 8,
+  "camera": "ir_camera",
+  "views": [
+   {
+    "name": "seeker",
+    "tag": "",
+    "fov_deg": 2.2,
+    "width": 1280,
+    "height": 960
+   }
+  ],
+  "seeker": {
+   "mode": "seeker",
+   "range_m": [
+    1020.0,
+    1380.0
+   ],
+   "closing": "in",
+   "closing_mps": 250.0,
+   "target_m": 20.013,
+   "target_px": [
+    291.8,
+    583.7
+   ],
+   "az_span_deg": 0.6,
+   "el_span_deg": 0.3,
+   "los_jitter_deg": 0.04,
+   "wander_deg": 0.77,
+   "wander_hz": 0.09,
+   "keep_z": false,
+   "lag_s": 0.02,
+   "profile": "linear",
+   "aspect": "head_on"
+  },
+  "rig": {
+   "lag_s": 0.02
+  }
+ },
+ "capture": {
+  "sensors": [
+   "optical",
+   "ir",
+   "radar"
+  ],
+  "frames": 8,
+  "fps": 10.0,
+  "seed": 7
+ },
+ "output": {
+  "preview": true,
+  "coco": true,
+  "yolo": true,
+  "readme": true,
+  "jpeg": {
+   "enabled": true,
+   "quality": 97
+  }
+ },
+ "recipe": {
+  "name": "demo_air_headon",
+  "environment": {
+   "kind": "sky",
+   "weather": "clear",
+   "background": {
+    "mode": "library",
+    "category": "sky"
+   }
+  },
+  "objects": [
+   {
+    "asset": "军用飞机/双发战斗机.obj",
+    "cls": "fighter",
+    "scale": 1.0,
+    "count": 1
+   }
+  ],
+  "ecm": {
+   "mode": "none",
+   "entities": []
+  },
+  "view": {
+   "range_km": 1.2,
+   "aspect": "head_on",
+   "ground_span_m": null,
+   "fov_deg": 2.2,
+   "views": "single",
+   "closing_mps": null,
+   "trajectory": {
+    "mode": "preset"
+   }
+  },
+  "capture": {
+   "sensors": [
+    "optical",
+    "ir",
+    "radar"
+   ],
+   "frames": 8,
+   "fps": 10.0,
+   "seed": 7
+  },
+  "output": {
+   "preview": true,
+   "coco": true,
+   "yolo": true,
+   "readme": true
+  }
+ },
+ "research_baseline": {
+  "purpose": "generated from a recipe by simkit.scenegen",
+  "environment": "sky / clear / library",
+  "aspect": "head_on (in)",
+  "sensor_calibration": "nominal simulation settings, not measured sensor calibration"
+ },
+ "view": {
+  "aspect": "head_on"
+ },
+ "notes": []
+}

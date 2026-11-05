@@ -16,6 +16,15 @@
   'use strict';
 
   var $ = function (id) { return document.getElementById(id); };
+  // 目标类别译名：manifest 里的 cls 是引擎的英文标识
+  var CLS_LABEL = {
+    fighter: '战斗机', uav: '无人机', uav_fixed: '固定翼无人机',
+    uav_rotor: '旋翼无人机', helicopter: '直升机', airliner: '民航飞机',
+    vehicle: '地面车辆', tank: '坦克', ship: '舰船', boat: '船只',
+    artillery: '自行火炮', launcher: '发射车', person: '人员',
+    building: '建筑', scenery: '场景物'
+  };
+
   var el = function (tag, cls, txt) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -449,7 +458,9 @@
     var nMods = 0;
     (sc.frames || []).forEach(function (f) { nMods = Math.max(nMods, Object.keys(f.mods || {}).length); });
     kvInto($('galSceneInfo'), [
-      ['目标类别', sc.title.split('·')[1] ? sc.title.split('·')[1].trim() : sc.cls],
+      // 类别取 sc.cls 的固定译名。此前是从标题里截「·」后半段，标题一换成
+      // 「空中 · 迎头」这种带场景名的写法，类别就显示成「迎头」。
+      ['目标类别', CLS_LABEL[sc.cls] || sc.cls || '—'],
       ['雷达波段', sc.band ? sc.band + ' 频段' : '—'],
       ['帧数', sc.frames.length + ' 帧（晴/阴/雨循环）'],
       ['模态', nMods + ' 路']
@@ -2017,7 +2028,7 @@
       $('heroTL').textContent = shot.label || '';
       $('heroBadge').textContent = shot.group === 'ir' ? 'LWIR 8-bit' : 'RGB 8-bit';
       $('heroCap').textContent = shot.w + '×' + shot.h +
-        ' · 同一套内核渲染（scenes/hero_*.json）';
+        ' · 顶层真实背景照片 + 同一套内核渲染（out/demo_*）';
       var chips1 = $('heroMods');
       chips1.innerHTML = '';
       HERO_SHOTS.forEach(function (s, i) {
