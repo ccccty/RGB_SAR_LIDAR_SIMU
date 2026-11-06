@@ -170,3 +170,56 @@ Pages，而浏览器只会取 28.8 MB（`data/` + `assets/hero` + `assets/figure
 | M2 | P1-1、P1-2 | 四场景 × 240 帧全量出站，站点与 YOLO 同步更新 |
 | M3 | P0-3、P1-3 | SAR 序列有真实位移；链路预算表可复现 |
 | M4 | P2-1、P2-2、P2-3 | 导出带批次闸门；CI 入库且首跑绿（需 workflow scope 凭据）；像素对齐指标 <2 px |
+| M5 | P2-5 | Pages 部署体积 ≤ 40 MB，站点自检仍全绿 |
+
+---
+
+## 循环计划：多传感器仿真数据集的最后落地
+
+上面 P0/P1/P2 说的是"要做什么"，这一节说的是"按什么节奏反复做直到收口"。
+每一轮都跑同一套九步，**任一闸门红就停在那一步：不发布、不提交**，修完从第 3 步
+重跑；九步全绿才允许进入下一轮。
+
+### 每轮九步
+
+| # | 步骤 | 命令 | 通过判据 |
+|---|---|---|---|
+| 1 | 起点干净 | `git status --short`；`git rev-list --left-right --count HEAD...origin/main` | 无未提交改动；不落后于 origin/main |
+| 2 | 基线绿 | `python -m simkit selftest`；`python -m unittest discover -s tests`（**设与不设 PYTHONPATH 各跑一次**） | 50 项 ALL PASS；两次都是 `Ran 458 tests ... OK` |
+| 3 | 单批次生成 | `python tools\build_seeker.py --dest out\<本轮批次> -n 240` | 只写本轮目录；四个场景齐全 |
+| 4 | 批次闸门 | 待实现（P2-1）：run 内图像 mtime 跨度 ≤ 单批耗时 × 2，且写入已静默 ≥ 120 s | 混批要退出码 2，不能静默导出 |
+| 5 | 物理闸门 | `python -m tools.validation_check out\<批次>\<场景> -s <模态>`；`python tools\check_seeker.py out\<批次>\*` | `passed: true`；无 hard failure |
+| 6 | 导出闸门 | `python tools\export_yolo.py --runs out\<批次>` | 退出 0；`skipped_unnamed = 0`；跨模态标签最大偏差 ≤ 0.51 px |
+| 7 | 站点发布 | `python tools\export_web.py . out`；`python tools\opt_images.py` | manifest 的场景数与帧数与本轮一致 |
+| 8 | 站点自检 | `node tools\check_web.js`；`node tools\check_data.js`；`node tools\probe_web.js` | 11 页签零错配；`DATA SHAPE OK`；0 破图、0 JS 错误 |
+| 9 | 线上核对 + 留痕 | 比对 Pages 与本地 `data/manifest.json` 的 sha256；一条 commit 写清本轮证据数字 | 字节一致；本文件对应条目改为已达标 |
+
+第 2 步要跑两遍是有原因的：后端子进程继承的是**环境变量**而不是父进程的 `sys.path`，
+只测设了 PYTHONPATH 的那一次，就会漏掉 CI 那条路径上的失败——这个坑已经踩过
+（`simkit/external.py` 的 `child_env()` 就是为此加的），两遍都跑才守得住它。
+
+### 轮次分配
+
+| 轮 | 内容 | 收口条目 | 里程碑 |
+|---|---|---|---|
+| 1 | **已完成**（commit `ceb483e`）：可复现性与演示链路修复——后端子进程 PYTHONPATH、导出器遇 list 形标注崩溃与拼接崩溃、四处硬编码绝对路径、校验闸门的模态作用域、`--dest` 只生效一半、README 环境引导与过时数字、离线部署手册的依赖错误、og:image 404、根目录垃圾文件 | — | — |
+| 2 | 诱饵车单独成类（场景里给 `cls:"decoy"`，导出器的 `class_map()` 会自动多一类）；宽视场套件写 `search_stage_only` 并在 `data_*_wide.yaml` 首行注明 | P0-1、P0-2 | M1 |
+| 3 | 四场景 × 240 帧全量重生成，补上至今缺失的 `seeker_air2air_occluded`；类别均衡到每类 ≥ 200 框 | P1-1、P1-2 | M2 |
+| 4 | SAR 停止逐帧重新对准（加 `sar.follow_target` 开关，默认不再重写 anchor、不再把 `_frame_t` 置零），并放宽 `az_extent_m`，使帧间位移 ≥ 20 px；链路预算表改成 RCS × 距离二维网格、输出 SNR 与 Pd 并落 CSV | P0-3、P1-3 | M3 |
+| 5 | 导出器加批次闸门；workflow 入库并首跑绿；图像级配准指标（互相关质心差中位 < 2 px）接进 seeker 链 | P2-1、P2-2、P2-3 | M4 |
+| 6 | 站点与构建素材分离发布，Pages 体积降到 ≤ 40 MB | P2-5 | M5 |
+
+**轮次之间有依赖，顺序不能随便换**：轮 2 的诱饵成类之后必须重生成，否则旧产物里
+仍是"同类不标"；轮 4 的 SAR 改动同样要求重生成。所以**轮 3 的全量生成不要提前跑**——
+更省的排法是把轮 2 和轮 4 的代码改动都做完，再用轮 3 跑唯一一次 240 帧全量。
+光学渲染是这条链上最贵的一步，"改一点就重跑全量"是最贵的错误。
+
+### 停止条件
+
+轮 6 结束且 M1–M5 全部达标即收口。任何一轮里第 4–8 步出红灯，本轮不算完成、
+不计入轮次，修完从第 3 步重跑。
+
+### 每轮的固定开销
+
+第 1、2、8 步是纯校验，合计约 3 分钟；第 3 步（240 帧含光学）是唯一的长任务。
+第 9 步的线上核对只在真的推送之后才需要跑。
