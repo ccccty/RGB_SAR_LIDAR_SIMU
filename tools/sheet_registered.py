@@ -11,7 +11,7 @@ import json, os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-ROOT = r'D:\work\多模态数据集生成\RGB_SAR_LIDAR_SIMU'
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUN = os.path.join(ROOT, 'out', '1102')
 OUT = os.path.join(ROOT, 'out', 'sheet_1102_registered.png')
 

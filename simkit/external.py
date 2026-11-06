@@ -23,6 +23,23 @@ import subprocess
 
 import numpy as np
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+
+
+def child_env():
+    """Environment handed to a backend subprocess.
+
+    A child process inherits the environment, not our ``sys.path``.  Backends
+    are usually Python scripts that ``import simkit``, so without this they only
+    work when the caller happened to export PYTHONPATH first -- which is why the
+    suite was green from a shell that set it and red under CI, which does not.
+    """
+    env = dict(os.environ)
+    prev = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = ROOT + (os.pathsep + prev if prev else "")
+    return env
+
 
 def spec_for(cfg, name):
     return (cfg.get("backends", {}) or {}).get(name, {}) or {}
@@ -52,7 +69,8 @@ def run(cfg, out_dir, manifest_path, name, quiet=False):
     ]
     if not quiet:
         print("  backend %s: %s" % (name, " ".join(shlex.quote(c) for c in cmd[:3]) + " ..."))
-    p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", env=child_env())
     if p.returncode != 0:
         raise RuntimeError("backend '%s' failed (rc=%d)\n%s\n%s"
                            % (name, p.returncode, (p.stdout or "")[-2000:], (p.stderr or "")[-2000:]))

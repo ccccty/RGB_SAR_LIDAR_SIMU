@@ -52,7 +52,7 @@ def snr_at(s, r_m, sigma_m2, att_db_km):
 def main():
     scene_path = sys.argv[1] if len(sys.argv) > 1 else "scenes/demo_radar_2km.json"
     cfg = json.load(open(os.path.join(ROOT, scene_path), encoding="utf-8"))
-    sigma = 10.0 ** (-10.0 / 10.0)          # the 1.6 m vehicle box
+    sigma = 10.0 ** (-10.0 / 10.0)          # -10 dBsm = 0.1 m^2, a small ground target
     det = float(cfg["sensors"]["radar"].get("det_snr_db", 12.0))
     print("detection threshold %.0f dB, target sigma = -10 dBsm (%.2f m^2)"
           % (det, sigma))
@@ -88,4 +88,5 @@ def main():
             "%s %.3f" % (b, wd["radar_att_db_km"][b]) for b in bands))
 
 
-main()
+if __name__ == "__main__":
+    main()

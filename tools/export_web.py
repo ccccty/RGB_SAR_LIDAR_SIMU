@@ -355,6 +355,10 @@ def scene_budget(cfg_path, bands):
 
 
 def main(dest, runs):
+    if not os.path.isdir(runs):
+        sys.exit("export_web: no such runs directory: %s\n"
+                 "  a run is produced by  python -m simkit gen -c scenes\\<scene>.json -o <run>,\n"
+                 "  or build the whole demo set with  python tools\\build_all.py" % runs)
     data = os.path.join(dest, "data")
     if os.path.isdir(data):
         shutil.rmtree(data)

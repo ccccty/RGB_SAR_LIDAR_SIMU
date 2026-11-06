@@ -8,8 +8,10 @@ frames.json already reports the target length is skipped.
 import json, os, subprocess, sys, time
 from concurrent.futures import ThreadPoolExecutor
 
-ROOT = r'D:\work\多模态数据集生成\RGB_SAR_LIDAR_SIMU'
-PY = os.path.join(ROOT, 'env', 'Scripts', 'python.exe')
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The bundled venv is not in the repository; fall back to whatever is running us.
+_VENV_PY = os.path.join(ROOT, 'env', 'Scripts', 'python.exe')
+PY = _VENV_PY if os.path.exists(_VENV_PY) else sys.executable
 DEST = os.path.join(ROOT, 'out', 'ds4')
 LOG = os.path.join(ROOT, 'out', 'ds4_build.log')
 SCENES = [

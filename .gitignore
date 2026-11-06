@@ -45,3 +45,18 @@ sgprobe_*/
 # scope, which the current credential does not have. Kept on disk; add it
 # back once a properly scoped token is in place.
 .github/workflows/
+
+# agent orchestration scaffolding and local secrets (never published)
+.env
+.env.local
+.env.*.local
+.claude/
+.claude-flow/
+.agents/
+.swarm/
+.mcp.json
+CLAUDE.md
+
+# Node tooling: the site probes and the orchestration CLIs install here
+node_modules/
+.ruflo/

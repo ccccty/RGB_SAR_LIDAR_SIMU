@@ -5,7 +5,7 @@
 > 下面为此前计划，保留历史背景；剩余重点为真实设备参数/样图校准、时域 IR/RD、热惯性、
 > 独立模型与场景分组的训练/测试验证。没有真实参考数据时不能用“图像更清楚”代替真实性验收。
 
-当前状态：四类交战几何的导引头场景（高空空对空 / 低空地対空 / 城市遮挡 / 空对地杂物）
+当前状态：四类观测几何的无人机导引视角场景（高空空中目标 / 低空上升接近 / 城市遮挡 / 低空下视杂物）
 已跑通全部物理模态与 YOLO 导出；跨模态配准由同一套三维投影保证，导出时逐帧自检。
 本文件列出**接下来要做什么、为什么、怎么验收**。
 
@@ -17,7 +17,7 @@
 
 ### P0-1 未标注的强散射体
 
-**问题**：低空空对地场景里有几何与目标完全相同、但 `label:false` 的诱饵车
+**问题**：低空下视场景里有几何与目标完全相同、但 `label:false` 的诱饵车
 （`decoy_rover`，pos = 38, 430, 0），另外 `fence_2` 这类围栏在雷达/SAR 上的回波
 比目标还强。导出成 YOLO 后它们变成"同类不标"——检测器检出它们会被扣分。
 
@@ -106,8 +106,20 @@ python tools\export_yolo.py
 
 ### P2-2 CI
 
-`.github/workflows/selftest.yml`：每次 push 跑 `python -m simkit selftest`
-（40+ 项物理自检）+ YOLO 格式校验（标签字段/范围/图文配对/切分无泄漏）。
+**现状：CI 未启用，push 后没有任何自动闸门。** `.github/workflows/selftest.yml`
+只存在于本机磁盘，被 `.gitignore` 的 `.github/workflows/` 一行排除：推送 workflow
+路径需要带 `workflow` scope 的凭据，而当前 OAuth token 的 scope 实测为
+`gist, read:org, repo`，GitHub 会拒绝。质量闸门目前只有本地两条命令：
+`python -m simkit selftest`（50 项）与 `python -m unittest discover -s tests`（458 项）。
+
+解除办法二选一：换带 `workflow` scope 的 token 后删掉 `.gitignore` 那一行并提交；
+或用 GitHub 网页编辑器直接新建该文件（网页会话不受 OAuth scope 限制），本地仍需
+解除 ignore 才能跟踪后续修改。
+
+入库后 workflow 应跑：`python -m simkit selftest` + `python -m unittest discover -s tests`
++ YOLO 格式校验（标签字段/范围/图文配对/切分无泄漏）。其中前两项已有；YOLO 侧
+`tools/export_yolo.py` 的自检目前只覆盖跨模态标签一致性与图文配对，
+"切分无泄漏"只由按片段切分的构造保证，还缺一个独立校验步骤。
 
 ### P2-3 跨模态像素级对齐的可观测量
 
@@ -119,6 +131,25 @@ python tools\export_yolo.py
 
 并行 agent 同时写 `out/` 会造成混批（已发生）。约定：
 每个 agent 拥有独立目录，合并前由主控校验批次；代码文件按模块划分所有权。
+
+### P2-5 站点与构建素材分离发布
+
+**问题**：站点是仓库根目录直接发布的，所以 276.7 MB 的构建输入
+（`assets/backdrops`、`assets/models`、`assets/hdri`、`assets/refs`）跟着一起上了
+Pages，而浏览器只会取 28.8 MB（`data/` + `assets/hero` + `assets/figures`）。
+这与 README §6 自述的体积纪律相矛盾。
+
+**为什么排在最后**：不构成故障——总量 318.2 MB 远低于 Pages 1 GB 上限，
+最大单文件 16.9 MB 也没触发 100 MB 限制，站点打开速度只取决于它真正取的 28.8 MB。
+代价是首次部署慢与仓库膨胀。
+
+**做法**：把站点产物发布到独立的 `gh-pages` 分支（只含 `index.html`、`app.js`、
+`app.css`、`.nojekyll`、`data/`、`assets/hero`、`assets/figures`），主分支保留构建输入；
+`tools/export_web.py` 增加一个"导出到发布分支工作树"的目标参数。
+或退一步：把四个素材目录迁到 Git LFS。
+
+**验收**：Pages 部署体积 ≤ 40 MB；`node tools/probe_web.js <线上 URL>` 仍 11 个页签
+全开、0 破图；主分支上 `assets/models/rover.obj` 之类的大文件不再出现在发布产物里。
 
 ---
 
@@ -138,4 +169,4 @@ python tools\export_yolo.py
 | M1 | P0-1、P0-2 | 导出清单里没有"同类不标"，不可训练的套件被显式标记 |
 | M2 | P1-1、P1-2 | 四场景 × 240 帧全量出站，站点与 YOLO 同步更新 |
 | M3 | P0-3、P1-3 | SAR 序列有真实位移；链路预算表可复现 |
-| M4 | P2-1、P2-2、P2-3 | 导出带批次闸门；CI 绿；像素对齐指标 <2 px |
+| M4 | P2-1、P2-2、P2-3 | 导出带批次闸门；CI 入库且首跑绿（需 workflow scope 凭据）；像素对齐指标 <2 px |

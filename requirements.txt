@@ -1,4 +1,7 @@
 # CPU simulation and non-Blender regression checks.
 numpy>=1.24,<3
 # Image interference variants, preview montages and dataset exports.
-Pillow>=10,<13
+Pillow>=10,<14
+# Optional, for tools/make_figures.py only -- neither simkit nor the test suite
+# imports it, so it stays out of the default install:
+#   pip install matplotlib

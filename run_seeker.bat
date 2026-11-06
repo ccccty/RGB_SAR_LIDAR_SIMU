@@ -8,7 +8,7 @@ set PYTHONPATH=%~dp0
 set SIMKIT_CUBE_MB=192
 if not exist "env\Scripts\python.exe" (
   echo [ERROR] env\Scripts\python.exe not found - create the venv first:
-  echo     python -m venv env ^&^& env\Scripts\pip install numpy
+  echo     python -m venv env ^&^& env\Scripts\pip install -r requirements.txt
   pause
   exit /b 1
 )

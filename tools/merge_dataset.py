@@ -42,6 +42,13 @@ def main():
     if not runs:
         print("usage: merge_dataset.py <out_root> <run> [run...]")
         return 1
+    missing = [r for r in runs if not os.path.isdir(r)]
+    if missing:
+        print("merge_dataset: no such run %s: %s"
+              % ("directory" if len(missing) == 1 else "directories",
+                 ", ".join(missing)))
+        print("  a run is produced by  python -m simkit gen -c scenes\\<scene>.json -o <run>")
+        return 1
     os.makedirs(out_root, exist_ok=True)
 
     merged = {}

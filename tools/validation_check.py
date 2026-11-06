@@ -633,8 +633,14 @@ def check(root, n_frames=10, modalities=MODALITIES, report_path=None, label="最
     result["trajectory"] = _check_trajectory(per_frame, wanted, times, errors)
     result["coco"] = {}
     ir_key = next((k for k in wanted if k.startswith("ir_")), None)
-    for modality, fname in (("optical", "optical"), ("ir", ir_key),
-                            ("lidar", "lidar"), ("sar", "sar")):
+    # Scope every COCO check to the modalities this run was asked for. Optical
+    # used to be checked unconditionally and was the only fatal one, so the
+    # --skip-optical route the README recommends could never pass this gate.
+    opt_key = "optical" if any(k.startswith("optical") for k in wanted) else None
+    lid_key = "lidar" if "lidar" in wanted else None
+    sar_key = "sar" if "sar" in wanted else None
+    for modality, fname in (("optical", opt_key), ("ir", ir_key),
+                            ("lidar", lid_key), ("sar", sar_key)):
         if fname is None:
             continue
         info, errs = _coco_report(root, fname, n_frames, labels_dir=_label_dir(fname))
@@ -648,7 +654,10 @@ def check(root, n_frames=10, modalities=MODALITIES, report_path=None, label="最
         elif errs:
             warnings.extend(errs)
 
-    result["observations"] = _check_observations(root, n_frames, per_frame, errors)
+    # observations/ is written by the optical chain and its box-vs-range check is
+    # a camera-model cross-check, so it is only in scope when optical was asked for.
+    result["observations"] = (_check_observations(root, n_frames, per_frame, errors)
+                              if opt_key else {})
 
     # The negative control (tools/validation_negative.py) leaves one compact
     # record behind. It is folded into the report so the delivered document
@@ -1035,7 +1044,7 @@ def _render_markdown(result):
     add("## 二、一条命令跑完")
     add("")
     add("```")
-    add(r"$env:PYTHONPATH = 'D:\work\多模态数据集生成\RGB_SAR_LIDAR_SIMU'")
+    add(r"set PYTHONPATH=%CD%        # 在仓库根目录下执行")
     add(r"env\Scripts\python.exe -m simkit validate -c scenes\validation_twin_fighter.json "
         r"-o out\validation_ecm -n 10 -s optical,ir,radar,lidar,sar")
     add(r"env\Scripts\python.exe -m tools.validation_check out\validation_ecm "
@@ -1442,7 +1451,7 @@ def _render_markdown(result):
     add("## 十二、复现")
     add("")
     add("```")
-    add(r"$env:PYTHONPATH = 'D:\work\多模态数据集生成\RGB_SAR_LIDAR_SIMU'")
+    add(r"set PYTHONPATH=%CD%        # 在仓库根目录下执行")
     add(r"env\Scripts\python.exe -m simkit validate -c scenes\validation_twin_fighter.json "
         r"-o out\validation_ecm -n 10 -s optical,ir,radar,lidar,sar")
     add(r"env\Scripts\python.exe -m tools.validation_check out\validation_ecm "

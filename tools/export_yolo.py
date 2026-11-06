@@ -112,17 +112,29 @@ def class_map(runs):
 
 
 def read_boxes(lab_path, bkey="boxes"):
-    """({name: box}, (W, H)) from one frame label file."""
+    """({name: box}, (W, H)) from one frame label file.
+
+    Two layouts are in the wild.  Current runs key ``boxes`` by object name.
+    Older runs and the lidar/radar writers emit a bare list and keep the names in
+    a sibling ``objects`` array; a list is paired with ``objects`` positionally
+    only when that is unambiguous (equal length, unique names).  Anything else
+    returns None so the caller skips the frame instead of exporting a label whose
+    class we would have to invent -- and instead of handing back a list, which
+    the caller indexes by name.
+    """
     d = load_json(lab_path)
     if not isinstance(d, dict):
         return None, None
     b = d.get(bkey)
     W, H = int(d.get("width") or 0), int(d.get("height") or 0)
-    if isinstance(b, list):                       # older single-camera layout
-        return [], (W, H)
-    if not isinstance(b, dict):
-        return [], (W, H)
-    return b, (W, H)
+    if isinstance(b, dict):
+        return b, (W, H)
+    if isinstance(b, list) and bkey == "boxes":
+        names = [o.get("name") for o in (d.get("objects") or [])
+                 if isinstance(o, dict)]
+        if len(names) == len(b) and len(set(names)) == len(names):
+            return dict(zip(names, b)), (W, H)
+    return None, (W, H)
 
 
 def to_yolo(box, W, H, min_px=0.0):
@@ -225,8 +237,11 @@ def compose_stacks(runs, out, cls_of, id_of, args):
         n_img = n_ann = n_box = 0
         for scene, d, n_lab in runs:
             fpc, _smoke = frames_per_clip(d, n_lab)
+            first = os.path.join(d, src[0][1])
+            if not os.path.isdir(first):
+                continue        # older narrow-only runs have no wide/RD views at all
             for fid in sorted(int(os.path.splitext(f)[0]) for f in
-                              os.listdir(os.path.join(d, src[0][1]))
+                              os.listdir(first)
                               if f.endswith(".png")):
                 have = []
                 for nm, idir, ldir, kind, bkey in src:
@@ -364,6 +379,7 @@ def main():
     reg_dev = []          # cross-flavour box disagreement, for the self-check
     dropped_invisible = 0
     dropped_tiny = 0
+    skipped_unnamed = 0     # label files whose boxes carry no object name
 
     for scene, d, n_lab in runs:
         # clip length decides the split; a run shorter than one clip falls back to
@@ -400,7 +416,8 @@ def main():
                 if not (os.path.exists(src) and os.path.exists(lab)):
                     continue
                 boxes, (W, H) = read_boxes(lab, bkey)
-                if boxes is None:
+                if not isinstance(boxes, dict):
+                    skipped_unnamed += 1
                     continue
                 if not W or not H:
                     from PIL import Image
@@ -491,6 +508,7 @@ def main():
         split_rule=("smoke: first 80% train / last 20% val (single clip)"
                     if smoke else "clip 0 train / clip 1+ val"),
         fmt=args.fmt, dropped_invisible=dropped_invisible, dropped_tiny=dropped_tiny,
+        skipped_unnamed=skipped_unnamed,
         stacks=stack_stats,
         # NOTE: this compares *labels*, which are derived from one projection, so
         # 0.00 is a regression guard on the label path -- it does NOT prove the two
@@ -512,8 +530,8 @@ def main():
         for nm, st in sorted(stack_stats.items()):
             print("%-14s %7d %8d  %s" % (nm, st["images"], st["boxes"],
                                          " + ".join(st["panels"])))
-    print("\npaired frames: %d | dropped: %d invisible, %d degenerate"
-          % (len(pairs), dropped_invisible, dropped_tiny))
+    print("\npaired frames: %d | dropped: %d invisible, %d degenerate, %d unnamed"
+          % (len(pairs), dropped_invisible, dropped_tiny, skipped_unnamed))
     print("label consistency: %d cross-flavour box pairs, max deviation %.2f px"
           % (len(reg_dev), dev_max))
     if dev_max > 0.51:

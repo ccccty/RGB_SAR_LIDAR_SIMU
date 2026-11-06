@@ -133,16 +133,19 @@ def main():
         print("\ndone (render only). runs -> %s" % args.dest)
         return
 
-    runs = [args.dest + "/" + n for n, _, _ in SCENES
-            if os.path.isdir(os.path.join(ROOT, args.dest, n))]
+    dest = args.dest.rstrip("/\\")
+    runs = [dest + "/" + n for n, _, _ in SCENES
+            if os.path.isdir(os.path.join(ROOT, dest, n))]
     if not runs:
-        sys.exit("nothing generated: no out/ directories")
+        sys.exit("nothing generated: no run directories under %s" % dest)
 
-    run([PY, "tools/merge_dataset.py", "out/seeker_dataset"] + runs, "merge into one COCO")
-    run([PY, "tools/export_web.py", ".", "out"], "export website data")
+    # Every path below follows --dest.  These three used to hardcode "out", so a
+    # --dest out\ds4 run generated into out\ds4 and then published out\ to the site.
+    run([PY, "tools/merge_dataset.py", dest + "/seeker_dataset"] + runs, "merge into one COCO")
+    run([PY, "tools/export_web.py", ".", dest], "export website data")
     for n, _, _ in SCENES:
-        if os.path.isdir(os.path.join(ROOT, "out", n)):
-            run([PY, "tools/contact_sheet.py", "out/" + n, "out/sheet_" + n + ".png", "4"],
+        if os.path.isdir(os.path.join(ROOT, dest, n)):
+            run([PY, "tools/contact_sheet.py", dest + "/" + n, dest + "/sheet_" + n + ".png", "4"],
                 "thumbnail " + n)
     print("\nall done.  double-click index.html, or: node tools/serve_web.js")
 
