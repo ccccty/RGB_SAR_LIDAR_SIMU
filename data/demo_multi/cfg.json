@@ -39,6 +39,7 @@
   ],
   "netd_mk": 28.0,
   "psf_px": 1.3,
+  "engine_heat": true,
   "preview_span_c": null,
   "nuc": {
    "enabled": true,
@@ -132,7 +133,8 @@
      ]
     ],
     "speed_mps": 18.0,
-    "loop": false
+    "loop": false,
+    "ramp_in": false
    },
    "z_offset_m": 0.0
   },
@@ -189,7 +191,8 @@
      ]
     ],
     "speed_mps": 18.0,
-    "loop": false
+    "loop": false,
+    "ramp_in": false
    },
    "z_offset_m": 0.0
   }
@@ -404,7 +407,8 @@
       ]
      ],
      "speed_mps": 18.0,
-     "loop": false
+     "loop": false,
+     "ramp_in": false
     }
    },
    {
@@ -436,7 +440,8 @@
       ]
      ],
      "speed_mps": 18.0,
-     "loop": false
+     "loop": false,
+     "ramp_in": false
     }
    }
   ],
@@ -470,6 +475,10 @@
    "coco": true,
    "yolo": true,
    "readme": true
+  },
+  "effects": {
+   "plume": true,
+   "supersample": 0
   }
  },
  "research_baseline": {

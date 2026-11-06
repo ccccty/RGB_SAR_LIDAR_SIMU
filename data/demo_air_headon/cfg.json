@@ -26,6 +26,7 @@
   ],
   "netd_mk": 28.0,
   "psf_px": 1.3,
+  "engine_heat": true,
   "preview_span_c": null,
   "nuc": {
    "enabled": true,
@@ -332,6 +333,10 @@
    "coco": true,
    "yolo": true,
    "readme": true
+  },
+  "effects": {
+   "plume": true,
+   "supersample": 0
   }
  },
  "research_baseline": {
