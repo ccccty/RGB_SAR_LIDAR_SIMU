@@ -1,18 +1,18 @@
-"""Generate the four seeker engagement scenes.
+"""Generate the four seeker-view scenes.
 
     python tools\\make_seeker_scenes.py
 
 Writes into scenes/:
 
-    sk3_high_air2air.json         高空空对空  (sky background, 9-12 km head-on)
-    sk3_low_surface2air.json      低空地対空  (mobile SAM climbing at a UAV)
-    sk3_low_air2air_occluded.json 低空空对空  (urban high-rise occlusion)
-    sk3_low_air2ground_clutter.json 低空空对地 (ground target among clutter + SAR)
+    sk3_high_air2air.json         高空空中目标  (sky background, 7.1-9.5 km head-on)
+    sk3_low_surface2air.json      低空上升接近  (ground launcher climbing at a UAV)
+    sk3_low_air2air_occluded.json 低空空中目标  (urban high-rise occlusion)
+    sk3_low_air2ground_clutter.json 低空下视 (ground target among clutter + SAR)
 
 Every scene is two 120-frame clips at 20 fps, rendered through a narrow seeker
 lens and a wide search lens at the same instant, with the same weather state
 driving all modalities. Numbers here are the geometry; the per-clip jitter that
-makes clip 0 and clip 1 different engagements lives in simkit/plan.py.
+makes clip 0 and clip 1 different passes lives in simkit/plan.py.
 
 Why a generator and not four hand-edited JSONs: the sensor blocks are 90% the
 same, and the pixel-size band is the one thing that must stay consistent
@@ -79,10 +79,10 @@ def sensors(eye, fov, width, height, radar_band="Ka", radar_span=(2.0, 1.5),
         "optical": dict(pos=list(eye), look_at=[0.0, 0.0, 0.0], fov_deg=fov,
                         width=width, height=height),
         # A seeker's radar has to see the same targets the optics do, so the three
-        # numbers that decide whether it can are set from the engagement range, not
+        # numbers that decide whether it can are set from the pass range, not
         # from the defaults:
         #   n_samples x c/2B = unambiguous range. 512 x 7.5 MHz = 10.2 km, which
-        #     covers the engagement; the old 512 x 30 MHz was 2.6 km against 6-10 km
+        #     covers the pass; the old 512 x 30 MHz was 2.6 km against 6-10 km
         #     targets, so nothing was ever in range. Keeping the sample count low
         #     also keeps the noise bandwidth down: the same range window with 1024
         #     samples cost 3 dB of SNR for resolution this target does not need.
@@ -171,7 +171,7 @@ def common(ground, weather, sun, air, ir_netd=30, samples=16, exposure=-0.8):
 
 
 # ---------------------------------------------------------------------------
-# 1. 高空空对空: nothing but sky, 9-12 km head-on, closing at ~500 m/s
+# 1. 高空空中目标: nothing but sky, 7.1-9.5 km head-on
 # ---------------------------------------------------------------------------
 def high_air2air():
     target_m, fov, w, h = 10.0, 2.2, 768, 576
@@ -197,7 +197,7 @@ def high_air2air():
 
 
 # ---------------------------------------------------------------------------
-# 2. 低空地対空: launcher on the ground, climbing at a UAV 7-10 km out
+# 2. 低空上升接近: launcher on the ground, climbing at a UAV 5.7-8.0 km out
 # ---------------------------------------------------------------------------
 def low_surface2air():
     target_m, fov, w, h = 8.0, 2.2, 768, 576
@@ -224,7 +224,7 @@ def low_surface2air():
 
 
 # ---------------------------------------------------------------------------
-# 3. 低空空对空 + 城市高楼遮挡: the target disappears behind towers mid-clip
+# 3. 低空空中目标 + 城市高楼遮挡: the target disappears behind towers mid-clip
 # ---------------------------------------------------------------------------
 def occluder_walls(cfg, seed, target_name="uav_low"):
     """Walls anchored on each clip's *actual* start pose, not on a grid.
@@ -310,7 +310,7 @@ def low_air2air_occluded():
 
 
 # ---------------------------------------------------------------------------
-# 4. 低空空对地 + 地面杂物: one vehicle among barriers, fences and shrubs, with SAR
+# 4. 低空下视 + 地面杂物: one vehicle among barriers, fences and shrubs, with SAR
 # ---------------------------------------------------------------------------
 def low_air2ground_clutter():
     target_m, fov, w, h = 3.1, 2.2, 768, 576

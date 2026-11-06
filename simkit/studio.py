@@ -103,8 +103,8 @@ VIEW_WIDE = dict(name="wide", tag="_wide", fov_deg=18.0, width=1280, height=960)
 SIZE_PX = dict(small=[8, 20], medium=[18, 42], large=[35, 80])
 CLOSING = {"in": "接近", "out": "远离", "hold": "保持"}
 TRAJ_MODES = {
-    "platform": "平台俯冲 + 蛇形（导引头）",
-    "seeker": "相机静立 · 目标飞行（旧导引头）",
+    "platform": "平台俯冲 + 蛇形（机载导引）",
+    "seeker": "相机静立 · 目标飞行（旧机载导引）",
     "world": "世界轨迹（对象自带速度）",
 }
 
@@ -252,7 +252,7 @@ def _scene_info(stem, path):
     has_sar = "sar" in sensors
     views = [dict(name=v.get("name"), fov_deg=v.get("fov_deg"), width=v.get("width"))
              for v in (clip.get("views") or []) if isinstance(v, dict)]
-    group = "导引头" if (sk.get("mode") == "platform" or stem.lower().startswith("sk2")) else \
+    group = "机载导引" if (sk.get("mode") == "platform" or stem.lower().startswith("sk2")) else \
             ("SAR" if has_sar else "基础")
     fov = None
     for nm in ("optical", "ir_camera", "eo_camera", "camera"):
@@ -286,7 +286,7 @@ _PREFIX_ORDER = {"sk3": 0, "sk2": 0, "sk": 1, "sar": 1, "ds": 2, "final": 3,
 
 def _scenes():
     rows = [(stem, _scene_info(stem, path)) for stem, path in _scene_paths().items()]
-    order = {"导引头": 0, "基础": 1, "SAR": 2}
+    order = {"机载导引": 0, "基础": 1, "SAR": 2}
     rows.sort(key=lambda r: (order.get(r[1].get("group"), 3),
                              _PREFIX_ORDER.get(r[0].split("_")[0], 9), r[0]))
     return [r[1] for r in rows]
