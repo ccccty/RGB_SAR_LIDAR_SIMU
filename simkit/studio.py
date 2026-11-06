@@ -169,6 +169,22 @@ def _inum(body, key, label, lim, default=None):
     return int(round(x))
 
 
+def _bool(body, key, label, default=False):
+    v = body.get(key)
+    if v is None or v == "":
+        return bool(default)
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return bool(v)
+    text = str(v).strip().lower()
+    if text in ("1", "true", "yes", "on", "是"):
+        return True
+    if text in ("0", "false", "no", "off", "否"):
+        return False
+    raise BadRequest("%s 必须是布尔值，收到 %r" % (label, v))
+
+
 def _pair(body, key, label, lim, default=None):
     v = body.get(key)
     if v is None or v == "" or (isinstance(v, (list, tuple)) and not len(v)):
@@ -319,6 +335,9 @@ def _recipe_to_form(rec):
         sensors=cap.get("sensors"), seed=cap.get("seed"),
         aspect=view.get("aspect"), weather=env.get("weather"),
         narrow_fov=view.get("fov_deg"))
+    fx = rec.get("effects") or {}
+    out["plume"] = bool(fx.get("plume", False))
+    out["supersample"] = int(fx.get("supersample", 0) or 0)
     km = view.get("range_km")
     if km:
         lo = float(km) * 1000.0 * 0.85
@@ -372,7 +391,11 @@ def _trajectory_smooth(payload):
 
     def _measure(pts3, spd):
         """Fit the points and report length, time, worst load and worst bank."""
-        path = motion.Waypoints(pts3, speed=spd, loop=closed)
+        # ramp_in=False because this is the route the build will fly: a drawn
+        # leg enters at speed.  Measuring it with an entry ramp reported a
+        # duration the operator would never see and hid the fact that the whole
+        # two-second clip was the ramp.
+        path = motion.Waypoints(pts3, speed=spd, loop=closed, ramp_in=False)
         dur = max(float(path.duration), 1e-6)
         steps = 96
         sampled = []
@@ -843,8 +866,19 @@ def _parse(body):
         recipe = _load_recipe(recipe.strip())
     if isinstance(recipe, dict):
         from . import scenegen
+        # Workbench switches arrive as flat form fields but belong in the recipe,
+        # so fold them in before validation -- a recipe that is re-saved then
+        # carries the same picture.
+        rec = json.loads(json.dumps(recipe))
+        fx = dict(rec.get("effects") or {})
+        if body.get("plume") not in (None, ""):
+            fx["plume"] = _bool(body, "plume", "生成尾焰")
+        if body.get("supersample") not in (None, ""):
+            fx["supersample"] = _inum(body, "supersample", "红外超采样", (0, 4), 0)
+        if fx:
+            rec["effects"] = fx
         try:
-            q["recipe"] = scenegen.validate_recipe(recipe)
+            q["recipe"] = scenegen.validate_recipe(rec)
             built = scenegen.build_scene(q["recipe"])
         except ValueError as exc:
             raise BadRequest("配方无效：" + str(exc)) from exc
@@ -862,6 +896,13 @@ def _parse(body):
         q["scene_path"] = _scene_file(body.get("scene") or body.get("preset"))
         q["scene"] = os.path.basename(q["scene_path"])[:-5]
     q["name"] = _safe_name(body.get("name"))
+    # Optional switches: absent means "leave the scene alone".  The recipe path
+    # already folded a sent value into recipe.effects, so these only matter for
+    # the preset-scene path and for a preview taken before a recipe was saved.
+    q["plume"] = (_bool(body, "plume", "生成尾焰")
+                  if body.get("plume") not in (None, "") else None)
+    q["supersample"] = (_inum(body, "supersample", "红外超采样", (0, 4), 0)
+                        if body.get("supersample") not in (None, "") else None)
     q["frames"] = _inum(body, "frames", "帧数", LIM["frames"], 240)
     q["fps"] = _fnum(body, "fps", "帧率", LIM["fps"], 10.0)
     q["fpc"] = _inum(body, "frames_per_clip", "每段帧数", LIM["fpc"], 120)
@@ -1017,6 +1058,24 @@ def _compose(q, cfg):
     """
     clip = cfg.setdefault("clip", {})
     dflt = q.get("_defaults") or {}
+
+    # The IR exhaust switch is the one form control with no counterpart in a
+    # curated scene file, so it is applied here rather than through `changed`.
+    # None means "the form did not send it": a preset scene then keeps whatever
+    # its author wrote, and a recipe run already carries it in ir.engine_heat.
+    fx = (q.get("recipe") or {}).get("effects") or {}
+    plume = q.get("plume")
+    if plume is None:
+        plume = fx.get("plume")
+    if plume is not None:
+        cfg.setdefault("ir", {})["engine_heat"] = bool(plume)
+    supersample = q.get("supersample")
+    if supersample is None:
+        supersample = fx.get("supersample")
+    if supersample and 2 <= int(supersample) <= 4:
+        ir_block = cfg.setdefault("ir", {})
+        ir_block["samples_per_axis"] = int(supersample)
+        ir_block["subpixel_mode"] = "coverage"
 
     def changed(key, value, tol=1e-9):
         """True when the operator moved this control away from its default."""

@@ -24,6 +24,27 @@ MATERIALS = {
     "exhaust_plume": dict(rf_rho=0.02, rough_m=0.05, emissivity=0.30,
                           emissivity_mwir=0.28, emissivity_lwir=0.32,
                           alpha_solar=0.05, albedo=(0.30, 0.30, 0.32), h_int=0.0),
+    # The plume is a gas volume, not a surface: a pixel at the middle of its
+    # silhouette looks along the whole cone, a pixel at the rim only grazes it.
+    # engine.attach sorts the cone's faces into these five transmission buckets
+    # by the cosine between the face normal and the line of sight, so the
+    # silhouette fades into whatever is behind it instead of ending on a facet
+    # edge -- which is what made a 1 px wide cone read as a solid white bar.
+    "exhaust_plume_q1": dict(rf_rho=0.02, rough_m=0.05, emissivity=0.06,
+                             emissivity_mwir=0.05, emissivity_lwir=0.06,
+                             alpha_solar=0.02, albedo=(0.30, 0.30, 0.32), h_int=0.0),
+    "exhaust_plume_q2": dict(rf_rho=0.02, rough_m=0.05, emissivity=0.12,
+                             emissivity_mwir=0.11, emissivity_lwir=0.13,
+                             alpha_solar=0.03, albedo=(0.30, 0.30, 0.32), h_int=0.0),
+    "exhaust_plume_q3": dict(rf_rho=0.02, rough_m=0.05, emissivity=0.18,
+                             emissivity_mwir=0.17, emissivity_lwir=0.19,
+                             alpha_solar=0.04, albedo=(0.30, 0.30, 0.32), h_int=0.0),
+    "exhaust_plume_q4": dict(rf_rho=0.02, rough_m=0.05, emissivity=0.24,
+                             emissivity_mwir=0.23, emissivity_lwir=0.26,
+                             alpha_solar=0.04, albedo=(0.30, 0.30, 0.32), h_int=0.0),
+    "exhaust_plume_q5": dict(rf_rho=0.02, rough_m=0.05, emissivity=0.30,
+                             emissivity_mwir=0.28, emissivity_lwir=0.32,
+                             alpha_solar=0.05, albedo=(0.30, 0.30, 0.32), h_int=0.0),
     # Matte military topcoat: ground vehicles and ships are painted for IR
     # camouflage, so the paint is a high-absorptance matte, not the semi-gloss
     # low-alpha finish of an aircraft top coat. With the aircraft's alpha (0.35)

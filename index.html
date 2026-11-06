@@ -684,6 +684,7 @@ node tools\serve_web.js                           :: http://127.0.0.1:18080</pre
       <h3>各模态怎么算的</h3>
       <div class="kv"><span>可见光</span><span>Blender 4.5 无头 Cycles</span></div>
       <div class="kv"><span>红外</span><span>逐面能量平衡 + Planck 波段积分</span></div>
+      <div class="kv"><span>红外 · 尾焰</span><span>推力耦合的喷口热区与尾焰锥</span></div>
       <div class="kv"><span>毫米波雷达</span><span>面元 PO + 雷达方程 + 雨衰</span></div>
       <div class="kv"><span>激光雷达</span><span>脉冲 TOF + 链路方程</span></div>
       <div class="kv"><span>SAR</span><span>RD 聚焦 + 相干斑 + NESZ</span></div>
@@ -707,7 +708,8 @@ node tools\serve_web.js                           :: http://127.0.0.1:18080</pre
     <div class="kv"><span>海面</span><span>六正弦叠加，无白冠、无破碎波</span></div>
     <div class="kv"><span>红外预览</span><span>MWIR/LWIR 经 AGC 后高度相关</span></div>
     <div class="kv"><span>SAR</span><span>点散射近似，无相位屏与多视处理</span></div>
-    <div class="kv"><span>天气</span><span>晴/阴/雨三档，缺雾、雪、沙尘</span></div>
+    <div class="kv"><span>天气</span><span>晴/多云/雨/雾四档，含混合与渐变；缺雪与沙尘</span></div>
+    <div class="kv"><span>尾焰</span><span>长度与温度随推力缩放，无燃烧化学与凝结尾迹</span></div>
     <div class="kv"><span>光学标定</span><span>仅标定天空，地面与阴影未单独标</span></div>
     <div class="kv"><span>真实性验证</span><span>尚无真实传感器标定，不等于已证明训练收益</span></div>
   </div>

@@ -1149,3 +1149,22 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent-line); outli
 .place-speed input { width: 74px; background: #0b0f15; color: #e6edf5;
   border: 1px solid #26303d; border-radius: 6px; padding: 3px 6px; }
 .place-speed .note { color: #6d7a88; font-size: 11px; }
+/* 红外特效开关：与 ECM 勾选同一套视觉，但独立命名，避免两处样式互相牵连。 */
+.fx-picks { display: grid; gap: 6px; margin-top: 10px; }
+.fx-pick {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+.fx-pick input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); flex: none; }
+.fx-pick small { color: var(--faint); font-size: 11px; }
+.fx-pick select { margin-left: auto; }
+.fx-pick:hover { border-color: var(--line-strong); color: var(--text); }
+.fx-pick.on { border-color: var(--accent-line); background: var(--accent-soft); color: #dcebff; }

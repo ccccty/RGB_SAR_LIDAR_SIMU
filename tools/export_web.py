@@ -366,13 +366,27 @@ def main(dest, runs):
 
     bands = radar_band_table()
     scenes = []
-    wanted = [(s[0], s[1], s[2], s[3]) for s in SCENES if os.path.isdir(os.path.join(runs, s[0]))]
+    # SIMKIT_WEB_SCENES="a,b,c" publishes only those runs.  Without it every run
+    # on disk is exported, which is right for a merged dataset package and wrong
+    # for the curated site: the sweep below also picks up dev probes
+    # (bg_check_*, radar_check, 1102) and stale runs, and those would land in the
+    # gallery with their directory name as a title.
+    allow = set(x.strip() for x in
+                os.environ.get("SIMKIT_WEB_SCENES", "").split(",") if x.strip())
+    wanted = [(s[0], s[1], s[2], s[3]) for s in SCENES
+              if os.path.isdir(os.path.join(runs, s[0]))
+              and (not allow or s[0] in allow)]
     # ... plus every other run on disk. The canonical list is a set of preferred
     # titles, not an allow-list: once it matched, runs generated under new names
     # silently vanished from the site (measured: four 240-frame seeker scenes
     # dropped out while three 6-frame demos were exported).
     _have = {w[0] for w in wanted}
     for nm in sorted(os.listdir(runs)):
+        # The allow-list has to cover both passes: the curated SCENES list and
+        # runs that only the sweep would find (the three seeker_* scenes are of
+        # that kind, and filtering just the first pass silently dropped them).
+        if allow and nm not in allow:
+            continue
         p = os.path.join(runs, nm)
         if nm in _have or not os.path.isdir(p):
             continue

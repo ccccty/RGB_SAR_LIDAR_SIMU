@@ -761,8 +761,27 @@ def validate_recipe(recipe):
     output = {k: _bool(out_raw.get(k), 'output.' + k, True)
               for k in ('preview', 'coco', 'yolo', 'readme')}
 
+    # Sensor effects the operator can switch, kept in the recipe so a saved run
+    # reproduces the same picture. `plume` is the exhaust.  The default is ON:
+    # every scene built before this switch existed had engine heat, and a recipe
+    # that says nothing must keep looking the way it looked.  The workbench always
+    # sends an explicit value, so unticking its box is still how you turn it off.
+    fx_raw = recipe.get('effects')
+    if fx_raw is None:
+        fx_raw = {}
+    if not isinstance(fx_raw, dict):
+        raise ValueError('effects 必须是字典（收到 %r）' % (fx_raw,))
+    effects = dict(
+        plume=_bool(fx_raw.get('plume'), 'effects.plume', True),
+        # 0 = the renderer's own default (one sample per pixel).  2 or 3 trades
+        # time for an antialiased plume: at engagement range the exhaust is a few
+        # pixels wide and point sampling turns it into a jagged bar.
+        supersample=_integer(fx_raw.get('supersample', 0),
+                             'effects.supersample', 0, 4))
+
     normalised = dict(name=name, environment=environment, objects=objects,
-                      ecm=ecm, view=view, capture=capture, output=output)
+                      ecm=ecm, view=view, capture=capture, output=output,
+                      effects=effects)
     # entities are validated last: ecm.load owns their schema, and wrapping its
     # message keeps every failure the caller sees in Chinese.
     if ecm_mode != 'none':
@@ -863,7 +882,10 @@ def _norm_target_route(raw, field):
     speed = _number(raw.get("speed_mps") or 0.0, field + ".speed_mps",
                     0.0, 1200.0, " m/s")
     return dict(mode="waypoints", points=out, speed_mps=float(speed),
-                loop=bool(raw.get("loop", False)))
+                loop=bool(raw.get("loop", False)),
+                # authored routes describe a leg already in flight; ramping in
+                # from rest turned a 250 m/s jet into a catapult
+                ramp_in=bool(raw.get("ramp_in", False)))
 
 
 def _object_size(asset, scale):
@@ -1651,7 +1673,10 @@ def build_scene(recipe):
                              round(_pos[2] + float(p[2]) - float(_p0[2]), 3)]
                             for p in _route["points"]],
                     speed_mps=float(_route.get("speed_mps") or speed),
-                    loop=bool(_route.get("loop", False)))
+                    loop=bool(_route.get("loop", False)),
+                    # a drawn route is a cruise leg: enter at speed, only the
+                    # arrival is flown down
+                    ramp_in=bool(_route.get("ramp_in", False)))
             if surface:
                 obj['z_offset_m'] = 0.0
             objects.append(obj)
@@ -1713,6 +1738,14 @@ def build_scene(recipe):
         'air': {'temp_c': SITE[env]['air_temp_c'], 'rh': SITE[env]['rh'],
                 'wind_mps': wind},
         'ir': {'bands': ['mwir', 'lwir'], 'netd_mk': 28.0, 'psf_px': 1.3,
+               # Workbench switch: no engine heat means no nozzle override and no
+               # exhaust cone, i.e. the same airframe rendered as a cold body.
+               'engine_heat': bool((r.get('effects') or {}).get('plume', False)),
+               # 0 keeps the renderer default (one sample); 2-4 antialias the
+               # plume, which is only a few pixels wide at engagement range.
+               **({'samples_per_axis': int((r.get('effects') or {})['supersample']),
+                   'subpixel_mode': 'coverage'}
+                  if int((r.get('effects') or {}).get('supersample', 0)) >= 2 else {}),
                # The preview runs an automatic gain control over the frame, not a
                # fixed 20 K window. A 20 K window around the median was chosen so
                # the 28 mK NETD survives into the 8-bit sheet, but it also clipped
@@ -1754,11 +1787,17 @@ def build_scene(recipe):
             views=views,
             # A drawn route owns the clip; a seeker block beside it would make the
             # planner drag the target along the line of sight again, which is the
-            # motion the operator just replaced.
+            # motion the operator just replaced.  Dropping the seeker also drops
+            # the mount that used to follow the target, so a 250 m/s airframe
+            # crossed the 307 m wide frame in twelve frames and more than half the
+            # clip was empty sky -- hence camera_track, which pans the fixed mount
+            # while leaving the route alone.
             **({'trajectory': dict(mode='waypoints',
                                    points=[list(p) for p in view['trajectory']['points']],
                                    speed_mps=float(view['trajectory']['speed_mps']),
-                                   loop=bool(view['trajectory']['closed']))}
+                                   loop=bool(view['trajectory']['closed']),
+                                   ramp_in=False),
+                'camera_track': 'on'}
                if drawn else ({} if top_down else {'seeker': seeker})),
             rig={'lag_s': 0.02},
         ),

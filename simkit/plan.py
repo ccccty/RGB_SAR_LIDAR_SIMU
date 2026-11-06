@@ -175,12 +175,20 @@ class _ObjectTrack(motion.Track):
         if self.yaw_mode == "fixed":
             return rot
         v = self.vel(t)
-        if float(np.hypot(v[0], v[1])) > 1e-6:
+        # 1e-6 m/s treated floating-point dust as a real heading: a formation
+        # member at rest has a residual velocity from the lever term whose
+        # direction is noise, and it reported 142 deg off the leader on frame 0.
+        # 0.05 m/s is below any airframe's meaningful motion.
+        if float(np.hypot(v[0], v[1])) > 0.05:
             return float(np.degrees(np.arctan2(v[1], v[0]))) + off
         # A stopped object keeps the heading its route ends on; a waypoint route
         # has one even at zero speed, so it is tried before the static rot.
         heading_path = self.base
-        while isinstance(heading_path, motion.GroundPath):
+        # Unwrap the track wrappers down to the path itself: PathTrack and
+        # GroundPath both just hold one, and without this a route that starts
+        # from rest reported the fallback rot while the next frame reported the
+        # route tangent -- a 180 deg disagreement across one frame.
+        while isinstance(heading_path, (motion.GroundPath, motion.PathTrack)):
             heading_path = heading_path.path
         if isinstance(heading_path, motion.Waypoints):
             h = heading_path.heading(t)
@@ -398,18 +406,27 @@ class ClipPlan:
                 parent = build(parent_obj)
                 parent_nominal = np.asarray(parent_obj.get("pos", [0.0, 0.0, 0.0]),
                                             float)
+            carrier = str(spec.get("carrier", "body")).lower()
             offset_body = spec.get("offset_body")
             if offset_body is None:
                 # a scene's objects[].pos is a world coordinate; rotate it into
                 # the parent's frame at t=0 so the authored placement holds
                 offset_world = (np.asarray(obj.get("pos", [0.0, 0.0, 0.0]), float)
                                 - parent_nominal)
-                offset_body = np.asarray(parent.frame(0.0), float).T @ offset_world
+                if carrier == "level":
+                    yaw0 = parent.yaw(0.0)
+                    frame0 = motion.body_to_world(
+                        0.0 if yaw0 is None else float(yaw0), 0.0, 0.0)
+                else:
+                    frame0 = parent.frame(0.0)
+                offset_body = np.asarray(frame0, float).T @ offset_world
             return motion.FormationTrack(
                 parent, offset_body, mode=spec.get("mode", "lag"),
                 tau_lag_s=spec.get("tau_lag_s", 0.3),
                 own_maneuver=spec.get("own_maneuver"),
-                max_offset_m=spec.get("max_offset_m"))
+                max_offset_m=spec.get("max_offset_m"),
+                carrier=carrier,
+                max_ang_rate_rad_s=spec.get("max_ang_rate_rad_s"))
 
         if link == "independent":
             return self._line_path(obj)
@@ -421,9 +438,30 @@ class ClipPlan:
         if (obj.get("label", True) and obj.get("motion_type") != "ground"
                 and not self._lead_line_is_authored):
             offset_world = np.asarray(obj.get("pos", [0.0, 0.0, 0.0]), float) - lead_nominal
-            offset_body = np.asarray(lead_track.frame(0.0), float).T @ offset_world
+            # Placed side by side in the world, carried in the world's horizontal
+            # plane: a yaw-only carrier keeps the wingman abeam through the
+            # leader's bank.  Carrying it in the body frame put the offset into
+            # the leader's banked plane at t = 0, so a 77 deg roll swung the
+            # follower a couple of hundred metres of frame without anyone asking
+            # for a formation manoeuvre.
+            yaw0 = lead_track.yaw(0.0)
+            level0 = motion.body_to_world(0.0 if yaw0 is None else float(yaw0),
+                                          0.0, 0.0)
+            offset_body = np.asarray(level0, float).T @ offset_world
+            # A drawn route is C1 with a C0 curvature, so its corners carry
+            # turn rates no airframe has.  The follower's own velocity is the
+            # leader's plus w x (R o), and with an 80 m offset an unbounded w
+            # produced 838 m/s and a heading that reversed every frame.  Cap the
+            # rate at a 6 g lateral budget over the nominal speed, and never let
+            # the lag window span more than one frame (0.3 s was three frames of
+            # a 10 fps clip).
+            nominal_speed = float(np.linalg.norm(
+                np.asarray(self.target.get("vel", [0.0, 0.0, 0.0]), float)))
+            max_rate = 9.81 * 6.0 / max(nominal_speed, 30.0)
             return motion.FormationTrack(lead_track, offset_body, mode="lag",
-                                         tau_lag_s=0.3)
+                                         tau_lag_s=min(0.3, self.dt),
+                                         max_ang_rate_rad_s=max_rate,
+                                         carrier="level")
 
         # Unlabelled clutter keeps the legacy world-offset follower in a seeker
         # clip: those objects were authored relative to the nominal target to

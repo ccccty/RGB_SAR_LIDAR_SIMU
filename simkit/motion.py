@@ -968,8 +968,11 @@ class DiveWeave(Path):
 class Waypoints(Path):
     """C1 cubic path with arc-length sampling and smooth open-path stops.
 
-    Looping is explicit.  Open paths accelerate from rest, cruise, brake and
-    hold the final position; their endpoints never wrap to the beginning.
+    Looping is explicit.  An open path brakes at its end and holds the final
+    position; its endpoints never wrap to the beginning.  Whether it also
+    accelerates from rest at the start is ``ramp_in``: True by default for an
+    authored route that begins at a standstill, False for a drawn cruise leg
+    that is already at speed on the departure point.
 
     The spline is C1 in arc length but only C0 in curvature, so a waypoint
     corner is a step in acceleration -- a jerk spike, not a velocity jump.  That
@@ -979,7 +982,8 @@ class Waypoints(Path):
     """
     mode = "waypoints"
 
-    def __init__(self, pts, speed=8.0, samples=128, phase=0.0, loop=True):
+    def __init__(self, pts, speed=8.0, samples=128, phase=0.0, loop=True,
+                 ramp_in=True):
         P = np.asarray(pts, float)
         if P.ndim != 2 or P.shape[1] != 3 or len(P) < 2 or not np.isfinite(P).all():
             raise ValueError("waypoints needs at least two finite 3D points")
@@ -1065,8 +1069,17 @@ class Waypoints(Path):
         if not self.loop and not 0 <= self.ph <= self.length:
             raise ValueError("open waypoint phase must lie within the path length")
         remaining = self.length if self.loop else self.length-self.ph
-        self.ramp_s = min(1.0, remaining/self.v)
-        self.duration = remaining/self.v + self.ramp_s
+        #: An open route has two ends and they are not the same event.  The
+        #: operator draws a CRUISE route: the airframe is already doing its
+        #: speed at the departure point, and only the arrival is flown down.
+        #: Ramping in as well forced 0 -> v in one second, which at 250 m/s is
+        #: 25 g of along-track acceleration -- a catapult, not a cruise, and on
+        #: a two-second clip the whole clip was that ramp.
+        self.ramp_in = bool(ramp_in)
+        self.ramp_s_in = min(1.0, remaining/self.v) if self.ramp_in else 0.0
+        self.ramp_s_out = min(1.0, remaining/self.v)
+        self.ramp_s = self.ramp_s_out
+        self.duration = remaining/self.v + self.ramp_s_out
 
     def _curve(self, q):
         q = np.asarray(q, float)
@@ -1094,22 +1107,25 @@ class Waypoints(Path):
         """(arc length, d/dt, d2/dt2) -- all three are exact."""
         if self.loop:
             return self.v*t+self.ph, self.v, 0.0
-        T = self.ramp_s
+        T_in, T_out = self.ramp_s_in, self.ramp_s_out
         if t <= 0:
-            return self.ph, 0.0, 0.0
+            # With ramp_in the route starts from rest; without it the airframe
+            # is already at cruise speed on the first frame, which is what a
+            # drawn departure point means.
+            return self.ph, (0.0 if T_in > 0.0 else self.v), 0.0
         if t >= self.duration:
             return self.length, 0.0, 0.0
-        if t < T:
-            u = t/T
-            return (self.v*T*(u**3-0.5*u**4)+self.ph,
+        if T_in > 0.0 and t < T_in:
+            u = t/T_in
+            return (self.v*T_in*(u**3-0.5*u**4)+self.ph,
                     self.v*(3*u*u-2*u**3),
-                    self.v*(6*u-6*u*u)/T)
-        if t > self.duration-T:
+                    self.v*(6*u-6*u*u)/T_in)
+        if t > self.duration-T_out:
             d, sp, ac = self._distance(self.duration-t)
-            # Mirror of the run-in: arc = length - d, so its first derivative
+            # Mirror of the run-out: arc = length - d, so its first derivative
             # keeps the sign of sp and its second flips once more.
             return self.length-d+self.ph, sp, -ac
-        return self.v*(t-T/2)+self.ph, self.v, 0.0
+        return self.v*(t-T_in/2)+self.ph, self.v, 0.0
 
     def _at(self, arc):
         """(pos, dpos/dq, d2pos/dq2, dq/darc) at an arc length.
@@ -1140,14 +1156,19 @@ class Waypoints(Path):
 
     def vel(self, t):
         arc, speed, _acc = self._distance(float(t))
-        if not self.loop and (arc <= 0 or arc >= self.length):
+        # arc == 0 is a dead stop only when the route ramps in from rest; with
+        # ramp_in off the first frame is already at cruise speed and must publish
+        # the tangent velocity, not zero.
+        if not self.loop and (arc >= self.length
+                              or (self.ramp_in and arc <= 0)):
             return np.zeros(3)
         _p, dp, _d2p, dq, _d2q = self._at(arc)
         return dp * (dq * speed)
 
     def accel(self, t):
         arc, speed, sacc = self._distance(float(t))
-        if not self.loop and (arc <= 0 or arc >= self.length):
+        if not self.loop and (arc >= self.length
+                              or (self.ramp_in and arc <= 0)):
             return np.zeros(3)
         _p, dp, d2p, dq, d2q = self._at(arc)
         # q is cubic in arc now, so the chain rule needs both terms:
@@ -1659,11 +1680,22 @@ class FormationTrack(Track):
     instead of under its belly (docs/多目标运动仿真调研.md 1.3 c).
 
     modes
-        rigid  the offset is carried by the current body frame.
-        lag    the offset is carried by the body frame as it was tau_lag_s ago.
+        rigid  the offset is carried by the current carrier frame.
+        lag    the offset is carried by the carrier as it was tau_lag_s ago.
                The distance to the parent is unchanged (|R o| == |o|) but the
                member cuts the corner, which is what a real wingman does.
-        free   rigid plus a bounded manoeuvre of its own inside the body frame.
+        free   rigid plus a bounded manoeuvre of its own inside the carrier.
+
+    carriers
+        body   the parent's full body frame: the member rolls and pitches with
+               it.  Right for a dispensed body, a store or a mount, which is
+               why it stays the default.
+        level  yaw only, about world +Z: the member keeps a horizontal offset
+               and does NOT rotate with the leader's bank.  Two aircraft an
+               operator placed side by side are placed in the world, not in the
+               leader's banked plane -- carrying that offset through a 77 deg
+               bank swung the wingman through a couple of hundred metres of
+               frame for a formation nobody asked for.
 
     The velocity is the parent's plus the rotation of the offset, w x (R o).
     That term is the whole difference between "flies in formation" and "two
@@ -1673,23 +1705,43 @@ class FormationTrack(Track):
     kind = "formation"
 
     def __init__(self, parent, offset_body, mode="lag", tau_lag_s=0.3,
-                 own_maneuver=None, max_offset_m=None):
+                 own_maneuver=None, max_offset_m=None, max_ang_rate_rad_s=None,
+                 carrier="body"):
         self.parent = parent
         self.offset = np.asarray(offset_body, float).reshape(3)
         self.mode = str(mode or "lag").lower()
         if self.mode not in ("rigid", "lag", "free"):
             raise ValueError("formation mode must be rigid, lag or free")
+        self.carrier = str(carrier or "body").lower()
+        if self.carrier not in ("body", "level"):
+            raise ValueError("formation carrier must be body or level")
         self.tau = max(float(tau_lag_s or 0.0), 0.0)
+        #: Turn-rate ceiling the lever arm may be rotated by.  A hand-drawn
+        #: waypoint route is only C1, so its curvature steps at every corner and
+        #: a 250 m/s corner reports several hundred deg/s.  Multiplied by an
+        #: 80 m formation offset that lever term reached 838 m/s and the follower
+        #: reversed direction every frame.  None keeps the unbounded form for
+        #: callers that measured their own rate.
+        self.max_ang_rate = (None if max_ang_rate_rad_s is None
+                             else max(float(max_ang_rate_rad_s), 0.0))
         if max_offset_m is not None and float(max_offset_m) > 0.0:
             n = float(np.linalg.norm(self.offset))
             if n > float(max_offset_m):
                 self.offset = self.offset * (float(max_offset_m) / n)
         self.own = _own_maneuver(own_maneuver)
 
+    def _carrier_at(self, tt):
+        """The frame that carries the offset at absolute time tt."""
+        tt = float(tt)
+        if self.carrier == "level":
+            yaw = self.parent.yaw(tt)
+            return body_to_world(0.0 if yaw is None else float(yaw), 0.0, 0.0)
+        return np.asarray(self.parent.frame(tt), float)
+
     def _frame_at(self, t):
         if self.mode == "lag" and self.tau > 0.0:
-            return np.asarray(self.parent.frame(float(t) - self.tau), float)
-        return np.asarray(self.parent.frame(float(t)), float)
+            return self._carrier_at(float(t) - self.tau)
+        return self._carrier_at(float(t))
 
     def pos(self, t):
         R = self._frame_at(t)
@@ -1697,6 +1749,44 @@ class FormationTrack(Track):
         if self.mode == "free" and self.own is not None:
             o = o + self.own.pos(float(t))
         return np.asarray(self.parent.pos(float(t)), float) + R @ o
+
+    def _rate_at(self, t):
+        """Turn rate over the lag window, with the window's END kept at t >= 0.
+
+        The window is anchored at the current instant and reaches back, so it
+        never straddles the clip start in a way that changes its width: at
+        t = -h it is [t1 - tau, 0] and at t = +h it is [t1 - tau, +h], which are
+        the same measurement to first order.  Freezing the window's start at 0
+        instead made the rate switch on at t = 0 (zero before, the route's real
+        rate after) and the lever term stepped by 16 m/s across one centred
+        difference, reading 8205 m/s^2 on the follower's first frame.
+        """
+        t1 = max(float(t), 0.0)
+        tau = self.tau
+        if tau > 0.0:
+            t0 = t1 - tau
+            if t0 < 0.0 and self._no_history(t0):
+                # An open drawn route has no history before the clip: position at
+                # negative time is frozen on the departure point.  Reading the
+                # window backwards therefore reported ZERO turn rate on frame 0
+                # and the route's real rate one frame later, so the follower's
+                # bank swung 70 deg between the first two frames.  Where the
+                # history genuinely does not exist, look forward over the same
+                # width instead; the value is continuous at t = tau either way.
+                t0, t1 = 0.0, tau
+            R0 = self._carrier_at(t0)
+            R1 = self._carrier_at(t1)
+            return _rotvec(R1 @ R0.T) / tau
+        return angular_velocity(self.parent, t1, 0.0)
+
+    def _no_history(self, t):
+        """True when the parent's state before the clip start is a frozen pose."""
+        try:
+            return bool(np.allclose(
+                np.asarray(self.parent.pos(float(t)), float),
+                np.asarray(self.parent.pos(0.0), float), atol=1e-6))
+        except (TypeError, ValueError, AttributeError):
+            return False
 
     def vel(self, t):
         t = float(t)
@@ -1706,7 +1796,14 @@ class FormationTrack(Track):
         if self.mode == "free" and self.own is not None:
             o = o + self.own.pos(t)
             body_v = self.own.vel(t)
-        w = angular_velocity(self.parent, t, self.tau)
+        # The rate is capped: a route corner is a curvature step, not a physical
+        # turn, and the lever arm is what turned that step into an 840 m/s
+        # follower that reversed every frame.
+        w = self._rate_at(t)
+        if self.max_ang_rate is not None:
+            wn = float(np.linalg.norm(w))
+            if wn > self.max_ang_rate > 0.0:
+                w = w * (self.max_ang_rate / wn)
         return (np.asarray(self.parent.vel(t), float) + R @ body_v
                 + np.cross(w, R @ o))
 
@@ -1912,7 +2009,8 @@ def _make_path(spec, ground_z=None):
                 p[2] = float(ground)
         return Waypoints(pts, speed=float(spec.get("speed_mps", 8.0)),
                          loop=bool(spec.get("loop", True)),
-                         phase=float(spec.get("phase", 0.0)))
+                         phase=float(spec.get("phase", 0.0)),
+                         ramp_in=bool(spec.get("ramp_in", True)))
 
     if mode in ("flight", "maneuver", "manoeuvre", "sortie", "sequence"):
         heading = spec.get("heading_deg")

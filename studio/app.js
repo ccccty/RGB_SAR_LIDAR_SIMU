@@ -160,6 +160,10 @@
       capture: {
         sensors: ["optical", "ir", "radar"], frames: 20, fps: 10.0, seed: 7
       },
+      /* 红外特效开关。plume = 发动机尾焰（关闭后红外画面不再有尾焰锥与喷口热区）；
+       * supersample = 1..4 的超采样倍数，0 表示用渲染器默认（每像素一次）。
+       * 尾焰在交战距离上只有几个像素宽，1 倍采样会把它采成一根锯齿亮条。 */
+      effects: { plume: false, supersample: 0 },
       output: { preview: true, coco: true, yolo: true, readme: true },
       outputDir: "",
       recipeSource: ""
@@ -533,6 +537,10 @@
         coco: !!S.output.coco,
         yolo: !!S.output.yolo,
         readme: !!S.output.readme
+      },
+      effects: {
+        plume: !!S.effects.plume,
+        supersample: clamp(intval(S.effects.supersample, 0), 0, 4)
       }
     };
   }
@@ -583,7 +591,11 @@
       frames: recipe.capture.frames,
       sensors: recipe.capture.sensors.slice(0),
       views_mode: recipe.view.views,
-      output_dir: trim(S.outputDir)
+      output_dir: trim(S.outputDir),
+      /* recipe 里已经带了 effects，这里再平铺一份：走「预设场景」路径时后端不读
+         recipe，_compose 只能靠这两个顶层字段把开关落进 ir.engine_heat。 */
+      plume: !!S.effects.plume,
+      supersample: clamp(intval(S.effects.supersample, 0), 0, 4)
     };
     /* studio._parse 用顶层 sar_enabled 决定是否保留 sar；不传就会被静默移除。 */
     if (indexOf(recipe.capture.sensors, "sar") >= 0) {
@@ -1954,6 +1966,10 @@
   function renderCapture() {
     var host = $("sensorCards");
     clear(host);
+    /* 特效开关是独立一块，每次渲染先拆掉旧的再挂新的：
+     * renderCapture 会被反复调用，直接 append 会一层层叠上去。 */
+    var stale = $("effectCards");
+    if (stale && stale.parentNode) { stale.parentNode.removeChild(stale); }
     each(OPT.sensors || [], function (sensor) {
       var on = indexOf(S.capture.sensors, sensor.key) >= 0;
       var btn = ce("button", "sensor" + (on ? " on" : ""));
@@ -1974,6 +1990,44 @@
       };
       host.appendChild(btn);
     });
+    /* 红外特效：默认不生成尾焰，勾选后红外画面才有喷口热区与尾焰锥。 */
+    var box = ce("div", "fx-picks");
+    box.id = "effectCards";
+    var plumeRow = ce("label", "fx-pick" + (S.effects.plume ? " on" : ""));
+    var plume = ce("input", "");
+    plume.type = "checkbox";
+    plume.checked = !!S.effects.plume;
+    plume.onchange = function () {
+      S.effects.plume = !!plume.checked;
+      plumeRow.className = "fx-pick" + (plume.checked ? " on" : "");
+      renderSummaries();
+      touch();
+    };
+    plumeRow.appendChild(plume);
+    plumeRow.appendChild(ce("span", "", "生成尾焰"));
+    plumeRow.appendChild(ce("small", "", "红外：喷口热区 + 尾焰锥"));
+    box.appendChild(plumeRow);
+    var ssRow = ce("label", "fx-pick");
+    ssRow.appendChild(ce("span", "", "红外超采样"));
+    var ss = ce("select", "");
+    each([0, 2, 3, 4], function (v) {
+      var opt = ce("option", "", v === 0 ? "默认（快）" : v + "×（细）");
+      opt.value = String(v);
+      if (intval(S.effects.supersample, 0) === v) { opt.selected = true; }
+      ss.appendChild(opt);
+    });
+    ss.onchange = function () {
+      S.effects.supersample = clamp(intval(ss.value, 0), 0, 4);
+      renderSummaries();
+      touch();
+    };
+    ssRow.appendChild(ss);
+    box.appendChild(ssRow);
+    /* 挂在「模态」那一行的后面，而不是它里面：那一行是 flex 布局，
+     * 塞进去会和传感器按钮挤在同一排。 */
+    var anchor = host.parentNode;
+    var shell = (anchor && anchor.parentNode) || anchor;
+    if (shell) { shell.insertBefore(box, anchor ? anchor.nextSibling : null); }
     var frames = $("frames");
     if (frames && document.activeElement !== frames) { frames.value = S.capture.frames; }
     var fps = $("fps");
@@ -3258,6 +3312,14 @@
     if (has(output, "coco")) { S.output.coco = !!output.coco; }
     if (has(output, "yolo")) { S.output.yolo = !!output.yolo; }
     if (has(output, "readme")) { S.output.readme = !!output.readme; }
+
+    /* 老配方没有 effects 块：保持默认（不生成尾焰、默认采样），不要把它读成 false
+     * 之外的任何东西，否则载入旧配方会悄悄改变画面。 */
+    var fx = recipe.effects || {};
+    if (has(fx, "plume")) { S.effects.plume = !!fx.plume; }
+    if (has(fx, "supersample")) {
+      S.effects.supersample = clamp(intval(fx.supersample, 0), 0, 4);
+    }
 
     renderAll();
     renderOutStatus();

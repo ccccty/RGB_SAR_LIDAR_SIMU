@@ -36,7 +36,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from simkit import ecm, motion, plan, scene  # noqa: E402
+from simkit import ecm, motion, plan, scene, scenegen  # noqa: E402
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -719,6 +719,128 @@ class CompatibilityTests(unittest.TestCase):
                     continue
                 world = scene.build_world(state["cfg"], jitter=state["jitter"])
                 self.assertTrue(world.objs)
+
+
+class TwoShipDrawnRouteTests(unittest.TestCase):
+    """A hand-drawn route with two airframes must not blow the follower up.
+
+    Regression for the reported "two aircraft reverse direction every frame".
+    The cause was the formation fallback: a drawn route is only C1, so its
+    corners carry turn rates no airframe has, and the follower's velocity is the
+    leader's plus w x (R o).  With an 80 m offset that lever term reached
+    878 m/s and the heading swept 140 deg per frame.  The first frame was worse
+    still: tau_lag_s = 0.3 s reached back before the clip started, where an open
+    route sits at rest, so the lag window spanned a 180 deg attitude change.
+    """
+
+    SPEED = 250.0
+
+    def _config(self):
+        # Built through scenegen, not hand-assembled: what is under test is what
+        # the studio actually produces from "two aircraft, one drawn route".
+        # Memoised because building the mesh takes seconds and every case asks
+        # for the same scene; each case gets its own copy so a plan cannot leak
+        # state into the next one.
+        cached = getattr(TwoShipDrawnRouteTests, "_CFG", None)
+        if cached is not None:
+            return json.loads(json.dumps(cached))
+        recipe = {
+            "name": "two_ship_drawn",
+            "environment": {"kind": "sky", "weather": "clear",
+                            "background": {"mode": "none"}},
+            "objects": [{"asset": "军用飞机/双发战斗机.obj", "cls": "fighter",
+                         "scale": 1, "count": 2}],
+            "ecm": {"mode": "none", "entities": []},
+            "view": {"range_km": 8, "aspect": "head_on", "fov_deg": 2.2,
+                     "views": "single",
+                     "trajectory": {"mode": "drawn", "speed_mps": self.SPEED,
+                                    "points": [[-1200.0, -600.0, 2500.0],
+                                               [0.0, 0.0, 2500.0],
+                                               [1200.0, -600.0, 2500.0],
+                                               [1200.0, 600.0, 2500.0]]}},
+            "capture": {"sensors": ["ir"], "frames": 20, "fps": 10, "seed": 7},
+            "output": {"preview": False, "coco": False, "yolo": False,
+                       "readme": False},
+        }
+        cfg = scenegen.build_scene(scenegen.validate_recipe(recipe))
+        TwoShipDrawnRouteTests._CFG = cfg
+        return json.loads(json.dumps(cfg))
+
+    def test_no_track_exceeds_the_route_speed(self):
+        cp = plan.ClipPlan(self._config(), 0, 20, 0.1, 7)
+        for name in cp.tracks:
+            speeds = [float(np.linalg.norm(np.asarray(cp.tracks[name].vel(t), float)))
+                      for t in np.linspace(0.0, cp.dur, 21)]
+            worst = max(speeds)
+            self.assertLess(worst, 1.2 * self.SPEED,
+                            "%s reached %.1f m/s on a %.0f m/s route"
+                            % (name, worst, self.SPEED))
+
+    def test_heading_does_not_reverse_between_frames(self):
+        cp = plan.ClipPlan(self._config(), 0, 20, 0.1, 7)
+        for name in cp.tracks:
+            prev = None
+            for t in np.linspace(0.0, cp.dur, 21)[1:]:
+                yaw = float(cp.tracks[name].yaw(t))
+                if prev is not None:
+                    step = abs((yaw - prev + 180.0) % 360.0 - 180.0)
+                    self.assertLess(step, 60.0,
+                                    "%s turned %.1f deg in one frame at t=%.1f"
+                                    % (name, step, t))
+                prev = yaw
+
+    def test_drawn_route_enters_at_cruise_speed(self):
+        """A departure point is not a standstill: frame 0 is already at speed."""
+        cp = plan.ClipPlan(self._config(), 0, 20, 0.1, 7)
+        v0 = float(np.linalg.norm(np.asarray(cp.track_target.vel(0.0), float)))
+        self.assertAlmostEqual(v0, self.SPEED, delta=0.02 * self.SPEED,
+                               msg="the drawn route ramped in from %.1f m/s" % v0)
+
+    def test_follower_acceleration_stays_physical(self):
+        """The lag window must not switch on at t = 0.
+
+        Clamping the window start while leaving its width free made the follower
+        read 8205 m/s^2 on frame 0: the parent's frame is frozen before the clip
+        starts, so the rate stepped from 0 to the route's real value across one
+        centred difference.  A 250 m/s aircraft's route corner is ~4 g; 800 g is
+        the bug.
+        """
+        cp = plan.ClipPlan(self._config(), 0, 20, 0.1, 7)
+        for name in cp.tracks:
+            worst = max(float(np.linalg.norm(np.asarray(cp.tracks[name].accel(t), float)))
+                        for t in np.linspace(0.0, cp.dur, 21))
+            self.assertLess(worst, 150.0,
+                            "%s pulled %.0f m/s^2" % (name, worst))
+
+
+class LevelCarrierTests(unittest.TestCase):
+    """A wingman placed beside the leader stays beside it through a bank.
+
+    The body carrier rotates the offset in the leader's banked plane, which is
+    right for a dispensed body and wrong for an aircraft an operator placed in
+    the world: at a 75 deg bank an 80 m offset is carried out of the horizontal
+    plane entirely.
+    """
+
+    def test_level_carrier_ignores_the_leader_s_roll(self):
+        lead = motion.PathTrack(motion.Arc((0.0, 0.0, 1000.0), 300.0, 0.35))
+        offset = np.array([0.0, 80.0, 0.0])
+        body = motion.FormationTrack(lead, offset, mode="rigid", carrier="body")
+        level = motion.FormationTrack(lead, offset, mode="rigid", carrier="level")
+        for t in (0.0, 0.4, 0.9, 1.6, 2.5):
+            self.assertAlmostEqual(float(level.pos(t)[2]), float(lead.pos(t)[2]),
+                                   places=6)
+            self.assertGreater(abs(float(body.pos(t)[2]) - float(lead.pos(t)[2])),
+                               1.0)
+        # the same distance from the leader either way: only the plane differs
+        for t in (0.0, 1.6):
+            np.testing.assert_allclose(np.linalg.norm(level.pos(t) - lead.pos(t)),
+                                       np.linalg.norm(offset), rtol=1e-9)
+
+    def test_unknown_carrier_is_rejected(self):
+        lead = motion.PathTrack(motion.Arc((0.0, 0.0, 1000.0), 300.0, 0.35))
+        with self.assertRaises(ValueError):
+            motion.FormationTrack(lead, np.array([80.0, 0.0, 0.0]), carrier="world")
 
 
 if __name__ == "__main__":
