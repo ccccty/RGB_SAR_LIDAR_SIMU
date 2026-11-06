@@ -455,3 +455,40 @@ ims-na1.adobelogin.com 的 two-legged OAuth），每次调用都打到 photoshop
 证据：`_tmp/batchE_market/REPORT_E.md`（约 50 KB，逐条带引用键，§6 列出全部未核实项）、
 `_tmp/batchE_size/`（真实尺寸探针产物与场景副本）、`_tmp/batchE_deps/`（依赖体积实测 venv）、
 `_tmp/leadE/`（原生位深测量脚本与五模态拼图）。
+### 补遗：终版取证里会影响修复设计的六处细节
+
+1. **尺寸有两条路径，修复必须同时覆盖**：32 个场景里只有 5 个走 `clip.views`（全是机载导引系列，
+   768×576 + 640×480），其余 **27 个走 legacy 路径**（尺寸写在 sensors 相机块，跨度 480×360 → 1440×1080）。
+   legacy 下 `_views_of`（`dataset.py:91-94`）**优先取 `sensors.optical`**，所以 `sensors.ir_camera` 里写的
+   尺寸被静默忽略（`scenes/sk_air_uav.json` 声明 ir_camera 480×360，实际按 optical 960×720 出图）。
+   → W2 的统一覆盖点必须放在 `_views_of` **之后**，且 ir 与 optical 尺寸不一致时要打印明确警告。
+2. **W1 有一个必须同步改的回归地雷**：`scenegen.py:1609` 的俯视布点写死 4:3
+   （`_span_y = span_m * (720.0/960.0)`）。只在工作台加宽高输入框而不改这一行，放开 16:9 后
+   **点击放置的世界 Y 坐标会错**。同理 `studio.py:1451-1452` 的布点预览强制 4:3 且 ≤960。
+3. **裸 API 注入尺寸会产出自相矛盾的场景**：直接发 narrow_width=1920（前端做不到，只有裸 API 能）
+   得到 cams 1920×1080，但 `clip.views` 被 `studio.py:1144` 在 views_mode=single 时 pop 成 **null**。
+   → W1 落地时要一并处理这个 pop，否则新入口会复现同一个不一致。
+4. **SAR 欠采样的确切机制**：`sar.py:300-304` 写的是
+   `az_ext = float(rc["az_extent_m"]) or (n_cross*rho_a/amp_os)`——**只有 az_extent_m 缺失时才理会
+   oversample**，而两个已发布 run 都设了它。实测每分辨率单元像素数 0.75–0.80（Nyquist 需 ≥2），
+   欠采样轴的斑点自相关变成白的，而 `sar.py:487-495` 自己就警告过这「看起来像传感器噪声而不是 SAR」。
+   修法约 5 行：即使给了 az_extent_m 也要执行 oversample。
+5. **过期尺寸说法还有两处未清**：上一轮已把 README 改到 768/640，但 `docs/导引头视角.md` 仍有 6 处
+   960×720 / 1280×960，`docs/平台设计调研.md:319` 仍用 960 算 IFOV。而 960×720/1280×960 恰恰是
+   **工作台真实产出的尺寸**——文档写的是工作台默认值，README 写的是策划场景值，两边都不是
+   「用户能指定的值」。→ 并入 W18，新增「分辨率怎么定」一节时一起清。
+6. **全仓库没有 GSD 这个概念**（`gsd|ground_sample|GSD` 在一方代码里 0 命中），且内参 K 仅在
+   `research_baseline` 为真时产出 → **32 个策划场景只有 4 个有 K**（studio 生成的都有）。
+   → W11/W12/W13 是一组：PNG 写 pHYs+tEXt、frames.json 补 W/H/FOV/K、GSD=2·range·tan(fov/2)/W。
+
+**同时记下不要过度修正的部分**（终版取证 §3，八项均有实测支撑）：`thermal.py:183-292` 是真正的牛顿
+热平衡解算（只是被 temp_c 覆盖）；`materials.py` 是真正的多波段库且 MWIR/LWIR 发射率已分开
+（painted_metal 0.85/0.92，即第 8 条所需数据已存在）；`lidar.py` 是真链路方程激光雷达、用**伽马分布**
+多视斑点（正确的相干回波统计，不是高斯）；`sar.py` 产出的是**标定过的 γ⁰ 产品**（斜距列分箱、
+逐目标散射子扇按自身命中点斜距分箱、射线投影阴影、PSF 相关复斑点归一到单位均值功率、
+由真实雷达方程反演 NESZ）；`camera.py` 的噪声底**测得是对的**（最平图块 std 1.19–1.33 DN、
+八帧时域 std 1.03–1.09 DN，两个独立估计量一致，对上文档给的 ISO-100 目标 1.5–1.7 DN）；
+`render_optical.py` 有 Nishita 物理天空、由立体角比推出（而非魔数）的 14× 曝光补偿、
+逐帧牛顿求解的自动曝光；跨模态配准架构是对的（一个 world / 一个 BVH 喂五个波段，
+`dataset.py:701` 逐帧调 thermal.solve()）——**这套架构不要动，要动的只是最后一米的显示与量化，
+以及三处用可见光照片冒充仿真测量的地方。**
