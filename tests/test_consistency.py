@@ -24,7 +24,7 @@ import numpy as np
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
-from simkit import consistency, scenegen  # noqa: E402
+from simkit import consistency, plan, scenegen  # noqa: E402
 
 CLI = os.path.join(BASE, "tools", "check_consistency.py")
 
@@ -432,6 +432,147 @@ class RecipeAndCliTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("1 scene(s)", proc.stdout)
 
+
+
+
+# ---------------------------------------------------------------------------
+# the clip-start boundary: a centred difference cannot be taken off the edge
+# ---------------------------------------------------------------------------
+WAYPOINT_ROUTE = [[0.0, 0.0, 4000.0], [8.0, 2.4, 4000.0],
+                  [14.0, 5.5, 4000.0], [20.0, 10.2, 4000.0]]
+
+
+def waypoint_scene(n=20, speed=80.0):
+    """A drawn route: the planner freezes the position before t=0.
+
+    The object has to fly its own waypoints, so the clip must not carry a
+    trajectory of its own: a clip trajectory is what flies the primary target,
+    and a straight line extends backwards analytically (motion.Line has no
+    history problem, which is the control case in this class)."""
+    lead = fighter("lead", WAYPOINT_ROUTE[0], [speed, 0.0, 0.0],
+                   trajectory=dict(mode="waypoints", points=WAYPOINT_ROUTE,
+                                   speed_mps=float(speed), loop=False,
+                                   ramp_in=False))
+    cfg = make_scene([lead], n=n)
+    cfg["clip"].pop("trajectory", None)
+    return cfg
+
+
+class ClipStartBoundaryTests(unittest.TestCase):
+    def test_centred_difference_at_frame_zero_reports_half_the_speed(self):
+        """Prove the artefact the checker must not report as a motion defect.
+
+        motion.Waypoints freezes the position for t <= 0 (an open drawn route
+        has no history before its departure point) while it publishes the
+        right-hand velocity there.  A centred step across that edge therefore
+        differences against a frozen pose and returns exactly half the
+        velocity -- the number this test pins down."""
+        cfg = waypoint_scene()
+        dt = float(cfg["frames"]["dt"])
+        cp = plan.ClipPlan(cfg, 0, int(cfg["clip"]["frames_per_clip"]), dt,
+                           int(cfg["seed"]))
+        obj = cfg["objects"][0]
+        h = 1e-3
+
+        def p(t):
+            return np.asarray(cp.object_state(obj, t)[0], float)
+
+        v0 = np.asarray(cp.object_state(obj, 0.0)[1], float)
+        self.assertGreater(float(np.linalg.norm(v0)), 70.0)
+        self.assertLess(float(np.linalg.norm(p(-h) - p(0.0))), 1e-9)
+        central = float(np.linalg.norm(v0 - (p(h) - p(-h)) / (2.0 * h)))
+        one_sided = float(np.linalg.norm(
+            v0 - (-3.0 * p(0.0) + 4.0 * p(h) - p(2.0 * h)) / (2.0 * h)))
+        self.assertAlmostEqual(central, 0.5 * float(np.linalg.norm(v0)),
+                               delta=0.2)
+        self.assertLess(one_sided, 0.01)
+
+    def test_frame_zero_is_not_reported_as_a_derivative_error(self):
+        result = consistency.inspect(waypoint_scene(), frames=1)
+        b3, f3 = check(result, "B3"), check(result, "F3")
+        self.assertTrue(b3["ok"], b3["detail"])
+        self.assertTrue(f3["ok"], f3["detail"])
+        self.assertLess(b3["value"], 0.05)
+
+    def test_a_velocity_that_is_not_the_path_derivative_is_still_caught(self):
+        """The boundary fix must not blunt the rule it was applied to."""
+        cfg = waypoint_scene()
+        real = plan.ClipPlan.object_state
+
+        def shifted(self, obj, t):
+            pos, vel, yaw = real(self, obj, t)
+            return pos, np.asarray(vel, float) + np.array([4.0, 0.0, 0.0]), yaw
+
+        with mock.patch.object(plan.ClipPlan, "object_state", shifted):
+            result = consistency.inspect(cfg, frames=3)
+        b3 = check(result, "B3")
+        self.assertFalse(b3["ok"])
+        self.assertGreater(b3["value"], 3.5)
+
+    def test_a_line_route_keeps_the_centred_step_and_still_passes(self):
+        cfg = make_scene([fighter("lead", [0.0, 0.0, 4000.0],
+                                   [200.0, 0.0, 0.0])], n=8)
+        result = consistency.inspect(cfg, frames=1)
+        self.assertTrue(check(result, "F3")["ok"],
+                        check(result, "F3")["detail"])
+        self.assertTrue(check(result, "B3")["ok"],
+                        check(result, "B3")["detail"])
+
+
+# ---------------------------------------------------------------------------
+# F5: the aperture the renderer actually uses, not the one the file claims
+# ---------------------------------------------------------------------------
+def radar_scene(*, radar_look_at=(0.0, 0.0, 0.0), gap=0.0, n=8):
+    """Two parked-in-the-file targets, at the centre of the imaging lens."""
+    lead = fighter("lead", [0.0, 0.0, 4000.0], [0.0, 200.0, 0.0])
+    objs = [lead]
+    if gap:
+        objs.append(fighter("wing", [0.0, float(gap), 4000.0],
+                            [0.0, 200.0, 0.0]))
+    cfg = make_scene(objs, n=n, trajectory=dict(mode="line",
+                                                origin=[0.0, 0.0, 4000.0],
+                                                vel=[0.0, 200.0, 0.0]))
+    cfg["sensors"]["radar"] = dict(
+        pos=[-8000.0, 0.0, 4000.0], look_at=[float(x) for x in radar_look_at],
+        up=[0.0, 0.0, 1.0], az_span_deg=2.0, el_span_deg=1.6,
+        n_az=40, n_el=20, beamwidth_el_deg=6.0)
+    return cfg
+
+
+class RenderAimTests(unittest.TestCase):
+    def test_the_report_always_states_both_layers(self):
+        f5 = check(consistency.inspect(radar_scene(), frames=1), "F5")
+        self.assertIn("render layer", f5["detail"])
+        self.assertIn("config layer", f5["detail"])
+
+    def test_render_layer_covers_targets_the_authored_pose_misses(self):
+        cfg = radar_scene(radar_look_at=(0.0, 0.0, 0.0))
+        report = consistency.inspect(cfg, frames=2)
+        f5 = check(report, "F5")
+        self.assertTrue(f5["applicable"])
+        self.assertTrue(f5["ok"], f5["detail"])
+        self.assertEqual(report["summary"]["aim_layer"], "render")
+        # the authored pose really does miss: the target sits 26.6 deg above
+        # the origin-looking boresight, the render aim points straight at it
+        config_only = consistency.inspect(cfg, frames=2, render_aim=False)
+        f5c = check(config_only, "F5")
+        self.assertFalse(f5c["ok"])
+        self.assertIn("outside the radar aperture", f5c["detail"])
+        self.assertEqual(config_only["summary"]["aim_layer"], "config")
+
+    def test_render_aim_still_fails_when_the_formation_does_not_fit(self):
+        # 300 m of lateral offset at 8 km is 2.15 deg, just past the 2.0 deg
+        # half-aperture: re-aiming at the first target cannot save the second
+        cfg = radar_scene(gap=300.0)
+        f5 = check(consistency.inspect(cfg, frames=2), "F5")
+        self.assertFalse(f5["ok"])
+        self.assertIn("wing", f5["detail"])
+
+    def test_aim_note_surfaces_the_layer_disagreement(self):
+        cfg = radar_scene(radar_look_at=(0.0, 0.0, 0.0))
+        report = consistency.inspect(cfg, frames=2)
+        notes = " ".join(report["summary"]["notes"])
+        self.assertIn("aim layers disagree", notes)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

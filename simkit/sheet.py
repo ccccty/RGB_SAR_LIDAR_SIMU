@@ -874,8 +874,8 @@ def _sensor_row(entry, cfg, meta, out_dir):
                if az is not None and el is not None else "—")
         return ("雷达 距离-角度", "脉冲多普勒 RA 图",
                 "%s 波段" % (meta.get("radar_band") or block.get("band") or "—"),
-                res, fov,
-                "由同一 CPI 的检测点生成，%s×%s 方位/俯仰栅格"
+                "%s（标注图）" % res, fov,
+                "与 RD 同一次 CPI：%s×%s 方位/俯仰波束栅格沿俯仰取最大合成距离×方位图"
                 % (_fmt_int(block.get("n_az")), _fmt_int(block.get("n_el"))))
 
     if name == "radar":
@@ -888,12 +888,15 @@ def _sensor_row(entry, cfg, meta, out_dir):
         if block.get("bandwidth_mhz") is not None:
             bw = float(block["bandwidth_mhz"])
             params.append("带宽 %s MHz（ΔR≈%s m）" % (_fmt(bw, 0), _fmt(149.896229 / bw, 2)))
+        span = _radar_range_window(out_dir, width, block.get("bandwidth_mhz"))
         if block.get("n_samples") is not None:
-            params.append("%s 采样 × %s chirp → RD 图 %s 距离格 × %s 多普勒格"
+            # The PNG is an annotated figure now, so its pixel size no longer
+            # equals the data grid: the cell counts come from the saved axes.
+            params.append("%s 采样 × %s chirp → RD 数据 %s 距离格 × %s 多普勒格"
                           % (_fmt_int(block["n_samples"]),
                              _fmt_int(block.get("n_chirps")),
-                             _fmt_int(width), _fmt_int(height)))
-        span = _radar_range_window(out_dir, width, block.get("bandwidth_mhz"))
+                             _fmt_int(span["bins"]) if span else "—",
+                             _fmt_int(block.get("n_chirps"))))
         if span:
             params.append("距离窗 %s km（%s m/格 × %s 格）"
                           % (_fmt(span["r_max"] / 1000.0, 2),
@@ -913,8 +916,8 @@ def _sensor_row(entry, cfg, meta, out_dir):
             params.append("发射 %s dBm" % _fmt(block["tx_power_dbm"], 1))
         if block.get("noise_figure_db") is not None:
             params.append("噪声系数 %s dB" % _fmt(block["noise_figure_db"], 1))
-        return ("雷达 距离-多普勒", "脉冲多普勒 RD 图", "%s 波段" % band, res, fov,
-                "、".join(params) or "—")
+        return ("雷达 距离-多普勒", "脉冲多普勒 RD 图", "%s 波段" % band,
+                "%s（标注图）" % res, fov, "、".join(params) or "—")
 
     if name == "sar":
         block = sensors.get("sar") or {}

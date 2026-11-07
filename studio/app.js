@@ -141,7 +141,11 @@
       /* placed 只有在用户真的在图面上点过之后才为 true：否则默认的 0.5/0.5
          会让"只要选了背景库就强制正俯视"，把迎头/追击都盖掉。 */
       place: { mode: "place", u: 0.5, v: 0.5, points: [], busy: false, url: "", placed: false,
-               speed: 80 },
+               speed: 80,
+               /* 垂直分量 m/s：正俯视时视线接近天底，水平航迹的接近率被
+                  r/H 压到亚 m/s（15.6 km 高、150 m 偏轴 → 80 m/s 只投影出
+                  0.4 m/s）。要给雷达一个真实的接近率，让飞机沿视线爬升。 */
+               climb: 0 },
       obj: {
         category: "军用飞机", asset: "军用飞机/双发战斗机.obj",
         cls: "fighter", scale: 1.0, count: 1
@@ -572,11 +576,26 @@
           var ox = (t.uv[0] - 0.5) * 600;
           var oy = (0.5 - t.uv[1]) * _sy;
           var _pp = [];
-          each(t.points, function (p) {
-            _pp.push([(p[0] - 0.5) * 600 - ox, (0.5 - p[1]) * _sy - oy, 0]);
+          /* 接近速度：正俯视时水平航迹的接近率被 r/H 压到亚 m/s，让飞机沿
+             视线爬升才能给雷达一个真实、可分辨的径向速度。按航程折算时间，
+             z = climb * t；scene 的 rebase 会把它变成相对起点的偏移。 */
+          var _climb = Math.max(0, num(S.place.climb, 0));
+          var _acc = 0;
+          each(t.points, function (p, i) {
+            if (i > 0) {
+              var q = t.points[i - 1];
+              var mx = (p[0] - q[0]) * 600;
+              var my = (p[1] - q[1]) * _sy;
+              _acc += Math.sqrt(mx * mx + my * my);
+            }
+            _pp.push([(p[0] - 0.5) * 600 - ox, (0.5 - p[1]) * _sy - oy,
+                      _climb * (_acc / Math.max(_spd, 1))]);
           });
+          /* 航路速度 = 水平速度与爬升率的矢量和，这样"统一速度"仍是水平
+             航迹速度、"接近速度"就是真正的垂直速率，而不是被几何缩放过的数。 */
           _o.trajectory = { mode: "waypoints", points: _pp,
-                            speed_mps: _spd, loop: false };
+                            speed_mps: Math.sqrt(_spd * _spd + _climb * _climb),
+                            loop: false };
         }
         _objs.push(_o);
       });
@@ -1087,17 +1106,28 @@
         }
       });
     }
+    var climbInput = $("placeClimb");
+    if (climbInput && document.activeElement !== climbInput) {
+      climbInput.value = String(S.place.climb || 0);
+    }
     var hint = $("placeHint");
     if (hint) {
       if (S.place.mode === "place") {
         hint.textContent = "点一下图面即把「目标" + (S.targetIdx + 1) + "」放到该位置。";
       } else {
         var n = suggestFrames();
+        var vr = pathRadialVelocity(activeTarget().points);
         hint.textContent = "依次点击为「目标" + (S.targetIdx + 1) + "」画轨迹（当前 "
           + S.place.points.length + " 个点）"
-          + (n ? "；按当前速度约需 " + n + " 帧" : "") + "。";
+          + (n ? "；按当前速度约需 " + n + " 帧" : "")
+          + (vr === null ? "" : "；本航路径向速度≈" + vr.toFixed(1) + " m/s"
+             + (vr < 0 ? "（远离）" : "（接近）")
+             + (Math.abs(vr) < 2 ? "，俯视视线近天底，接近率被几何压缩" : ""))
+          + "。";
       }
     }
+    renderPlaceGeo();
+    renderPlaceRoute();
     var status = $("placeStatus");
     if (status) { status.textContent = S.place.busy ? "渲染中…" : ""; }
     var out = $("placeOut");
@@ -1106,6 +1136,176 @@
       var pv = $("placePreviewImg");
       if (pv && S.place.url) { pv.src = S.place.url; }
     }
+  }
+
+  /* 俯视板面：画布上一笔的真实接近率。
+     buildPayload 把板面固定成 600 m × 450 m，相机高度由视场反推，所以一条
+     画在板上的航路可以事先算出它在雷达里会是"接近"还是"远离"，以及量级。
+     视线接近天底时 |v_r| ≈ v·(r/H)，画得再长也只有零点几 m/s —— 与其生成完
+     才发现径向速度是负的，不如在这里先报出来。 */
+  function plateCameraHeight() {
+    var span = 600;                     /* buildPayload: ground_span_m = 600 */
+    var fov = clamp(num(S.view.fov_deg, 8), 0.1, 120);
+    return (span / 2) / Math.max(Math.tan(fov * Math.PI / 360), 1e-6);
+  }
+
+  function pathRadialVelocity(pts) {
+    if (!pts || pts.length < 2) { return null; }
+    var span = 600;
+    var spanY = span * 0.75;
+    function offset(p) {
+      var x = (p[0] - 0.5) * span;
+      var y = (0.5 - p[1]) * spanY;
+      return Math.sqrt(x * x + y * y);
+    }
+    var len = 0;
+    for (var i = 1; i < pts.length; i++) {
+      var dx = (pts[i][0] - pts[i - 1][0]) * span;
+      var dy = (pts[i][1] - pts[i - 1][1]) * spanY;
+      len += Math.sqrt(dx * dx + dy * dy);
+    }
+    if (!(len > 0.1)) { return null; }
+    var h = plateCameraHeight();
+    var r0 = offset(pts[0]);
+    var r1 = offset(pts[pts.length - 1]);
+    var range0 = Math.sqrt(r0 * r0 + h * h);
+    var range1 = Math.sqrt(r1 * r1 + h * h);
+    /* 闭速为正：斜距变小才是接近。水平航迹那点投影 + 垂直分量的接近率。 */
+    var climb = Math.max(0, num(S.place.climb, 0));
+    return -num(S.place.speed, 80) * (range1 - range0) / len + climb * (h / range0);
+  }
+
+  /* --------------------------------------------------------- 生成前体检 */
+
+  /* 机型包线取后端 motion.ENVELOPES：那张表就是生成后 check_track 判违规用
+     的表，前端只做 v²/(n·g) 的几何换算，不再自己存一份“战斗机 9 g”。 */
+  var ENV_CN = {
+    fighter: "战斗机", airliner: "运输机", uav_fixed: "固定翼无人机",
+    uav_rotor: "旋翼无人机", loiter: "驻留平台", ground: "地面车辆",
+    ship: "舰船", explicit: "显式运动", camera: "相机"
+  };
+
+  function envelopeFor(cls) {
+    var map = OPT.envelope_by_class || {};
+    var key = trim(cls).toLowerCase() || "explicit";
+    var kind = map[key] || "explicit";
+    var env = (OPT.envelopes || {})[kind];
+    if (!env) { return null; }
+    return { kind: kind, env: env };
+  }
+
+  /* 当前激活目标在俯视板面上的视线径向速度：有航路就用 pathRadialVelocity
+     （沿用它的闭速定义），只有一个放置点时按 |v|·r/H + 爬升分量估。 */
+  function plateRadialNow() {
+    var t = activeTarget();
+    var pts = t.points || [];
+    var h = plateCameraHeight();
+    var climb = Math.max(0, num(S.place.climb, 0));
+    if (pts.length > 1) {
+      return { vr: pathRadialVelocity(pts), h: h, climb: climb };
+    }
+    var u = pts.length ? pts[0][0] : (t.uv ? t.uv[0] : 0.5);
+    var v = pts.length ? pts[0][1] : (t.uv ? t.uv[1] : 0.5);
+    var x = (u - 0.5) * 600;
+    var y = (0.5 - v) * 450;
+    var r = Math.sqrt(x * x + y * y);
+    var range = Math.sqrt(r * r + h * h);
+    var vr = num(S.place.speed, 80) * r / Math.max(h, 1e-6) +
+      climb * h / Math.max(range, 1e-6);
+    return { vr: vr, h: h, climb: climb };
+  }
+
+  function renderPlaceGeo() {
+    var node = $("placeGeoHint");
+    if (!node) { return; }
+    var radarOn = indexOf(S.capture.sensors, "radar") >= 0;
+    if (!isCustomMode() || !radarOn) { node.hidden = true; return; }
+    var now = plateRadialNow();
+    var vr = Math.abs(num(now.vr, 0));
+    var text = "视线近天底，径向速度≈|v|·r/H（当前 ≈ " + vr.toFixed(2) + " m/s）";
+    if (now.climb > 0) {
+      text += "，已计入接近速度 " + Math.round(now.climb) + " m/s";
+    }
+    text += "；要真实接近率把「接近速度」设为非 0，或改用斜视场景。";
+    node.textContent = text;
+    node.hidden = false;
+  }
+
+  /* 航路体检：把相邻三点看成一段圆弧（三点外接圆半径），v²/R 与机型过载上限
+     比较。这是生成前唯一能立刻给出的答案；后端预整形尚未落地，因此文本明确
+     标注“估算”，不冒充生成日志里的实测值。 */
+  function routeCheckMessage(pointsM, speed, cls) {
+    if (!pointsM || pointsM.length < 3) { return ""; }
+    var info = envelopeFor(cls);
+    if (!info) { return ""; }
+    var maxG = num(info.env.max_g, 0);
+    var maxV = num(info.env.max_speed_mps, 0);
+    if (!(maxG > 0)) { return ""; }
+    var g0 = 9.80665;
+    var spd = Math.max(1, num(speed, 80));
+    var minSeg = Infinity;
+    var tight = null;
+    var i;
+    for (i = 1; i < pointsM.length; i++) {
+      var dx = pointsM[i][0] - pointsM[i - 1][0];
+      var dy = pointsM[i][1] - pointsM[i - 1][1];
+      minSeg = Math.min(minSeg, Math.sqrt(dx * dx + dy * dy));
+    }
+    for (i = 1; i < pointsM.length - 1; i++) {
+      var a = pointsM[i - 1], b = pointsM[i], c = pointsM[i + 1];
+      var ab = Math.sqrt(Math.pow(b[0] - a[0], 2) + Math.pow(b[1] - a[1], 2));
+      var bc = Math.sqrt(Math.pow(c[0] - b[0], 2) + Math.pow(c[1] - b[1], 2));
+      var ca = Math.sqrt(Math.pow(c[0] - a[0], 2) + Math.pow(c[1] - a[1], 2));
+      var area = Math.abs((b[0] - a[0]) * (c[1] - a[1]) -
+                          (b[1] - a[1]) * (c[0] - a[0])) * 0.5;
+      /* 共线三点的“外接圆”半径是无穷大；跳过而不是除以零。 */
+      if (area < 0.5 || ab < 1e-6 || bc < 1e-6 || ca < 1e-6) { continue; }
+      var radius = (ab * bc * ca) / (4 * area);
+      var gNeed = spd * spd / (radius * g0);
+      if (!tight || gNeed > tight.g) {
+        tight = { r: radius, g: gNeed };
+      }
+    }
+    var needR = spd * spd / (maxG * g0);
+    var label = ENV_CN[info.kind] || info.kind;
+    var parts = [];
+    if (tight && tight.g > maxG * 1.02) {
+      var cap = Math.sqrt(maxG * g0 * tight.r);
+      if (maxV > 0) { cap = Math.min(cap, maxV); }
+      var minV = num(info.env.min_speed_mps, 0);
+      var stall = minV > 0 && cap < minV;
+      parts.push("航路体检（估算）：拐角需要 R=" + needR.toFixed(1) +
+        " m，当前 " + spd.toFixed(0) + " m/s 需 " + tight.g.toFixed(1) +
+        " g，超出" + label + "包线（" + maxG.toFixed(1) +
+        " g）；生成时速度会被压到 ≈" + cap.toFixed(1) + " m/s" +
+        (stall ? "（低于该机型最小速度 " + minV.toFixed(0) + " m/s，仍需放大拐角）" : "") + "。");
+    } else if (maxV > 0 && spd > maxV * 1.001) {
+      parts.push("航路体检（估算）：统一速度 " + spd.toFixed(0) + " m/s 超过" +
+        label + "包线（" + maxV.toFixed(0) + " m/s）；生成时速度会被压到 ≈" +
+        maxV.toFixed(0) + " m/s。");
+    }
+    if (!parts.length) { return ""; }
+    if (isFinite(minSeg)) {
+      parts.push("相邻点最小间隔 " + minSeg.toFixed(1) + " m。");
+    }
+    parts.push("估算口径 v²/(n·g)，后端预整形上线后以生成日志为准。");
+    return parts.join("");
+  }
+
+  function renderPlaceRoute() {
+    var node = $("placeRouteWarn");
+    if (!node) { return; }
+    var t = activeTarget();
+    var pts = t.points || [];
+    if (!isCustomMode() || pts.length < 3) { node.hidden = true; return; }
+    var q = [];
+    each(pts, function (p) {
+      q.push([(p[0] - 0.5) * 600, (0.5 - p[1]) * 450]);
+    });
+    var message = routeCheckMessage(q, num(S.place.speed, 80), t.cls || S.obj.cls);
+    if (!message) { node.hidden = true; return; }
+    node.textContent = message;
+    node.hidden = false;
   }
 
   function placeClick(ev) {
@@ -3034,6 +3234,12 @@
       body.appendChild(dirNote);
     }
 
+    /* 三模态对齐表与雷达标注/纯净对照。数据由 /api/align/<id> 从运行目录
+       现读，不重新渲染；面板模块在 align.js，保持这个大文件不再膨胀。 */
+    if (window.STUDIO_ALIGN && typeof window.STUDIO_ALIGN.mount === "function") {
+      window.STUDIO_ALIGN.mount(body, API, info.id);
+    }
+
     var cards = info.cards || [];
     if (cards.length) {
       var hosted = ce("div", "cards");
@@ -3620,13 +3826,40 @@
         touch();
       });
     }
+    var cl = $("placeClimb");
+    if (cl && !cl.dataset.bound) {
+      cl.dataset.bound = "1";
+      cl.value = String(S.place.climb || 0);
+      cl.addEventListener("change", function () {
+        S.place.climb = Math.max(0, num(cl.value, 0));
+        renderPlace();
+        touch();
+      });
+    }
     var cb = $("placeClearBtn");
     if (cb) {
       cb.addEventListener("click", function () {
+        /* The points the operator drew are stored on each target
+           (S.targets[i].points): that array is what renderPlace draws as
+           markers and what buildPayload turns into the waypoint route.
+           S.place.points is only the editing buffer for the active tab, so
+           clearing it -- which is all this button used to do -- removed
+           nothing from the canvas and nothing from the recipe. Clear the
+           real paths, keep the target placements, and refresh the summary and
+           the preflight so the cleared state is what the panel reports. */
+        var removed = 0;
+        each(S.targets, function (t) {
+          if (t.points && t.points.length) {
+            removed += t.points.length;
+            t.points = [];
+          }
+        });
         S.place.points = [];
         S.place.url = "";
-        S.place.placed = false;
+        S.place.placed = isCustomMode();
         renderPlace();
+        touch();
+        toast(removed ? "已清除 " + removed + " 个轨迹点" : "没有轨迹点可清除");
       });
     }
     loadRuns();

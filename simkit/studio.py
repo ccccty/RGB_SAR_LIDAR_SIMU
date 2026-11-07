@@ -23,6 +23,7 @@ Endpoints
     GET  /api/job/<id>          one run: state, progress, log tail, error tail
     POST /api/job/<id>/cancel   stop a run
     GET  /api/dataset/<id>      stats + annotated sample cards
+    GET  /api/align/<id>        per-frame optical/IR/radar alignment table + radar image pairs
     GET  /api/datasets          runs already on disk
     GET  /api/img/<id>/<path>   serve a generated image
 
@@ -1736,8 +1737,9 @@ MOD_PREF = ["optical", "optical_wide", "mwir", "mwir_wide", "lwir", "lwir_wide",
             "sar", "radar_ra", "radar_rd", "lidar", "lidar_intensity"]
 MOD_CN = {"optical": "可见光", "mwir": "中波红外", "lwir": "长波红外", "swir": "短波红外",
           "sar": "SAR 强度", "radar_ra": "雷达 距离-角度", "radar_rd": "雷达 距离-多普勒",
-          "radar": "雷达 距离-多普勒", "lidar": "激光雷达距离",
-          "lidar_intensity": "激光雷达强度"}
+          "radar": "雷达 距离-多普勒", "radar_clean": "雷达 距离-多普勒 · 纯净",
+          "radar_ra_clean": "雷达 距离-角度 · 纯净",
+          "lidar": "激光雷达距离", "lidar_intensity": "激光雷达强度"}
 
 
 def _mod_label(mod):
@@ -2004,6 +2006,266 @@ def _dataset_info(jid, variant=None):
     return info
 
 
+# ------------------------------------------------------------------ alignment
+
+# One page of the alignment table. A 20 000-frame run would otherwise make the
+# browser read every per-frame label before showing anything; the panel asks for
+# a window and reports the range it actually covered. The cap is the server's,
+# not the UI's, because the query string is user input.
+ALIGN_PAGE_MAX = 120
+
+
+def _json_file(path):
+    """JSON or None. A half-written label file must not break the whole table."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def _box_rect(box):
+    """One labels/*.json box -> pixel centre/size, or None if it is malformed.
+
+    The panel compares three modalities on one row, so the box has to arrive in
+    the same units the image is in: pixels, top-left origin. Nothing here
+    re-projects or second-guesses the renderer.
+    """
+    if not isinstance(box, dict):
+        return None
+    try:
+        x0, y0, x1, y1 = (float(box[k]) for k in ("x0", "y0", "x1", "y1"))
+    except (KeyError, TypeError, ValueError):
+        return None
+    px = box.get("pixels")
+    px = px if isinstance(px, (int, float)) else None
+    visible = box.get("visible") is not False and (x1 > x0) and (y1 > y0)
+    # A box with zero measured pixels is a projection that missed the body, not
+    # a detection; counting it would make "three modalities agree" meaningless.
+    if visible and px is not None and px <= 0:
+        visible = False
+    return dict(center=[round((x0 + x1) / 2.0, 1), round((y0 + y1) / 2.0, 1)],
+                size=[round(x1 - x0, 1), round(y1 - y0, 1)],
+                px=px, visible=visible)
+
+
+def _num_or_none(value, digits=3):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return round(float(value), digits)
+
+
+def _radar_target(target):
+    """One radar truth/detection row from labels/radar or annotations_radar."""
+    if not isinstance(target, dict):
+        return None
+    name = target.get("name")
+    if not isinstance(name, str) or not name:
+        return None
+    return dict(name=name, cls=target.get("cls"),
+                range_m=_num_or_none(target.get("range")),
+                v_r=_num_or_none(target.get("v_r")),
+                az_deg=_num_or_none(target.get("az")),
+                el_deg=_num_or_none(target.get("el")),
+                rcs_dbsm=_num_or_none(target.get("rcs_dbsm")),
+                detected=target.get("detected") is True,
+                measured_range_m=_num_or_none(target.get("measured_range")),
+                measured_v_r=_num_or_none(target.get("measured_v_r")),
+                snr_db=_num_or_none(target.get("snr_db")))
+
+
+def _radar_pairs(jid, base, frames):
+    """Frames that have both the annotated and the clean range-Doppler figure.
+
+    Both trees are written by the radar renderer. Pairing them by frame number
+    instead of by filename keeps the two captions on the same physical frame
+    even if a future renderer changes the naming scheme.
+    """
+    rdir = os.path.join(base, "images", "radar")
+    cdir = os.path.join(base, "images", "radar_clean")
+    if not (os.path.isdir(rdir) and os.path.isdir(cdir)):
+        return []
+    labeled, clean = {}, {}
+    for fn in sorted(os.listdir(rdir)):
+        if fn.lower().endswith(".png"):
+            n = _frame_no(fn)
+            if n is not None:
+                labeled.setdefault(n, fn)
+    for fn in sorted(os.listdir(cdir)):
+        if fn.lower().endswith(".png"):
+            n = _frame_no(fn)
+            if n is not None:
+                clean.setdefault(n, fn)
+    out = []
+    for frame in frames:
+        lf, cf = labeled.get(frame), clean.get(frame)
+        if not lf or not cf:
+            continue
+        w, h = _png_size(os.path.join(rdir, lf))
+        out.append(dict(frame=frame, file=lf,
+                        labeled="/api/img/%s/images/radar/%s" % (jid, lf),
+                        clean="/api/img/%s/images/radar_clean/%s" % (jid, cf),
+                        w=w, h=h))
+    return out
+
+
+def _align_payload(jid, start=0, count=20):
+    """Per-frame, per-target optical/IR/radar agreement, straight from labels.
+
+    This is a read-only view of what the run already wrote: the COCO/JSON boxes
+    the renderer produced, not a re-detection and not a re-render. A target is
+    counted as detected per modality when its own label says it is visible (or,
+    for radar, when the truth target is marked detected); "all three" therefore
+    means the same frame actually carries all three observations.
+    """
+    base = _run_dir(jid)
+    if not base:
+        return None
+    meta = _json_file(os.path.join(base, "meta.json")) or {}
+    stats = _json_file(os.path.join(base, "stats.json")) or {}
+    ldirs = _label_dirs(base)
+    opt_dirs = sorted(d for d in ldirs
+                      if d == "optical" or d.startswith("optical_"))
+    ir_dirs = sorted(d for d in ldirs
+                     if d.startswith("ir_") and not d.startswith("ir_preview"))
+    radar_dir = ldirs.get("radar")
+
+    ann = _json_file(os.path.join(base, "annotations_radar.json")) or {}
+    # annotations_radar.json keys its images by COCO image id, while the label
+    # files are named by frame number. They happen to coincide in today's
+    # writer; reading the frame out of file_name keeps the table correct if a
+    # future export starts the image ids at 1.
+    ann_imgs, ann_names, ann_id_frame = {}, {}, {}
+    for item in ann.get("images") or []:
+        if not isinstance(item, dict):
+            continue
+        fid = item.get("id")
+        frame = _frame_no(item.get("file_name") or "")
+        if frame is None and isinstance(fid, int):
+            frame = fid
+        if frame is None:
+            continue
+        ann_imgs[frame] = item
+        if isinstance(fid, int):
+            ann_id_frame[fid] = frame
+    for box in ann.get("annotations") or []:
+        if not isinstance(box, dict):
+            continue
+        frame = ann_id_frame.get(box.get("image_id"))
+        if frame is not None and isinstance(box.get("object_name"), str):
+            ann_names.setdefault(frame, set()).add(box["object_name"])
+
+    frames_total = int(meta.get("frames") or stats.get("frames") or 0)
+    if frames_total <= 0:
+        found = set()
+        for sub in ([radar_dir] if radar_dir else []) + [ldirs[d] for d in opt_dirs]:
+            try:
+                names = os.listdir(sub)
+            except OSError:
+                continue
+            for fn in names:
+                n = _frame_no(fn)
+                if n is not None:
+                    found.add(n)
+        frames_total = (max(found) + 1) if found else 0
+    frames_total = max(0, frames_total)
+    start = max(0, min(int(start), max(frames_total - 1, 0)))
+    end = min(frames_total, start + max(1, int(count)))
+
+    def label(ldir, frame):
+        return _json_file(os.path.join(ldir, "%06d.json" % frame)) or {}
+
+    models = {}
+    frames_out = []
+    totals = dict(rows=0, all3=0, optical=0, ir=0, radar=0)
+    for frame in range(start, end):
+        rad_by_name = {}
+        t_val = None
+        if radar_dir:
+            rad = label(radar_dir, frame)
+            t_val = _num_or_none(rad.get("t"), 6)
+            for item in rad.get("targets") or []:
+                row = _radar_target(item)
+                if row:
+                    rad_by_name[row["name"]] = row
+        if not rad_by_name:
+            # Older runs can lack a per-frame radar label but still carry the
+            # radar COCO file; the truth targets there are the same structure.
+            for item in (ann_imgs.get(frame) or {}).get("targets") or []:
+                row = _radar_target(item)
+                if row:
+                    rad_by_name[row["name"]] = row
+
+        opt_by_name, ir_by_name = {}, {}
+        for sub in opt_dirs:
+            d = label(ldirs[sub], frame)
+            for name, box in (d.get("boxes") or {}).items():
+                rect = _box_rect(box)
+                if rect is None:
+                    continue
+                rect["view"] = d.get("view") or sub
+                opt_by_name.setdefault(name, []).append(rect)
+        for sub in ir_dirs:
+            d = label(ldirs[sub], frame)
+            for obj in d.get("objects") or []:
+                if isinstance(obj, dict) and isinstance(obj.get("name"), str):
+                    models.setdefault(obj["name"], obj.get("cls"))
+            for name, box in (d.get("boxes") or {}).items():
+                rect = _box_rect(box)
+                if rect is None:
+                    continue
+                rect["band"] = d.get("band") or sub[len("ir_"):] or sub
+                ir_by_name.setdefault(name, []).append(rect)
+
+        rows = []
+        names = set(opt_by_name) | set(ir_by_name) | set(rad_by_name)
+        for name in sorted(names):
+            opt = opt_by_name.get(name, [])
+            ir = ir_by_name.get(name, [])
+            rad = rad_by_name.get(name)
+            det = dict(optical=any(b["visible"] for b in opt),
+                       ir=any(b["visible"] for b in ir),
+                       radar=bool(rad and rad["detected"]))
+            row = dict(name=name, cls=models.get(name) or (rad or {}).get("cls"),
+                       optical=opt, ir=ir, radar=rad, detected=det,
+                       all3=det["optical"] and det["ir"] and det["radar"],
+                       rd_annotation=name in ann_names.get(frame, set()))
+            rows.append(row)
+            totals["rows"] += 1
+            totals["all3"] += 1 if row["all3"] else 0
+            for key in ("optical", "ir", "radar"):
+                totals[key] += 1 if det[key] else 0
+        frames_out.append(dict(frame=frame, t=t_val, rows=rows))
+
+    objects = sorted({row["name"] for fr in frames_out for row in fr["rows"]})
+    notes = []
+    if not opt_dirs:
+        notes.append("这次运行没有 labels/optical：光学一列为空。")
+    if not ir_dirs:
+        notes.append("这次运行没有 labels/ir_*：红外一列为空。")
+    if not radar_dir:
+        notes.append("这次运行没有 labels/radar：雷达一列为空。")
+    if not frames_out:
+        notes.append("没有可读的逐帧标签：可能仍在生成，或这次运行没有写 labels/。")
+    return dict(
+        id=jid, dir=base, meta=dict(
+            frames=frames_total, sensors=meta.get("sensors") or [],
+            views=meta.get("views") or [], ir_bands=meta.get("ir_bands") or [],
+            radar_band=meta.get("radar_band"),
+            categories=meta.get("categories") or []),
+        frames_total=frames_total, start=start, end=end,
+        shown=len(frames_out),
+        modalities=dict(optical=opt_dirs,
+                        ir=[d[len("ir_"):] for d in ir_dirs],
+                        radar=bool(radar_dir)),
+        objects=[dict(name=nm, cls=models.get(nm)) for nm in objects],
+        frames=frames_out, totals=totals,
+        annotations=dict(frames=len(ann_imgs),
+                         boxes=sum(len(v) for v in ann_names.values())),
+        radar_pairs=_radar_pairs(jid, base, list(range(start, end))),
+        notes=notes)
+
+
 # --------------------------------------------------------------------- server
 
 def _jsonable(x, depth=0):
@@ -2109,6 +2371,10 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def _get_presets(self):
+        # The form's route check must quote the same airframe limits the motion
+        # checker enforces, or the warning and the run log disagree. Read them
+        # from motion.ENVELOPES instead of keeping a second table in JS.
+        from . import motion as _motion
         return dict(
             scenes=_scenes(), presets=_scenes(),
             weather=[dict(key=k, label=WEATHER_LABELS.get(k, k)) for k in WEATHER_MODES],
@@ -2119,6 +2385,8 @@ class Handler(BaseHTTPRequestHandler):
             views=dict(narrow=VIEW_NARROW, wide=VIEW_WIDE),
             size_px=SIZE_PX, closing=CLOSING, traj_modes=TRAJ_MODES,
             limits=LIM, runs=RUNS,
+            envelopes=_motion.ENVELOPES,
+            envelope_by_class=_motion.ENVELOPE_BY_CLASS,
             # The form reads these from the presets payload. They were lost when
             # this block was restored from an older revision, and the visible
             # damage was severe: without ecm.kinds the interference panel
@@ -2232,6 +2500,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, dict(error=str(exc), clips=[]))
             except Exception as exc:                       # planning is best-effort
                 return self._send(200, dict(clips=[], error="%s: %s" % (type(exc).__name__, exc)))
+        if p.startswith("/api/align/"):
+            jid = p[len("/api/align/"):].strip("/")
+            q = parse_qs(u.query)
+            try:
+                start = int((q.get("from") or ["0"])[0])
+                count = int((q.get("frames") or ["20"])[0])
+            except (TypeError, ValueError):
+                return self._send(400, dict(error="from / frames 必须是整数"))
+            data = _align_payload(jid, start, max(1, min(count, ALIGN_PAGE_MAX)))
+            if data is None:
+                return self._send(404, dict(error="没有这个数据集"))
+            return self._send(200, data)
         if p.startswith("/api/dataset/"):
             jid = p[len("/api/dataset/"):].strip("/")
             info = _dataset_info(jid, (parse_qs(u.query).get("variant") or [None])[0])

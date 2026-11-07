@@ -5,7 +5,9 @@ from unittest.mock import patch
 
 import numpy as np
 
-from simkit import radar, scene
+from simkit import plan, radar, scene
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def config(target_pos=(0, 30, 0), target_velocity=(0, -8, 0), pfa=1e-6):
@@ -93,6 +95,88 @@ class RadarRealismTests(unittest.TestCase):
             out = radar.simulate(scene.build_world(cfg), cfg)
             self.assertTrue(all(d["obj"] < 0 for d in out["detections"]))
             self.assertTrue(np.all(out["sigma"] == 0))
+
+    def test_single_channel_noise_shows_exponential_speckle(self):
+        # A body behind the sensor is geometry only: nothing enters the range
+        # window, so the map is pure noise. An exponential cell power has its
+        # 10th percentile at 0.105*mean and its 90th at 2.303*mean, i.e. 13.45
+        # dB apart -- the speckle a receiver really shows. The per-cell maximum
+        # over ~800 beams this replaced is an extreme-value statistic and gave
+        # 1-2 dB on the same scene, which is why the shipped image looked flat.
+        cfg = config()
+        cfg["objects"] = [dict(name="behind", cls="target", shape="box",
+                               size=[2, 2, 2], pos=[0, -100, 0],
+                               vel=[0, 0, 0], mat="painted_metal")]
+        out = radar.simulate(scene.build_world(cfg), cfg)
+        db = radar.to_db(out["rd_map"])
+        spread = float(np.percentile(db, 90) - np.percentile(db, 10))
+        self.assertGreater(spread, 12.0)
+        self.assertLess(spread, 15.0)
+        # A blank scene at Pfa=1e-6 must not manufacture detections.
+        self.assertEqual(len(out["detections"]), 0)
+
+    def test_three_aircraft_resolve_into_three_peaks(self):
+        # Three airframes at 6.0 / 7.5 / 9.0 km with distinct closing rates,
+        # i.e. three separable resolution cells. Their absolute velocities are
+        # asserted on v_r_true (the associated truth surface); the measured v_r
+        # is a Doppler cell centre and can only be quoted to half a cell.
+        cfg = scene.load_config(os.path.join(ROOT, "scenes", "radar_tri_aircraft.json"))
+        cfg.setdefault("sensors", {}).setdefault("radar", {})["detector"] = "rd_threshold"
+        frames = int(cfg.get("frames", {}).get("n", 1))
+        state = next(plan.plan_frames(cfg, 1, cfg.get("seed", 0),
+                                      cfg.get("frames", {}).get("dt", 0.2),
+                                      frame_offset=0, total_frames=frames))
+        world = scene.build_world(state["cfg"], jitter=state["jitter"])
+        out = radar.simulate(world, state["cfg"])
+        dets = [d for d in out["detections"] if d["obj"] >= 0]
+        best = {}
+        for d in dets:
+            cur = best.get(d["obj"])
+            if cur is None or d["snr_db"] > cur["snr_db"]:
+                best[d["obj"]] = d
+        self.assertEqual(sorted(best), [0, 1, 2], "three bodies, three associated peaks")
+        cell_r = float(np.mean(np.diff(out["range_axis"])))
+        cell_v = float(np.mean(np.diff(out["doppler_axis"])))
+        truth = {0: (6000.7, 119.94), 1: (7500.0, 185.00), 2: (9000.3, 240.02)}
+        for oid, (rng, vr) in truth.items():
+            det = best[oid]
+            self.assertAlmostEqual(det["range"], rng, delta=40.0)
+            self.assertAlmostEqual(det["v_r_true"], vr, delta=3.0)
+            self.assertLessEqual(abs(det["v_r"] - vr), cell_v)
+            self.assertGreater(det["snr_db"],
+                               10.0 * np.log10(out["processing"]["threshold_noise_ratio"]))
+        cells = sorted(d["range_bin"] for d in best.values())
+        self.assertGreater(cells[1] - cells[0], 2)
+        self.assertGreater(cells[2] - cells[1], 2)
+        self.assertAlmostEqual(cell_r, 12.49, delta=0.05)
+
+    def test_extended_body_spreads_over_several_range_cells(self):
+        # A 20 m deep body at 12.49 m range resolution is not a point: its sigma
+        # is shared over the cells it spans, so the peak covers more than one
+        # cell. A single point echo was the other half of "one bright pixel".
+        cfg = config()
+        cfg["objects"] = [dict(name="body", cls="target", shape="box",
+                               size=[3, 20, 3], pos=[0, 3000, 0],
+                               vel=[0, -120, 0], mat="painted_metal", rcs_db=20)]
+        rc = cfg["sensors"]["radar"]
+        rc.update(pos=[0, 0, 0], look_at=[0, 3000, 0], n_az=8, n_el=4,
+                  az_span_deg=1.0, el_span_deg=1.0, n_samples=2048, n_chirps=64,
+                  bandwidth_mhz=12, chirp_us=8.192, pri_us=16.384,
+                  tx_power_dbm=43, mti_min_vr_mps=1.0, swerling="none")
+        out = radar.simulate(scene.build_world(cfg), cfg)
+        cell = float(np.mean(np.diff(out["range_axis"])))
+        self.assertAlmostEqual(cell, 12.49, delta=0.05)
+        db = radar.to_db(out["rd_map"])
+        floor = float(np.percentile(db, 50))
+        ir, iv = np.unravel_index(int(np.argmax(out["rd_map"])), out["rd_map"].shape)
+        above = db[:, iv] > floor + 6.0
+        lo = hi = int(ir)
+        while lo > 0 and above[lo - 1]:
+            lo -= 1
+        while hi + 1 < len(above) and above[hi + 1]:
+            hi += 1
+        self.assertGreaterEqual(hi - lo + 1, 2,
+                                "contiguous range cells above floor+6 dB: %d" % (hi - lo + 1))
 
     def test_doppler_peak_neighbours_wrap_but_range_does_not(self):
         power = np.zeros((5, 8))

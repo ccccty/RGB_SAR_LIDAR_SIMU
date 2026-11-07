@@ -701,7 +701,10 @@ class CompatibilityTests(unittest.TestCase):
     def test_every_shipped_scene_still_plans_and_renders_a_world(self):
         root = os.path.join(BASE, "scenes")
         paths = sorted(glob.glob(os.path.join(root, "*.json")))
-        self.assertEqual(len(paths), 32)
+        # Counted on purpose: a scene file that silently disappears from
+        # scenes/ (or a stray one that lands there) has to fail a test, not
+        # quietly change what the regression corpus means.
+        self.assertEqual(len(paths), 34)
         for path in paths:
             with self.subTest(scene=os.path.basename(path)):
                 cfg = scene.load_config(path)

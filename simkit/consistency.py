@@ -20,8 +20,9 @@ Groups (the doc's own labels, section 4):
        rate, turn-lag error and the same-frame budget
     E  dispensed-body timing: attachment, ejection, air-relative decay,
        separation rate, settling, release continuity
-    F  sensor consistency: Doppler / pixel size / LOS rate from one state, and
-       the same body in optical vs IR / radar / lidar
+    F  sensor consistency: Doppler / pixel size / LOS rate from one state, the
+       same body in optical vs IR / radar / lidar, and (F5) whether every
+       labelled target is inside the aperture the renderer actually aims
     G  labels: stable names, dispensables never in the target classes
 
 Group D of the doc (attitude/velocity coupling) is not duplicated here: D1-D3
@@ -55,6 +56,16 @@ Deviations from the literal doc, stated where they happen
 * E7 subtracts the deceleration the declared drag law itself predicts before
   applying the doc's 200 m/s^2 bound: a chaff cloud genuinely decelerates at
   hundreds of m/s^2 at release, and that is not an unexplained jump.
+* F5 is new: the doc judges the scene file, but dataset.py re-aims radar and
+  lidar at the primary target on every frame and copies the imaging view's
+  pose into them, so the authored sensors.radar.look_at may be a pose nothing
+  renders.  F5 therefore evaluates the aperture twice -- on the render pose
+  (the default) and on the authored pose -- and reports both.
+* Derivative checks (B3, F3) use a one-sided first sample instead of a centred
+  one.  A clip starts at t=0 and the planners freeze the position for t<0, so
+  a centred difference there reads half a step: it reported 40.000 m/s of
+  "derivative error" on an 80 m/s track and a 50 % LOS-rate error, both pure
+  artefacts.  The thresholds are untouched.
 
 Usage
 -----
@@ -154,6 +165,10 @@ F2_RANGE_TOL_REL = 0.005            # F2: doc's 0.5 % belongs to F3; adopted
 F2_PX_TOL_REL = 0.01
 F3_LOS_RATE_TOL_REL = 0.005         # F3: <= 0.5 %
 F4_CROSS_CHANNEL_EPS_M = 0.01       # F4: <= 0.01 m
+# F5: two apertures that follow the same camera are co-boresighted by
+# construction, so their az/el axes must be the same axes; half the narrowest
+# beam in these scenes (a 1 deg Ku azimuth beam) is already smeared by more.
+F5_AXIS_ROLL_TOL_DEG = 0.5
 
 # ===========================================================================
 # Check catalogue.  The CLI and the tests read this, so a check cannot exist
@@ -206,6 +221,9 @@ CHECK_SPECS = [
          threshold="analytic az_dot/el_dot within 0.5 percent of the geometry (4 F3)"),
     dict(id="F4", group="F", title="dispensables at the same world position",
          threshold="optical / ir / radar / lidar within 0.01 m (4 F4)"),
+    dict(id="F5", group="F", title="aim: every labelled target inside the aperture",
+         threshold="|az| <= span/2 + beamwidth/2 in the frame each sensor is "
+                   "actually rendered with (render layer by default)"),
     dict(id="G1", group="G", title="stable entity ids across modalities",
          threshold="names unique and identical in every channel (4 G1)"),
     dict(id="G2", group="G", title="dispensables never enter target labels",
@@ -1840,6 +1858,36 @@ def _check_F2(ctx):
     return _result("F2", ok, detail, max(worst_r[0], worst_p[0]), F2_PX_TOL_REL)
 
 
+def _los_rate(angles, t, h):
+    """d(az, el)/dt at t, one-sided where the clip clock starts.
+
+    A clip is a window onto a track that has a beginning: plan.ClipPlan's
+    position functions publish the right-hand derivative at t=0 but freeze the
+    position for t<0 (motion.Waypoints._distance returns the departure point for
+    t<=0, measured: p(-1e-3) == p(0) to the last bit).  A centred step across
+    that edge therefore differences against a frozen pose and reports exactly
+    half the true line-of-sight rate -- measured 0.002451 rad/s against an
+    analytic 0.004918 rad/s at frame 0, a 50 % "error" that is a property of the
+    difference scheme, not of the geometry.  The threshold stays where the doc
+    puts it; the sample switches to a three-point forward formula instead, whose
+    truncation error is O(h^2) like the centred one, so the first frame is
+    measured as accurately as the rest.
+
+    The rule is "the left neighbour would be outside the scene clock", not
+    "t == 0": a planner that does have history before the clip start (motion.Line
+    and the seeker solve extend analytically) keeps the centred step through
+    t=0, and both schemes agree there to O(h^2).
+    """
+    a_t = angles(t)
+    if t - h >= 0.0:
+        a_p, a_m = angles(t + h), angles(t - h)
+        return ((a_p[0] - a_m[0]) / (2.0 * h),
+                (a_p[1] - a_m[1]) / (2.0 * h))
+    a_1, a_2 = angles(t + h), angles(t + 2.0 * h)
+    return ((-3.0 * a_t[0] + 4.0 * a_1[0] - a_2[0]) / (2.0 * h),
+            (-3.0 * a_t[1] + 4.0 * a_1[1] - a_2[1]) / (2.0 * h))
+
+
 def _check_F3(ctx):
     if not ctx.has_camera():
         return _skip("F3", "no imaging view configured for this clip")
@@ -1863,10 +1911,7 @@ def _check_F3(ctx):
                 z = float(np.dot(d, fwd))
                 return math.atan2(x, z), math.atan2(y, math.hypot(x, z))
 
-            az1, el1 = angles(t + h)
-            azm, elm = angles(t - h)
-            d_az = (az1 - azm) / (2.0 * h)
-            d_el = (el1 - elm) / (2.0 * h)
+            d_az, d_el = _los_rate(angles, t, h)
             cpos = np.asarray(cp.camera(t)[0], float)
             cvel = np.asarray(cp.camera_velocity(t), float)
             p = np.asarray(cp.object_state(primary, t)[0], float)
@@ -1963,6 +2008,266 @@ def _check_F4(ctx):
                   % (worst[1][0], worst[1][1], worst[1][2], worst[1][3],
                      worst[0], F4_CROSS_CHANNEL_EPS_M))
     return _result("F4", ok, detail, worst[0], F4_CROSS_CHANNEL_EPS_M)
+
+
+# ===========================================================================
+# F5. aim: what the aperture is pointed at when the frame is RENDERED
+# ===========================================================================
+def _sensor_block(ctx, name):
+    """The authored config block of one scene sensor (radar / lidar), or {}."""
+    blk = ((ctx.cfg.get("sensors") or {}).get(name))
+    return dict(blk) if isinstance(blk, dict) else {}
+
+
+def _first_labelled_pose(ctx, f):
+    """World position the dataset's per-frame re-aim points at.
+
+    dataset.py does not render radar/lidar where the scene file puts them: it
+    copies the primary imaging view's pose into the sensor and re-aims it at
+    "the first labelled object" (the mean of its corners).  That single line is
+    invisible in the scene file, so a checker that reads sensors.radar.look_at
+    is checking a pose nothing renders.  This is the same rule written once, in
+    the published state every label is projected from; the mesh offset between
+    an object's origin and the mean of its corners is a few metres, i.e. under
+    0.05 deg at these ranges, far below the beam widths the comparison uses.
+    """
+    st = ctx.state(f)
+    obj = ctx.labelled[0]
+    return np.asarray(ctx.plan(f // ctx.fpc).object_state(obj, float(st["t"]))[0],
+                      float)
+
+
+def _aim_frame(ctx, name, f, layer):
+    """(pos, look_at, up, re_aimed) the sensor is aimed with on this frame.
+
+    The render layer follows dataset.run() exactly, because that is the pose
+    written to disk and the one the labels describe:
+
+      pos      the primary imaging view position (radar/lidar are body-fixed to
+               the same gimbal as the camera)
+      look_at  the view own aim, i.e. follow the camera, which is what keeps
+               the apertures co-boresighted
+      re-aim   only when the primary target would fall outside THIS sensor
+               field of regard (radar: +-span/2, lidar: +-0.45*fov) is the
+               frame pointed at the target instead, and the run prints a hint
+               saying so.  A checker that ignores this branch is checking a
+               pose nothing rendered.
+
+    The config layer is the authored sensors.<name> block, unchanged.
+    """
+    blk = _sensor_block(ctx, name)
+    up = tuple(float(x) for x in blk.get("up", (0.0, 0.0, 1.0)))
+    st = ctx.state(f)
+    views = st.get("views") or {}
+    vp = next(iter(views.values()), None) if views else None
+    if layer != "render" or vp is None:
+        pos = [float(x) for x in (blk.get("pos") or [0.0, 0.0, 0.0])]
+        look_at = [float(x) for x in (blk.get("look_at") or [0.0, 0.0, 0.0])]
+        return pos, look_at, up, False
+    pos = [float(x) for x in vp["pos"]]
+    look_at = [float(x) for x in (vp.get("look_at") or (0.0, 0.0, 1.0))]
+    target = _first_labelled_pose(ctx, f)
+    _p, right, upv, fwd = scene.sensor_basis(pos, look_at, up)
+    d = np.asarray(target, float) - np.asarray(pos, float)
+    n = float(np.linalg.norm(d))
+    if n <= 1e-6:
+        return pos, look_at, up, False
+    d = d / n
+    az = math.degrees(math.atan2(float(np.dot(d, right)), float(np.dot(d, fwd))))
+    el = math.degrees(math.atan2(float(np.dot(d, upv)), float(np.dot(d, fwd))))
+    lim_az, lim_el = _field_of_regard_deg(ctx, name)
+    if abs(az) > lim_az or abs(el) > lim_el:
+        return pos, [float(x) for x in target], up, True
+    return pos, look_at, up, False
+
+
+def _field_of_regard_deg(ctx, name):
+    """Half span dataset.run() uses to decide whether the frame needs a re-aim.
+
+    Note this is narrower than _half_aperture_deg: the incident decision is
+    "does the target fall inside the scanned span", the acceptance criterion is
+    "does a beam still illuminate it".  Both are copied from their owner.
+    """
+    blk = _sensor_block(ctx, name)
+    if name == "radar":
+        return (0.5 * float(blk.get("az_span_deg") or 2.0),
+                0.5 * float(blk.get("el_span_deg") or 1.6))
+    fov = float(blk.get("fov_deg") or 4.0)
+    return 0.45 * fov, 0.45 * float(blk.get("vfov_deg") or fov)
+
+
+def _half_aperture_deg(ctx, name):
+    """Half width of the region that still reaches the raster, per axis.
+
+    radar.py accepts a target as long as it is inside the scanned span plus
+    half a beam width (a beam illuminates a target the raster centre steps
+    over), so that -- not the bare span -- is what "the aperture covers it"
+    means.  The defaults and the band preset are read off radar.py itself
+    instead of being copied here, because the beam width of a "Ku" antenna is
+    the band's, not the module default's.
+    lidar is a raster of rays with no beam width: half a pixel is the margin.
+    """
+    user = _sensor_block(ctx, name)
+    if name == "radar":
+        from . import radar
+        rc = dict(radar.DEFAULTS)
+        band = user.get("band")
+        if band in radar.RADAR_BANDS:
+            for key in ("fc_ghz", "beamwidth_az_deg", "beamwidth_el_deg"):
+                if key not in user:
+                    rc[key] = radar.RADAR_BANDS[band][key]
+        rc.update(user)
+        # the same lower bound radar.simulate applies: a beam is never narrower
+        # than one raster step
+        bw_az = max(float(rc["beamwidth_az_deg"]),
+                    float(rc["az_span_deg"]) / max(int(rc["n_az"]), 1))
+        bw_el = max(float(rc["beamwidth_el_deg"]),
+                    float(rc["el_span_deg"]) / max(int(rc["n_el"]), 1))
+        return (0.5 * float(rc["az_span_deg"]) + 0.5 * bw_az,
+                0.5 * float(rc["el_span_deg"]) + 0.5 * bw_el)
+    from . import lidar
+    rc = dict(lidar.DEFAULTS)
+    rc.update({k: v for k, v in user.items() if k in lidar.DEFAULTS})
+    fov = float(rc["fov_deg"])
+    vfov = float(rc["vfov_deg"]) if rc.get("vfov_deg") else \
+        fov * float(rc["n_el"]) / float(max(int(rc["n_az"]), 1))
+    return (0.5 * fov + 0.5 * fov / max(int(rc["n_az"]), 1),
+            0.5 * vfov + 0.5 * vfov / max(int(rc["n_el"]), 1))
+
+
+def _axis_roll_deg(ctx, name, f, up, right, fwd):
+    """Roll between one sensor's az/el axes and the imaging view's, degrees.
+
+    A sensor that follows the camera shares the view's position and aim, so its
+    aperture frame can differ from the frame the labels are projected in only
+    through the declared up axis (or a roll).  Such a pair is co-boresighted by
+    construction, and a roll offset means every consumer that maps radar az/el
+    onto the picture is rotated: on a nadir plate the same two apertures ended
+    up 51 deg apart because sensor_basis() replaces a degenerate up with +Y, and
+    the 2.9 deg-off radar was on the other side of that test.  Returns None when
+    there is nothing to compare (no view, or the sensor was re-aimed on purpose).
+    """
+    st = ctx.state(f)
+    views = st.get("views") or {}
+    vp = next(iter(views.values()), None) if views else None
+    if vp is None:
+        return None
+    try:
+        _p, vright, _vup, vfwd = scene.sensor_basis(
+            vp["pos"], vp.get("look_at") or (0.0, 0.0, 1.0),
+            (0.0, 0.0, 1.0), float(vp.get("roll_deg", 0.0) or 0.0))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if abs(float(np.dot(np.asarray(vfwd, float), np.asarray(fwd, float)))) < 0.999:
+        return None
+    a = np.asarray(vright, float)
+    b = np.asarray(right, float)
+    return math.degrees(math.atan2(float(np.dot(np.asarray(fwd, float),
+                                                np.cross(a, b))),
+                                   float(np.dot(a, b))))
+
+
+def _check_F5(ctx, render_aim=True):
+    """Every labelled target has to land inside each aperture the renderer uses.
+
+    The layer matters, and not in the direction one expects.  A look-down
+    scene leaves sensors.radar.look_at at the world origin, where the target is
+    2.3 deg off and the scanned span is +-1.0 deg: judged on the config the
+    aperture misses everything, while the render follows the camera and
+    re-aims at the target when it has to, so it sees all of them.  Both numbers
+    are reported so neither answer is hidden; the verdict follows the layer the
+    caller asked for (render by default, because that is what is written to
+    disk)."""
+    sensors = ctx.cfg.get("sensors") or {}
+    candidates = [n for n in ("radar", "lidar")
+                  if isinstance(sensors.get(n), dict) and sensors.get(n)]
+    if not candidates:
+        return _skip("F5", "no radar/lidar aperture configured for this clip")
+
+    layers = {}
+    for layer in ("render", "config"):
+        worst = (0.0, None)          # (fill, (sensor, name, frame, az, el, lim))
+        reached = 0
+        total = 0
+        reaims = 0
+        roll_worst = (0.0, None)
+        for f in ctx.indices:
+            st = ctx.state(f)
+            t = float(st["t"])
+            for name in candidates:
+                pos, look_at, up, re_aimed = _aim_frame(ctx, name, f, layer)
+                if re_aimed:
+                    reaims += 1
+                p0, right, upv, fwd = scene.sensor_basis(pos, look_at, up)
+                if layer == "render" and not re_aimed:
+                    # A sensor that follows the camera shares its position and
+                    # aim, so the two aperture frames can differ only through
+                    # the declared up/roll.  A roll offset there means any
+                    # consumer drawing radar az/el on the image is rotated --
+                    # measured 51 deg on a nadir plate, where one aperture
+                    # crossed sensor_basis()s degenerate-up fallback and the
+                    # other did not.
+                    roll = _axis_roll_deg(ctx, name, f, up, right, fwd)
+                    if roll is not None and abs(roll) > abs(roll_worst[0]):
+                        roll_worst = (roll, (name, f))
+                lim_az, lim_el = _half_aperture_deg(ctx, name)
+                for obj in ctx.labelled:
+                    d = (np.asarray(ctx.plan(f // ctx.fpc).object_state(obj, t)[0],
+                                    float) - p0)
+                    z = float(np.dot(d, fwd))
+                    if z <= 1e-6:
+                        continue
+                    az = math.degrees(math.atan2(float(np.dot(d, right)), z))
+                    el = math.degrees(math.atan2(float(np.dot(d, upv)),
+                                                 math.hypot(float(np.dot(d, right)),
+                                                            z)))
+                    total += 1
+                    fill = max(abs(az) / max(lim_az, 1e-9),
+                               abs(el) / max(lim_el, 1e-9))
+                    if fill <= 1.0:
+                        reached += 1
+                    if fill > worst[0]:
+                        worst = (fill, (name, obj.get("name"), f, az, el,
+                                        lim_az, lim_el))
+        layers[layer] = dict(reached=reached, total=total, worst=worst,
+                             reaims=reaims, roll=roll_worst)
+
+    # kept on the context so inspect() can put the layer disagreement in the
+    # summary notes instead of burying it in one long detail string
+    ctx.aim_layers = layers
+    sel = layers["render" if render_aim else "config"]
+    ok_cover = sel["total"] > 0 and sel["reached"] == sel["total"]
+    ok_roll = abs(sel["roll"][0]) <= F5_AXIS_ROLL_TOL_DEG
+    ok = ok_cover and ok_roll
+    bits = []
+    for layer in ("render", "config"):
+        lay = layers[layer]
+        if lay["worst"][1] is None:
+            bits.append("%s layer: no target in front of the aperture" % layer)
+            continue
+        w = lay["worst"][1]
+        bits.append("%s layer %d/%d reached (worst %s/%s f%d az %+.2f/%.1f "
+                    "el %+.2f/%.1f deg, re-aimed on %d frame-sensor pair(s))" %
+                    (layer, lay["reached"], lay["total"], w[0], w[1], w[2],
+                     w[3], w[5], w[4], w[6], lay["reaims"]))
+    if sel["roll"][1] is not None:
+        bits.append("co-boresight roll %s frame %d: %+.2f deg (limit %.1f)"
+                    % (sel["roll"][1][0], sel["roll"][1][1],
+                       sel["roll"][0], F5_AXIS_ROLL_TOL_DEG))
+    detail = "; ".join(bits)
+    if not ok_roll:
+        detail = ("aperture axes are rolled against the imaging view; az/el in "
+                  "one channel cannot be drawn on the other") + " | " + detail
+    if sel["reached"] != sel["total"] and sel["worst"][1] is not None:
+        w = sel["worst"][1]
+        detail = ("%s outside the %s aperture at frame %d (az %.2f/%.1f "
+                  "el %.2f/%.1f deg)" % (w[1], w[0], w[2], w[3], w[5], w[4], w[6])
+                  ) + " | " + detail
+    # one comparable number for the row: a rolled pair has to read as a
+    # violation even though its coverage alone would have passed
+    value = max(sel["worst"][0],
+                abs(sel["roll"][0]) / max(F5_AXIS_ROLL_TOL_DEG, 1e-9))
+    return _result("F5", ok, detail, value, 1.0)
 
 
 # ===========================================================================
@@ -2074,7 +2379,7 @@ def _check_G2(ctx):
 # ===========================================================================
 # public entry point
 # ===========================================================================
-def inspect(cfg_or_recipe, *, frames=None):
+def inspect(cfg_or_recipe, *, frames=None, render_aim=True):
     """Check one multi-target scene or recipe and return a report dict.
 
     Parameters
@@ -2086,6 +2391,11 @@ def inspect(cfg_or_recipe, *, frames=None):
         None evaluates every frame; an int samples that many evenly spaced
         frames; a sequence names frame indices.  The B-group envelope pass is
         always the full clip (motion_diagnose reads the whole scene).
+    render_aim : bool
+        Judge F5 (aperture coverage) on the pose the dataset actually renders
+        with -- radar/lidar re-aimed at the primary target every frame -- or,
+        with False, on the pose the scene file authored.  The report always
+        prints both layers; this only picks which one decides pass/fail.
 
     Returns
     -------
@@ -2103,6 +2413,7 @@ def inspect(cfg_or_recipe, *, frames=None):
         _check_C4(ctx), _check_C5(ctx), _check_C6(ctx),
         *_check_E(ctx),
         _check_F1(ctx), _check_F2(ctx), _check_F3(ctx), _check_F4(ctx),
+        _check_F5(ctx, render_aim=bool(render_aim)),
         _check_G1(ctx), _check_G2(ctx),
     ]
     by_id = {c["id"]: c for c in checks}
@@ -2110,6 +2421,22 @@ def inspect(cfg_or_recipe, *, frames=None):
     failed = [c["id"] for c in checks if not c["ok"]]
     skipped = [c["id"] for c in checks if not c["applicable"]]
     notes = []
+    f5 = by_id.get("F5") or {}
+    if not render_aim and f5.get("applicable", True):
+        notes.append("F5 judged the sensors as the scene file poses them; the "
+                     "renderer re-aims radar/lidar at the primary target per "
+                     "frame (inspect(..., render_aim=True) reports that layer)")
+    layers = getattr(ctx, "aim_layers", None)
+    if layers:
+        cfg_l = layers["config"]
+        ren_l = layers["render"]
+        if cfg_l["reached"] != ren_l["reached"]:
+            notes.append(
+                "aim layers disagree: the rendered pose reaches %d of %d "
+                "labelled target(s), the authored sensors pose reaches %d; the "
+                "dataset re-aims radar/lidar at the primary target every frame, "
+                "so the scene file is not what gets rendered"
+                % (ren_l["reached"], ren_l["total"], cfg_l["reached"]))
     grounds = ctx.cfg.get("ground") or {}
     n_ent = 0
     if (ctx.cfg.get("ecm") or {}).get("enabled"):
@@ -2126,6 +2453,7 @@ def inspect(cfg_or_recipe, *, frames=None):
         formations={k: [m.get("name") for m in g["members"]]
                     for k, g in ctx.formations().items()},
         ecm_entities=n_ent, camera=ctx.has_camera(),
+        aim_layer="render" if render_aim else "config",
         ground_z=ctx._ground_z if grounds.get("enabled", True) else None,
         checks=len(checks), passed=len(checks) - len(failed) - len(skipped),
         skipped=skipped, failed=failed, ok=not failed, notes=notes,
@@ -2165,12 +2493,17 @@ def format_report(results):
     for res in results:
         s = res.get("summary") or {}
         bad = [c for c in res.get("checks", []) if not c["ok"]]
-        if not bad:
+        notes = s.get("notes") or []
+        # A note is not always a failure: the aim layers disagree on a scene
+        # that renders correctly, and that is exactly the kind of "the file says
+        # one thing, the renderer does another" a reader has to see even when
+        # the row is green.
+        if not bad and not notes:
             continue
         lines.append(os.path.basename(str(s.get("scene", "?"))))
         for c in bad:
             lines.append("  %-3s FAIL  %s" % (c["id"], c["detail"]))
-        for note in s.get("notes") or []:
+        for note in notes:
             lines.append("  note  %s" % note)
         lines.append("")
     total = sum(len(r.get("checks", [])) for r in results)

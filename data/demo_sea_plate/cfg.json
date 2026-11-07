@@ -94,11 +94,11 @@
     0.0
    ],
    "vel": [
-    -0.0,
-    -0.0,
-    12.0
+    11.494,
+    3.448,
+    0.0
    ],
-   "rot": -180.0,
+   "rot": 16.698,
    "yaw_mode": "velocity",
    "scale": 1.0,
    "mat": "paint_warship",
@@ -179,7 +179,7 @@
    "tx_power_dbm": 43.0,
    "noise_figure_db": 8.0,
    "clutter_density": 0.0,
-   "mti_min_vr_mps": 0.8,
+   "mti_min_vr_mps": 0.0,
    "pfa": 1e-06,
    "swerling": "I",
    "clutter_db": -12.0,
@@ -196,8 +196,8 @@
    ],
    "up": [
     0.0,
-    0.0,
-    1.0
+    1.0,
+    0.0
    ]
   },
   "lidar": {
@@ -219,7 +219,12 @@
    "max_range_m": 2974.5,
    "range_spec_m": 2045.0,
    "pulse_energy_nj": 4000.0,
-   "aperture_mm": 50.0
+   "aperture_mm": 50.0,
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ]
   },
   "sar": {
    "band": "X",
@@ -355,7 +360,11 @@
  },
  "view": {
   "aspect": "top_down",
-  "ground_span_m": 260.0
+  "ground_span_m": 260.0,
+  "height_ladder_m": [
+   0.0
+  ],
+  "radar_resolvable_targets": null
  },
  "notes": []
 }

@@ -1168,3 +1168,138 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent-line); outli
 .fx-pick select { margin-left: auto; }
 .fx-pick:hover { border-color: var(--line-strong); color: var(--text); }
 .fx-pick.on { border-color: var(--accent-line); background: var(--accent-soft); color: #dcebff; }
+
+/* ------------------------------------- 三模态对齐 / 雷达标注-纯净对照 */
+
+.align-block, .radar-block {
+  margin: 18px 0 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.align-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: 10px;
+}
+.align-head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.align-sub { color: var(--faint); font-size: 10.5px; }
+.align-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.align-chip {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--dim);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.align-chip.ok { border-color: rgba(72, 213, 151, 0.35); color: var(--ok); }
+.align-chip.bad { border-color: rgba(239, 115, 115, 0.35); color: #f0a5a5; }
+.align-tools, .radar-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.align-range {
+  color: var(--dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.align-legend { color: var(--faint); font-size: 10px; line-height: 1.5; }
+.align-scroll {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.align-table {
+  width: 100%;
+  min-width: 740px;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.align-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line-strong);
+  background: #151a21;
+  color: var(--faint);
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+.align-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.align-row.miss td { background: rgba(239, 115, 115, 0.045); }
+.align-frame td {
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--dim);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+}
+.align-name b { display: block; font-size: 11.5px; font-weight: 600; }
+.align-cls { color: var(--faint); font-size: 10px; }
+.align-val { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.align-val + .align-val { margin-top: 2px; }
+.align-val.dim { color: var(--faint); }
+.align-miss { color: var(--faint); }
+.align-ok { color: var(--ok); white-space: nowrap; }
+.align-bad { color: #f0a5a5; white-space: nowrap; }
+.align-empty { padding: 14px 8px; color: var(--faint); text-align: center; }
+.align-note { margin: 8px 0 0; color: var(--faint); font-size: 10.5px; line-height: 1.55; }
+
+.radar-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.radar-pair.single { grid-template-columns: minmax(0, 1fr); }
+.radar-fig {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.radar-fig a { display: block; background: #05070a; }
+.radar-fig img { display: block; width: 100%; height: auto; }
+.radar-fig figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  color: var(--dim);
+  font-size: 10.5px;
+}
+.radar-fig figcaption b { color: var(--text); font-weight: 600; }
+.radar-frame { min-width: 96px; }
+
+/* 放置卡片里的生成前提示：几何（蓝）与航路（黄）分开，避免把两条结论混成一句 */
+.place-hint {
+  margin: 8px 0 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.place-hint.geo {
+  border: 1px solid rgba(94, 168, 255, 0.2);
+  background: rgba(94, 168, 255, 0.07);
+  color: #cfd8e6;
+}
+.place-hint.route {
+  border: 1px solid rgba(229, 181, 103, 0.28);
+  background: rgba(229, 181, 103, 0.08);
+  color: #f0d7a8;
+}

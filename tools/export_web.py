@@ -65,6 +65,10 @@ MOD_IMG = [
     ("optical", "images/optical", "可见光 RGB"),
     ("mwir", "images/ir_preview_mwir", "中波红外 3–5 µm"),
     ("lwir", "images/ir_preview_lwir", "长波红外 8–12 µm"),
+    # The RD map used to be a 1600x64 strip where the target was two pixels, so
+    # it was kept off the site. It is now a 1280x720 scope figure with axes and
+    # a target table, which is the most informative picture the radar produces.
+    ("radar", "images/radar", "雷达 · 距离-多普勒"),
     ("radar_ra", "images/radar_ra", "雷达 · 距离-角度"),
     ("lidar_range", "lidar/range", "激光雷达 · 距离"),
     ("lidar_intensity", "lidar/intensity", "激光雷达 · 强度"),
@@ -74,6 +78,7 @@ MOD_LABEL = {
     "optical": "labels/optical",
     "mwir": "labels/ir_mwir",
     "lwir": "labels/ir_lwir",
+    "radar": "labels/radar",
     "radar_ra": None,
     "lidar_range": "labels/lidar",
     "sar": "labels/sar",
@@ -140,9 +145,6 @@ def modalities(src, meta):
         add(key, rel, MOD_LABEL.get(key), title)
     return out
 
-# The range/Doppler map (images/radar) is a 1600x64 strip where the target is a
-# couple of pixels; it is a legitimate dataset product but useless as a gallery
-# picture, so it stays out of the site. The range/angle map is what reads.
 WEB_MAX_W = 900
 
 

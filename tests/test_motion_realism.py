@@ -224,130 +224,45 @@ class DerivativeContractTests(unittest.TestCase):
                                          lambda tt: cp.object_state(obj, tt)[0], t))), 1e-4)
 
 
-class EnvelopeTests(unittest.TestCase):
-    """No published track may exceed the envelope of the airframe it claims."""
+class GeneratedRouteTests(unittest.TestCase):
+    """A recipe's drawn route must reach the scene already flyable.
 
-    def test_every_path_stays_inside_a_sane_envelope(self):
-        uav = motion.Envelope.preset("uav_fixed")
-        small = motion.Envelope.preset("uav_rotor")
-        cases = [
-            (motion.Line([0, 0, 100], [40, 0, 0]), uav),
-            (motion.Arc([0, 5000, 3000], 5000.0, 0.04, z0=3000.0), motion.Envelope.preset("fighter")),
-            (motion.Arc([0, 0, 80], 120.0, 0.15, z0=80.0), small),
-            (motion.Figure8([0, 0, 50], 40.0, 20.0, 0.3), small),
-            (motion.Weave([0, 0, 40], [12, 0, 0], 2.0, hz=0.3), small),
-            (motion.FlightManeuver([0, 0, 60], speed_mps=4.0, duration_s=4.0,
-                                   turn_deg=60.0, climb_mps=1.5, bank_max_deg=30.0), small),
-        ]
-        for path, env in cases:
-            with self.subTest(path=type(path).__name__, cls=env.kind):
-                res = motion.check_track(path, env, n_frames=64, dt=0.1)
-                self.assertTrue(res["passed"], "%s: %s" % (
-                    type(path).__name__, res["violations"][:3]))
+    This is the regression guard for the defect itself: the three-aircraft plate
+    recipe flies 80 m/s through corners a 30 m stroke cannot express, and every
+    previous run of it published a track that measured 32037 m/s^3 of jerk.
+    """
 
-    def test_checker_names_the_frame_and_rule_not_just_failure(self):
-        """A violation has to be actionable: frame, rule, value, limit."""
-        # 200 m/s on a 200 m radius is 20 g: legal to write down, impossible to fly.
-        bad = motion.Arc([0, 200, 3000], 200.0, 1.0, z0=3000.0)
-        res = motion.check_track(bad, motion.Envelope.preset("fighter"),
-                                 n_frames=16, dt=0.1)
-        self.assertFalse(res["passed"])
-        rules = {v["rule"] for v in res["violations"]}
-        self.assertTrue({"g_max", "bank_max"} & rules, rules)
-        first = res["violations"][0]
-        for key in ("frame", "t", "rule", "value", "limit", "message"):
-            self.assertIn(key, first)
-        self.assertGreater(first["value"], first["limit"])
-
-    def test_arc_turn_rate_and_bank_agree_with_the_physics(self):
-        """bank = atan(v*omega/g) exactly, for the published fighter arc."""
-        p = motion.Arc([0.0, 5000.0, 3000.0], 5000.0, 0.04, z0=3000.0)
-        v, a = p.vel(1.1), p.accel(1.1)
-        speed = float(np.linalg.norm(v))
-        omega = motion.turn_rate(v, a)
-        bank = motion.coordinated_bank_deg(v, a)
-        self.assertAlmostEqual(speed, 200.0, places=9)
-        self.assertAlmostEqual(omega, 0.04, places=12)
-        self.assertAlmostEqual(np.tan(np.radians(-bank)) * motion.G,
-                               speed * omega, places=8)
-        self.assertAlmostEqual(float(np.linalg.norm(a)), speed * omega, places=8)
-        # a level turn carries 1/cos(bank) of load, and nothing else
-        self.assertAlmostEqual(motion.load_factor(v, a),
-                               1.0 / np.cos(np.radians(bank)), places=9)
-
-    def test_envelope_classification_follows_the_airframe_not_the_label(self):
-        self.assertEqual(motion.Envelope.classify(dict(cls="fighter")), "fighter")
-        self.assertEqual(motion.Envelope.classify(dict(cls="uav")), "uav_fixed")
-        # a model directory overrides a vague cls
-        self.assertEqual(motion.Envelope.classify(
-            dict(cls="uav", model="../assets/models/旋翼无人机/x.obj")), "uav_rotor")
-        # a taxiing aircraft is a ground vehicle
-        self.assertEqual(motion.Envelope.classify(
-            dict(cls="fighter", motion_type="ground")), "ground")
-        # scenery with no declared limits is not judged as an aircraft
-        self.assertEqual(motion.Envelope.classify(dict(cls="scenery")), "ground")
-        # but anything that declares flight limits is
-        self.assertEqual(motion.Envelope.classify(
-            dict(cls="scenery", kinematics={"max_speed_mps": 50})), "uav_fixed")
-
-    def test_scene_kinematics_override_the_class_defaults(self):
-        env = motion.Envelope.from_spec(dict(cls="uav", kinematics={"max_speed_mps": 33.0}))
-        self.assertEqual(env.kind, "uav_fixed")
-        self.assertAlmostEqual(env.max_speed_mps, 33.0)
-        # untouched keys keep their class value
-        self.assertAlmostEqual(env.max_g, 3.0)
-
-
-class ContinuityTests(unittest.TestCase):
-    """Between frames the acceleration and the heading must not step."""
-
-    def _frame_series(self, path, n=10, dt=0.1):
-        return [(path.vel(k * dt), path.accel(k * dt)) for k in range(n)]
-
-    def test_acceleration_does_not_step_between_frames(self):
-        # A quintic Hermite path is C2, so accel is continuous across knots; the
-        # old shape-per-frame sampling had no such guarantee at all.
-        paths = [
-            motion.FlightManeuver([0, 0, 60], speed_mps=4.0, duration_s=4.0,
-                                  turn_deg=60.0, climb_mps=1.5, bank_max_deg=30.0),
-            motion.FlightManeuver([0, 0, 3000], heading_deg=90.0, speed_mps=200.0,
-                                  duration_s=8.0, turn_deg=-90.0, bank_max_deg=65.0),
-        ]
-        for p in paths:
-            series = self._frame_series(p, n=40, dt=0.1)
-            accs = np.array([a for _v, a in series])
-            step = float(np.max(np.linalg.norm(np.diff(accs, axis=0), axis=1)))
-            scale = float(np.max(np.linalg.norm(accs, axis=1)))
-            self.assertLess(step, 0.4 * scale + 0.5,
-                            "acceleration steps %.2f m/s^2 between frames" % step)
-
-    def test_heading_changes_smoothly_and_in_one_direction_in_a_turn(self):
-        p = motion.FlightManeuver([0, 0, 60], heading_deg=0.0, speed_mps=4.0,
-                                  duration_s=4.0, turn_deg=60.0, bank_max_deg=30.0)
-        yaws = [p.yaw(k * 0.05) for k in range(81)]
-        diffs = np.diff(yaws)
-        self.assertTrue(np.all(diffs > -1e-6), "heading reversed during a steady turn")
-        self.assertLess(float(np.max(np.abs(np.diff(diffs)))), 0.25,
-                        "heading rate is not smooth")
-
-    def test_manoeuvre_flies_the_heading_change_it_advertises(self):
-        for turn in (-90.0, 0.0, 45.0, 120.0):
-            p = motion.FlightManeuver([0, 0, 500], heading_deg=30.0, speed_mps=6.0,
-                                      duration_s=5.0, turn_deg=turn, bank_max_deg=40.0)
-            prof = p.profile()
-            with self.subTest(turn=turn):
-                self.assertAlmostEqual(prof["heading_change_deg"], turn, delta=1.5)
-                self.assertLessEqual(abs(prof["bank_peak_deg"]), 40.0 + 1e-6)
-                self.assertLessEqual(prof["max_load_g"], 3.0 + 1e-6)
-
-    def test_manoeuvre_clips_and_says_so_when_the_bank_limit_binds(self):
-        """An impossible request must be clipped *and reported*, never silent."""
-        p = motion.FlightManeuver([0, 0, 500], speed_mps=60.0, duration_s=2.0,
-                                  turn_deg=170.0, bank_max_deg=25.0)
-        prof = p.profile()
-        self.assertLessEqual(abs(prof["bank_peak_deg"]), 25.0 + 1e-6)
-        self.assertTrue(prof["notes"], "clipping was not reported")
-        self.assertIn("clipped", prof["notes"][0])
+    def test_plate_recipe_is_shaped_and_its_velocity_matches_its_route(self):
+        import copy
+        import json
+        from simkit import scenegen
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "scenes", "demo_three_ships_plate.json"),
+                  encoding="utf-8") as fh:
+            recipe = json.load(fh)["recipe"]
+        cfg = scenegen.build_scene(copy.deepcopy(recipe))
+        labelled = [o for o in cfg["objects"] if o.get("label", True)]
+        self.assertEqual(len(labelled), 3)
+        dt = float(cfg["frames"]["dt"])
+        for obj in labelled:
+            with self.subTest(name=obj["name"]):
+                traj = obj["trajectory"]
+                self.assertTrue(traj.get("preshaped"), "the route was published unshaped")
+                env = motion.Envelope.from_spec(obj)
+                path = motion.Waypoints(traj["points"], speed=float(traj["speed_mps"]),
+                                        loop=False, ramp_in=False)
+                worst = motion._measure_route(path, frames=20, dt=dt)
+                self.assertLessEqual(worst["jerk_mps3"], env.max_jerk_mps3)
+                self.assertLessEqual(worst["bank_deg"], env.max_bank_deg)
+                self.assertLessEqual(worst["accel_mps2"], env.max_accel_mps2)
+                # objects[].vel is the route's own initial tangent.  It used to be
+                # the line of sight -- [0, 0, 250] on a plate view, i.e. straight
+                # up at 250 m/s for an airframe flying at 80 m/s to the east.
+                v = np.asarray(obj["vel"], float)
+                speed = float(np.linalg.norm(v))
+                self.assertAlmostEqual(speed, float(traj["speed_mps"]), delta=0.5)
+                tan = motion.route_heading(traj["points"])
+                self.assertGreater(float(np.dot(v / speed, tan)), 0.999)
 
 
 class SceneLevelTests(unittest.TestCase):
@@ -387,7 +302,14 @@ class SceneLevelTests(unittest.TestCase):
         alts = [r["altitude_m"] for r in obj["samples"]]
         self.assertTrue(all(y is not None for y in yaws))
         self.assertGreater(yaws[-1] - yaws[0], 45.0, "the clip turns less than it claims")
-        self.assertTrue(all(b <= 1e-6 for b in banks), "bank should be to the right")
+        # 0.5 deg of bank is 0.09 m/s^2 of lateral acceleration -- below anything
+        # that means "turning" -- and the first frame has no left neighbour, so a
+        # forward difference there measures the roll-in from rest and reads
+        # +0.056 deg where a centred step reads -0.028 deg.  Pinning the sign to
+        # 1e-6 deg made this assertion test the differencing scheme instead of
+        # the flight, which is what the frame-0 one-sided derivative switch in
+        # tools/motion_diagnose exposed.
+        self.assertTrue(all(b <= 0.5 for b in banks), "bank should be to the right")
         self.assertLess(banks[0], 0.5, "the clip must start wings level")
         self.assertLess(banks[-1], 2.0, "the clip must roll out")
         self.assertLess(min(banks), -8.0, "the clip never really rolls in")

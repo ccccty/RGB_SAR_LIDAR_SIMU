@@ -46,6 +46,22 @@ one), and the frame count only decides how much of the range band the target
 crosses. Deriving the speed from frames/duration made a 2-frame preview of one
 recipe reach Mach 3.5 while the 20-frame version flew at 300 m/s.
 
+A top_down (nadir plate) view is geometrically degenerate for a multi-target
+radar picture: the camera looks straight down, every placed target sits on the
+same plane and flies level, so the line of sight is perpendicular to the track,
+the radial velocity is ~0 for all of them, and only range can separate them. A
+studio run with three fighters measured three ranges inside two range cells and
+one bright RD peak. build_scene therefore staggers those targets in height
+(along the line of sight) by TOP_DOWN_STAGGER_CELLS range cells, capped at
+TOP_DOWN_STAGGER_FRAC of the camera height so the optical frame still contains
+them, and records the ladder in cfg["view"] plus a cfg["notes"] line. The step
+is solved in slant range, not height, because a target off the boresight turns
+a metre of height into less than a metre of range. Explicit objects[].z always
+wins. Velocity separation is impossible in this geometry: head_on / pursuit
+give it for an airframe (line of sight along the track) and the look_down
+aspect -- ASPECTS already carries it, with the depressed camera in _site() --
+gives it for a surface target.
+
 environment.background also has to reach the renderers, or a chosen plate is
 decoration in the JSON only. It is written where they read it -- the top-level
 "optical" render block (optical.sky_image) and the top-level "ir" radiometry
@@ -62,9 +78,13 @@ import random
 import os
 import re
 
+from . import motion
+
 ENV_KINDS = ('sky', 'ground', 'sea')
 # "auto" defers to the environment (air -> head-on, surface -> look-down);
-# "look_down" is the forced top-down view for ground and sea targets.
+# "look_down" forces the depressed view: _site() puts the camera on the
+# depression ray, so the line of sight is tilted and a surface target has a
+# velocity component along it. That is the recipe entry for Doppler separation.
 ASPECTS = ('auto', 'head_on', 'pursuit', 'look_down', 'top_down')
 
 # ------------------------------------------------------------------ constants
@@ -84,7 +104,8 @@ WEATHER_LABELS = {'clear': '晴', 'cloudy': '多云', 'rain': '雨', 'fog': '雾
                   'mixed': '混合', 'evolve': '演变'}
 ENV_LABELS = {'sky': '天空', 'ground': '地面', 'sea': '海面'}
 BACKGROUND_MODES = ('none', 'hdri', 'upload', 'library')
-BACKGROUND_LABELS = {'none': '纯色背景', 'hdri': 'HDRI', 'upload': '上传图'}
+BACKGROUND_LABELS = {'none': '纯色背景', 'hdri': 'HDRI', 'upload': '上传图',
+                    'library': '图库'}
 
 SENSOR_KEYS = ('optical', 'ir', 'radar', 'lidar', 'sar')
 ECM_MODES = ('none', 'active', 'passive', 'mixed')
@@ -276,6 +297,42 @@ SAMPLE_MARGIN = 1.4        # keep the target off the last range cell
 SAMPLE_MIN = 2048
 SAMPLE_MAX = 32768
 RADAR_BANDWIDTH_MHZ = 50.0
+
+# Nadir plate views place every target on one plane, so the range-Doppler map
+# has no velocity contrast to separate them by (the line of sight is vertical
+# and the tracks are horizontal, i.e. perpendicular to it). Placed targets are
+# therefore staggered in height -- along the line of sight -- by this many range
+# cells, with the total ladder capped at this fraction of the camera height so a
+# narrow optical frame still contains the formation.
+#
+# Eight cells is the number that makes two targets *resolvable* and it is not
+# enough to make them *visible*: the displayed map spans the whole range window,
+# so eight cells of a 6.4 km window is under ten pixels and the formation still
+# reads as one streak (measured on the operator's three-aircraft plate). Thirty-
+# two cells keeps each airframe a few cells wide and puts clear space between
+# them on the figure; the cap below still compresses the step when a wide
+# formation would otherwise be pushed out of the optical frame.
+TOP_DOWN_STAGGER_CELLS = 32
+# What the summary promises. "Resolvable" is a physics claim -- two targets in
+# different range cells -- so it is measured against this smaller separation,
+# not against the 32-cell step an operator's eye needs. A pinned altitude of,
+# say, 120 m is 19 cells from the flat rung and is genuinely resolvable even
+# though it is well inside the visual step, and the summary must not report that
+# airframe as lost.
+TOP_DOWN_STAGGER_PROMISE_CELLS = 8
+TOP_DOWN_STAGGER_FRAC = 0.15
+# 1-per-mille guard on the step: z is rounded to millimetres in the scene file,
+# and 8 cells exactly would land a neighbour a millimetre inside the promise
+# after that rounding.
+TOP_DOWN_STAGGER_GUARD = 1.001
+# Height is a shorter lever than slant range once a target sits off the
+# boresight: dR/dz = cos(tilt). Reserve this fraction of the cap for that so a
+# ladder sized in slant range never runs past the height budget.
+TOP_DOWN_TILT_GUARD = 0.98
+# Range resolution used when the waveform cannot be derived at all. A 60 m cell
+# is coarser than anything build_scene emits; the fallback only keeps the ladder
+# finite instead of dividing by a zero bandwidth.
+RADAR_RES_FALLBACK_M = 60.0
 
 # ECM: the measured calibration. 200 W ERP, Ku, 500 m, barrage over 200 MHz
 # lands at J/S ~ +10 dB; anything near 2 W is a no-op on this receiver.
@@ -648,7 +705,12 @@ def validate_recipe(recipe):
                 vals.append(_number(_uv[2], field + '.uv[2]', 0.0, 1.0))
             item['uv'] = vals
         if raw.get('z') is not None:
-            item['z'] = _number(raw.get('z'), field + '.z', -50.0, 1000.0, ' m')
+            # The height ladder a top_down radar scene writes back can be a few
+            # hundred metres to a couple of kilometres (0.15 x camera height, and
+            # the camera sits at the slant range). The old 1000 m ceiling made a
+            # re-saved scene unloadable: "objects[2].z 超出 -50~1000 m（收到
+            # 1421.252）", so the operator's own recipe could not be regenerated.
+            item['z'] = _number(raw.get('z'), field + '.z', -1000.0, 20000.0, ' m')
         # A per-target route. plan.py already lets obj["trajectory"] win over
         # formation and over the primary's line, so this only has to survive
         # validation; dropping it here was why "custom route per aircraft" did
@@ -888,6 +950,67 @@ def _norm_target_route(raw, field):
                 ramp_in=bool(raw.get("ramp_in", False)))
 
 
+def _extend_cruise_route(route, duration_s, frame_half=None):
+    """Append a straight leg so an open cruise route fills the whole clip.
+
+    A Waypoints route brakes at its last point and holds there. A 20-frame clip
+    at 10 fps is 2 s, which at 80 m/s is 160 m, but a stroke drawn on a 600 m
+    plate is typically 20-40 m: the airframe finished its route in a quarter of
+    a second and hovered for the rest of the clip. The dataset then showed
+    aircraft that "fly arbitrarily" -- they had in fact stopped. Extending the
+    final heading keeps the drawn manoeuvre and lets the airframe leave it at
+    cruise, which is what a cruise leg means.
+
+    Only open routes are extended, and never one that ramps in from rest: that
+    route spends its first second accelerating, so its length is not the span
+    the clip needs. Returns the metres added (0 when nothing changed).
+    """
+    pts = route.get("points") or []
+    if len(pts) < 2 or route.get("loop") or route.get("ramp_in"):
+        return 0.0
+    speed = float(route.get("speed_mps") or 0.0)
+    if not (speed > 0.0):
+        return 0.0
+    length = 0.0
+    for a, b in zip(pts, pts[1:]):
+        length += math.sqrt(sum((float(b[k]) - float(a[k])) ** 2 for k in range(3)))
+    need = speed * max(float(duration_s), 0.0)
+    if length <= 1e-6 or need <= length * 1.02:
+        return 0.0
+    direction = None
+    for i in range(len(pts) - 1, 0, -1):
+        d = [float(pts[i][k]) - float(pts[i - 1][k]) for k in range(3)]
+        n = math.sqrt(sum(v * v for v in d))
+        if n > 1e-6:
+            direction = [v / n for v in d]
+            break
+    if direction is None:
+        return 0.0
+    # 5 % margin: the spline starts braking before the final knot, so a route
+    # that exactly filled the clip would still hold for the last frames.
+    extra = need - length + 0.05 * need
+    last = [float(v) for v in pts[-1]]
+    if frame_half:
+        # Never fly the airframe out of the plate: a route extended past the
+        # frame edge would leave the target out of the optical frame (and out of
+        # its labels) for the last frames, which is worse than the short-route
+        # freeze this extension is fixing. Scaled to 98 % of the frame.
+        scale = 1.0
+        for k in (0, 1):
+            d = direction[k] * extra
+            if abs(d) < 1e-9:
+                continue
+            limit = 0.98 * float(frame_half[k])
+            room = (limit - last[k]) if d > 0 else (-limit - last[k])
+            scale = min(scale, max(0.0, room / d))
+        if scale < 0.05:
+            return 0.0
+        extra *= scale
+    route["points"] = list(pts) + [
+        [round(last[k] + direction[k] * extra, 3) for k in range(3)]]
+    return extra
+
+
 def _object_size(asset, scale):
     """Characteristic size, matching plan.object_size_m's convention."""
     row = _asset_row(asset) or {}
@@ -912,9 +1035,20 @@ def _object_facts(asset, cls):
     return rcs_db, temp
 
 
-def _envelope(cls):
+def _envelope(cls, env=None):
+    """The kinematic box the consistency checker will hold this object to.
+
+    A sky scene has no ground plane, so z there is a plate coordinate rather
+    than an altitude: the demo plate's bottom rung sits at z = 0 by
+    construction, and applying the 50 m air floor reported it as "buried" on
+    every one of the 20 frames (altitude_min, inside the B2 bucket).  Surface
+    scenes keep the floor, because their z really is height above the ground.
+    """
     if cls in AIR_CLS:
-        return dict(CLS_ENVELOPE['air'])
+        out = dict(CLS_ENVELOPE['air'])
+        if str(env) == 'sky':
+            out['min_altitude_m'] = 0.0
+        return out
     if cls == 'ship':
         return dict(CLS_ENVELOPE['sea'])
     return dict(CLS_ENVELOPE['ground'])
@@ -1259,7 +1393,117 @@ def _radar_window(range_m, bandwidth_mhz=RADAR_BANDWIDTH_MHZ):
     return count, round(band / 1e6, 3)
 
 
-def _sensors(cam, look, fov, range_m, site, v_req=0.0, up=None):
+def _radar_range_res(range_m, closing_mps):
+    """Range resolution r_res = c/(2B) of the waveform _sensors() will emit.
+
+    The nadir height ladder has to use the same cell height as the emitted
+    sensors.radar block. Running the waveform derivation here -- instead of
+    reading a hand-written constant -- keeps the two in sync, and avoids
+    building the sensor block before the objects exist.
+
+    Falls back to RADAR_RES_FALLBACK_M when no positive bandwidth comes out
+    (a missing or nonsensical radar configuration), so a scene still builds
+    instead of raising on a geometry guard.
+    """
+    wave = _radar_waveform(float(range_m), abs(float(closing_mps)))
+    band = float(wave.get('bandwidth_mhz') or 0.0) * 1e6
+    res = (C_LIGHT / (2.0 * band)) if band > 0.0 else float('nan')
+    if not math.isfinite(res) or res <= 0.0:
+        return float(RADAR_RES_FALLBACK_M)
+    # Same two-decimal rounding the emitted sensors.radar.range_res_m carries,
+    # so the ladder and the config the operator reads quote one number.
+    return max(0.01, round(float(res), 2))
+
+
+def _nadir_ladder_plan(specs, cam_z, range_m, speed):
+    """Numbers that decide the top_down height ladder, or None when it is moot.
+
+    Why a ladder at all: in a nadir plate view the optical and radar boresights
+    are vertical, so a level track has no component along the line of sight.
+    The closing rate is therefore ~0 for every target and the RD map has no
+    Doppler axis to separate them by -- they can only be told apart in RANGE.
+    A range cell is r_res = c/(2B) tall, so neighbours need
+    TOP_DOWN_STAGGER_CELLS cells between them.
+
+    The step is measured in SLANT RANGE. Height is a slightly shorter lever for
+    a target off the boresight (dR/dz = cos(tilt)), so a ladder sized in height
+    could land under the requirement; the caller solves z from the slant target
+    instead. Room is capped in height because raising the whole formation
+    toward the lens shrinks its angular margin in a narrow frame.
+
+    specs are normalised recipe objects; an explicit z is excluded, and an
+    object with a per-target route counts once because plan.py flies one
+    airframe per route.
+    """
+    counts = [1 if s.get('trajectory') else int(s.get('count') or 1)
+              for s in specs]
+    stagger_n = sum(c for j, c in enumerate(counts)
+                    if specs[j].get('z') is None)
+    if stagger_n <= 1:
+        return None
+    r_res = _radar_range_res(range_m, speed)
+    need = TOP_DOWN_STAGGER_CELLS * r_res * TOP_DOWN_STAGGER_GUARD
+    room = TOP_DOWN_STAGGER_FRAC * float(cam_z) * TOP_DOWN_TILT_GUARD
+    step = need
+    capped = False
+    if need * (stagger_n - 1) > room:
+        step = room / float(stagger_n - 1)
+        capped = True
+    resolvable = stagger_n
+    # Two different separations: what the eye needs (need, the step) and what
+    # physics needs (cell, the promise behind "resolvable").
+    cell = TOP_DOWN_STAGGER_PROMISE_CELLS * r_res * TOP_DOWN_STAGGER_GUARD
+    if capped and cell > 0.0:
+        # The height budget, not the cell height, now decides how many targets
+        # still land in separate cells.
+        resolvable = max(1, min(stagger_n, 1 + int(room // cell)))
+    return dict(n=stagger_n, step=step, need=need, cell=cell, r_res=r_res,
+                room=room, capped=capped, resolvable=resolvable, counts=counts)
+
+
+def _nadir_separation_note(r):
+    """'俯视错层·雷达可分辨 3 个目标' for the UI summary, or None.
+
+    Mirrors the conditions build_scene uses: an explicit top_down aspect, a
+    radar among the sensors, a plate to place on, and a ladder that actually
+    applies. Cheap because validate_recipe already ran.
+    """
+    view = r['view']
+    if view.get('aspect') != 'top_down':
+        return None
+    if 'radar' not in r['capture']['sensors']:
+        return None
+    bg = (r['environment'].get('background') or {}).get('mode')
+    if bg not in ('library', 'upload'):
+        return None                     # build_scene falls back to an engagement
+    span = float(view.get('ground_span_m') or 0.0) or 600.0
+    fov = float(view['fov_deg'])
+    cam_z = (span / 2.0) / max(math.tan(math.radians(fov) / 2.0), 1e-6)
+    primary = r['objects'][0]
+    tj = view.get('trajectory') or {}
+    if tj.get('mode') == 'drawn':
+        speed = float(tj['speed_mps'])
+    else:
+        speed = float(view.get('closing_mps')
+                      or CLOSING_MPS.get(primary['cls'], CLOSING_MPS['target']))
+    plan = _nadir_ladder_plan(r['objects'], cam_z, cam_z, speed)
+    heights = [s.get('z') for s in r['objects']]
+    explicit = any(h is not None for h in heights)
+    distinct = len({round(float(h), 3) for h in heights if h is not None}) > 1
+    if not plan:
+        # A re-saved scene carries the ladder as explicit z, so no new ladder
+        # applies -- but those distinct altitudes are still what separates the
+        # formation, and the summary should not go silent about it.
+        return '俯视错层·雷达按高度分离' if explicit and distinct else None
+    if explicit:
+        # An explicit altitude breaks the regular chain, and this one-line
+        # summary cannot solve the per-target placement; the scene's own
+        # cfg["notes"] carries the measured count.
+        return '俯视错层·雷达按高度分离'
+    return '俯视错层·雷达可分辨 %d 个目标' % plan['resolvable']
+
+
+def _sensors(cam, look, fov, range_m, site, v_req=0.0, up=None, env=None, plate=False):
     pos = [round(v, 3) for v in cam]
     aim = [round(v, 3) for v in look]
     camera = dict(pos=list(pos), look_at=list(aim), fov_deg=round(fov, 4),
@@ -1278,7 +1522,21 @@ def _sensors(cam, look, fov, range_m, site, v_req=0.0, up=None):
                  v_nyq_mps=wave['v_nyq_mps'], unambiguous=wave['unambiguous'],
                  range_res_m=wave['range_res_m'], r_max_m=wave['r_max_m'],
                  beamwidth_el_deg=6.0, n_chirps=64, tx_power_dbm=43.0,
-                 noise_figure_db=8.0, clutter_density=0.0, mti_min_vr_mps=0.8,
+                 noise_figure_db=8.0, clutter_density=0.0,
+                 # MTI is clutter rejection, not a target filter. A sky scene has
+                 # no ground to notch, and a non-zero gate there only deletes the
+                 # targets a plate geometry leaves near zero radial velocity
+                 # (measured: three aircraft flying level over a plate dipped
+                 # below 0.8 m/s in 3 of 8 frames and vanished from each of them,
+                 # rd_map peak still 13 dB over the floor). Ground and sea keep
+                 # the gate: there it is doing the job it exists for.
+                 # MTI rejects stationary clutter; in a plate view the line of
+                 # sight is near-vertical, so a vehicle driving toward the plate
+                 # centre at 15 m/s shows 0.3 m/s of closing and the 0.8 m/s gate
+                 # deletes it -- the ground plate came back with zero radar
+                 # detections on every frame. A plate has no ground clutter at
+                 # all (the backdrop is a photograph), so the gate buys nothing.
+                 mti_min_vr_mps=(0.0 if (str(env) == 'sky' or plate) else 0.8),
                  pfa=1e-06, swerling='I', clutter_db=-12.0,
                  ground_clutter_db=-35.0, pos=list(pos), look_at=list(aim),
                  up=[0.0, 0.0, 1.0])
@@ -1593,10 +1851,42 @@ def build_scene(recipe):
     vel = [round(sign * site['unit'][i] * speed, 3) for i in range(3)]
     yaw = round(math.degrees(math.atan2(vel[1], vel[0])), 3)
 
+    # ---- nadir multi-target height ladder --------------------------------
+    # A top_down plate view is the one geometry where a multi-target radar
+    # picture cannot work by itself: the camera looks straight down, the placed
+    # targets share one plane and fly level, so the line of sight is
+    # perpendicular to every track, the radial velocity is ~0 and Doppler
+    # separates nothing. Range is the only axis left (a cell is c/(2B) tall),
+    # hence the height ladder: height IS the line of sight here. The step is
+    # solved per target in slant range, so a target off the boresight cannot
+    # turn a metre of height into less than a metre of range.
+    #
+    # Velocity separation would need a line of sight that is not perpendicular
+    # to the track: head_on / pursuit do that for an airframe, and look_down is
+    # the recipe entry for a depressed view of a surface target (ASPECTS carries
+    # it and _site() puts the camera on the requested depression ray). No nadir
+    # plate view can produce it, which is why this ladder exists and no Doppler
+    # trick is attempted.
+    #
+    # The budget is a fraction of the camera height: the optical frame is only
+    # ground_span_m across, and stacking the formation toward the lens eats its
+    # angular margin. An explicit objects[].z is never overwritten.
+    ladder = None
+    if top_down and 'radar' in cap['sensors']:
+        _lplan = _nadir_ladder_plan(r['objects'], float(site['cam_z']),
+                                    range_m, speed)
+        if _lplan:
+            ladder = dict(_lplan)
+            ladder.update(prev=None, slants=[],
+                          writeback=all(c == 1 for c in _lplan['counts']))
+
     objects = []
+    # Messages about route extension, collected while the objects are placed
+    # (the note block at the end reports them).
+    _route_notes = []
     counter = 0
     cursor = 0.0
-    for spec in r['objects']:
+    for j, spec in enumerate(r['objects']):
         size = _object_size(spec['asset'], spec['scale'])
         rcs_db, temp_c = _object_facts(spec['asset'], spec['cls'])
         # Formation spacing has to fit the frame: a fixed 4x-wingspan gap put two
@@ -1611,6 +1901,11 @@ def build_scene(recipe):
         # on the plate; that is a real position, not a formation offset.
         _uv = spec.get('uv')
         _route = spec.get('trajectory')
+        # The envelope this object will be judged against, built exactly the way
+        # the checker builds it (class defaults + this scene's kinematics block),
+        # so the route is shaped for the rules it will actually meet.
+        _kin = _envelope(spec['cls'], env)
+        _env = motion.Envelope.from_spec(dict(cls=spec['cls'], kinematics=_kin))
         if _route:
             # An explicit per-target route means one airframe per entry: copying
             # it count times is how two aircraft ended up stacked at the same
@@ -1633,14 +1928,71 @@ def build_scene(recipe):
                 _pos = [round(site['tgt'][0] + site['perp'][0] * lateral, 3),
                         round(site['tgt'][1] + site['perp'][1] * lateral, 3),
                         round(site['tgt'][2], 3)]
+            if ladder is not None:
+                _cam_z = float(site['cam_z'])
+                if spec.get('z') is not None:
+                    # An explicit altitude wins in a plate view. The uv branch
+                    # above already honours it; the formation branch would
+                    # otherwise drop it on the plate.
+                    _pos[2] = round(float(spec['z']), 3)
+                elif ladder['prev'] is None:
+                    # The first rung keeps the original placement height; the
+                    # rest hang above it, toward the lens. Going below the plate
+                    # would bury a ground target under the photograph.
+                    _pos[2] = round(float(_pos[2]), 3)
+                else:
+                    # Solve z for an exact slant-range step:
+                    #   R = sqrt(r_xy^2 + (cam_z - z)^2),  R = R_prev - step
+                    _r2 = float(_pos[0]) ** 2 + float(_pos[1]) ** 2
+                    _want = ladder['prev'] - ladder['step']
+                    _dz_sq = _want * _want - _r2
+                    _z = ((_cam_z - math.sqrt(_dz_sq)) if _dz_sq > 0.0 else 0.0)
+                    _z = max(0.0, min(_z, ladder['room']))
+                    _pos[2] = round(_z, 3)
+                _r2 = float(_pos[0]) ** 2 + float(_pos[1]) ** 2
+                ladder['prev'] = math.sqrt(_r2 + (_cam_z - float(_pos[2])) ** 2)
+                # Every placed target joins the chain, explicit z included: the
+                # resolvable count in the summary has to describe the picture,
+                # not only the targets the ladder was allowed to move.
+                ladder['slants'].append(ladder['prev'])
+                if ladder['writeback'] and spec.get('z') is None:
+                    # Reflect the ladder in the recipe block build_scene writes
+                    # back, so a re-run reproduces these altitudes as explicit
+                    # z instead of recomputing a different ladder. Only when
+                    # every spec is a single airframe: one spec.z cannot express
+                    # the different rungs of a count>1 formation.
+                    spec['z'] = round(float(_pos[2]), 3)
+            elif top_down and spec.get('z') is not None:
+                # No ladder (radar absent): still honour an explicit altitude in
+                # a plate view instead of dropping it on the photograph.
+                _pos[2] = round(float(spec['z']), 3)
+            # In a plate view the placement plane IS the world, so the "velocity
+            # along the line of sight" the engagement model produces points
+            # straight down: a parked ground vehicle came out as vel [0, 0, 15],
+            # i.e. climbing at 15 m/s. With no drawn route, point the object at
+            # the plate centre (the place the camera is looking at) at the class
+            # speed; a route, when present, overrides this below with its own
+            # tangent.
+            _vel_obj = list(vel)
+            _rot_obj = yaw
+            if top_down and not _route:
+                _hx, _hy = -float(_pos[0]), -float(_pos[1])
+                _hn = math.hypot(_hx, _hy)
+                _spd = abs(float(speed))
+                if _hn > 1e-6:
+                    _vel_obj = [round(_spd * _hx / _hn, 3), round(_spd * _hy / _hn, 3), 0.0]
+                    _rot_obj = round(math.degrees(math.atan2(_vel_obj[1], _vel_obj[0])), 3)
+                else:
+                    _vel_obj = [round(_spd, 3), 0.0, 0.0]
+                    _rot_obj = 0.0
             obj = dict(
                 name='%s_%02d' % (spec['cls'], counter),
                 cls=spec['cls'],
                 shape='obj',
                 model=MODEL_PREFIX + '/' + spec['asset'],
                 pos=_pos,
-                vel=list(vel),
-                rot=yaw,
+                vel=_vel_obj,
+                rot=_rot_obj,
                 # the nose follows the velocity vector, which is what makes
                 # head_on mean nose-toward-camera and pursuit tail-toward-it
                 yaw_mode='velocity',
@@ -1656,7 +2008,7 @@ def build_scene(recipe):
                 temp_c_hint=temp_c,
                 rcs_db=rcs_db,
                 attitude_mode='coordinated',
-                kinematics=_envelope(spec['cls']),
+                kinematics=_kin,
                 visible=True,
                 label=True,
             )
@@ -1666,21 +2018,96 @@ def build_scene(recipe):
                 # placement to raw offsets started the aircraft wherever the
                 # operator's first stroke landed, one click away from the dot.
                 _p0 = _route["points"][0]
+                _pts = [[round(_pos[0] + float(p[0]) - float(_p0[0]), 3),
+                         round(_pos[1] + float(p[1]) - float(_p0[1]), 3),
+                         round(_pos[2] + float(p[2]) - float(_p0[2]), 3)]
+                        for p in _route["points"]]
+                # Flyability pre-shaping, before the route is published (see
+                # motion.shape_route): the stroke is a sketch at plate scale, so
+                # its corners are rounded to the room the drawing leaves and the
+                # speed is solved down to what those arcs hold -- never below the
+                # airframe's own floor, which relaxes the shape instead. The
+                # verdict is measured on the flown spline, not on the polyline.
+                _shaped = motion.shape_route(
+                    _pts, speed=float(_route.get("speed_mps") or speed),
+                    envelope=_env, dt=float(dt), frames=max(int(frames), 4))
+                _inf = _shaped["info"]
+                _v = float(_shaped["speed_mps"])
                 obj["trajectory"] = dict(
                     mode="waypoints",
-                    points=[[round(_pos[0] + float(p[0]) - float(_p0[0]), 3),
-                             round(_pos[1] + float(p[1]) - float(_p0[1]), 3),
-                             round(_pos[2] + float(p[2]) - float(_p0[2]), 3)]
-                            for p in _route["points"]],
-                    speed_mps=float(_route.get("speed_mps") or speed),
+                    points=_shaped["points"],
+                    speed_mps=_v,
                     loop=bool(_route.get("loop", False)),
                     # a drawn route is a cruise leg: enter at speed, only the
                     # arrival is flown down
-                    ramp_in=bool(_route.get("ramp_in", False)))
+                    ramp_in=bool(_route.get("ramp_in", False)),
+                    # Record the shaping instead of implying it: a reader of the
+                    # scene can see the speed the geometry allowed, the radius
+                    # that was fitted, and the route length those produced.
+                    preshaped=True,
+                    speed_requested_mps=round(float(_inf["speed_requested_mps"]), 1),
+                    fillet_radius_m=round(float(_inf["radius_room_m"]), 1),
+                    length_m=round(float(_inf["length_m"]), 1))
+                for _n in _inf["notes"]:
+                    _route_notes.append("%s %s" % (obj["name"], _n))
+                # A short stroke on the plate would otherwise stop the airframe
+                # a fraction of the way through the clip: extend it along its
+                # final heading so the route covers the clip at cruise speed.
+                # The plate frame is span_m wide and (4:3) span_m * 0.75 tall,
+                # centred on the origin; keep the extended route inside it.
+                _fh = (0.5 * float(span_m), 0.5 * float(span_m) * 0.75) if top_down else None
+                _added = _extend_cruise_route(obj["trajectory"],
+                                              float(frames) * float(dt), _fh)
+                if _added > 0.0:
+                    # A 7 m drawn leg beside a 130 m cruise leg asks the spline
+                    # for a 68 m knot tangent inside a 7 m cell: the same route
+                    # that measured 32037 m/s^3 measured 127858 m/s^3 once the
+                    # leg was appended. Cut the appended leg to the drawing's own
+                    # cell size, which is geometry, not a tuning constant.
+                    obj["trajectory"]["points"] = motion.densify_route(
+                        obj["trajectory"]["points"],
+                        cell_m=float(_inf.get("cell_m") or 0.0) or None)
+                    obj["trajectory"]["length_m"] = round(float(
+                        sum(math.dist(a, b) for a, b in zip(
+                            obj["trajectory"]["points"], obj["trajectory"]["points"][1:]))), 1)
+                    _route_notes.append(
+                        "%s 航路延长 %.0f m（原航路比 %.0f s × %.0f m/s 短，"
+                        "否则中途停住）" % (obj["name"], _added, float(frames) * float(dt),
+                                          float(obj["trajectory"]["speed_mps"])))
+                # objects[].vel used to be the view's line-of-sight velocity: on
+                # a nadir plate that is [0, 0, 250], i.e. straight up at 250 m/s
+                # for an airframe the same scene flies at 80 m/s toward the east.
+                # Publish the route's own initial tangent instead, so vel and
+                # trajectory cannot disagree and yaw_mode='velocity' starts on
+                # the heading the route actually begins with.
+                _v0 = motion.route_heading(obj["trajectory"]["points"]) * _v
+                obj["vel"] = [round(float(c), 3) for c in _v0]
+                obj["rot"] = round(math.degrees(math.atan2(float(_v0[1]),
+                                                           float(_v0[0]))), 3)
             if surface:
                 obj['z_offset_m'] = 0.0
             objects.append(obj)
         cursor += count * spacing + max(120.0, 2.0 * size)
+
+    ladder_info = None
+    if ladder is not None:
+        # Resolvable means "the longest chain of targets whose adjacent slant
+        # ranges are at least TOP_DOWN_STAGGER_CELLS cells apart". The step is
+        # normally exact, so this equals the target count; a capped ladder -- or
+        # one interrupted by an explicit z -- loses rungs and the summary has to
+        # say the honest number instead of advertising the requested one.
+        _slants = sorted(ladder['slants'])
+        # Compare against the unguarded 8-cell promise, not the 1-per-mille
+        # step guard, or a millimetre of z rounding reads as a lost target.
+        _res = 1 + sum(1 for a, b in zip(_slants, _slants[1:])
+                       if b - a >= ladder['cell'] - 1e-6)
+        ladder_info = dict(count=len(_slants),
+                           moved=ladder['n'],
+                           step_m=round(ladder['step'], 2),
+                           r_res_m=round(ladder['r_res'], 3),
+                           room_m=round(ladder['room'], 1),
+                           capped=bool(ladder['capped']),
+                           resolvable=int(min(_res, len(_slants))))
 
     fov = view['fov_deg']
     px = _pixels(primary_size, range_m, fov, 960.0)
@@ -1780,7 +2207,8 @@ def build_scene(recipe):
         'objects': objects,
         'sensors': _sensors(site['cam'], site['tgt'], fov, range_m, site,
                             up=((0.0, 1.0, 0.0) if top_down else None),
-                                        v_req=abs(float(speed))),
+                                        v_req=abs(float(speed)), env=env,
+                                        plate=bool(top_down)),
         'clip': dict(
             frames_per_clip=frames,
             camera='ir_camera',
@@ -1859,10 +2287,80 @@ def build_scene(recipe):
         _g['backdrop_offset'] = [0.5, 0.5]
         _g['backdrop_span_m'] = float(span_m)
         _g['backdrop_span_y_m'] = float(span_m) * (720.0 / 960.0)
-    cfg['view'] = dict(aspect=aspect, ground_span_m=(float(span_m) if top_down else None)) \
-        if top_down else dict(aspect=aspect)
+    if top_down:
+        cfg['view'] = dict(aspect=aspect, ground_span_m=float(span_m),
+                           height_ladder_m=[round(float(o['pos'][2]), 3)
+                                            for o in objects],
+                           radar_resolvable_targets=(ladder_info['resolvable']
+                                                     if ladder_info else None))
+    else:
+        cfg['view'] = dict(aspect=aspect)
+    if ladder_info is not None:
+        # The operator has to be told why the formation is stacked in altitude:
+        # otherwise a top_down run looks like it ignored "same height".
+        _cells = (ladder_info['step_m'] / ladder_info['r_res_m']
+                  if ladder_info['r_res_m'] > 0.0 else 0.0)
+        notes.append('俯视模式按高度错层：相邻目标斜距相差 %.1f m（约 %.1f 个'
+                     '距离单元），雷达可分辨 %d 个目标%s'
+                     % (ladder_info['step_m'], _cells,
+                        ladder_info['resolvable'],
+                        '；错层已达画幅高度上限，部分目标仍可能落在同一距离单元'
+                        if ladder_info['resolvable'] < ladder_info['count'] else ''))
+    if _route_notes:
+        notes.append('；'.join(_route_notes))
     if frames < 3:
         notes.append('帧数过少，轨迹只有 %d 个采样点' % frames)
+    # --- co-boresight and sector fit (radar/lidar vs the imaging view) --------
+    # A plate scene looks straight down, where a (0,0,1) up vector is parallel to
+    # the view axis. sensor_basis then falls back to (0,1,0) for the optical
+    # aperture but NOT for the radar once the radar is aimed a degree or two off
+    # nadir: the two apertures ended up rolled 51 deg against each other, so an
+    # azimuth in one channel could not be drawn on the other. Give the radar and
+    # lidar the imaging view's own up vector, and widen the search sector to
+    # cover the formation instead of leaving the outer targets outside it (the
+    # radar then had to re-aim every frame, which is the same registration break
+    # in another form).
+    _sens = cfg.get('sensors') or {}
+    _cam = _sens.get('optical') or _sens.get('ir_camera') or {}
+    _cam_up = _cam.get('up')
+    _rcb = _sens.get('radar')
+    if isinstance(_rcb, dict):
+        if _cam_up:
+            _rcb['up'] = [float(v) for v in _cam_up]
+            if isinstance(_sens.get('lidar'), dict):
+                _sens['lidar']['up'] = [float(v) for v in _cam_up]
+        # How far the formation sits off the imaging axis, as a cone angle. A
+        # 2 deg search sector is sized for one target on the boresight; with two
+        # or four placed objects the outer ones fell outside it, the dataset had
+        # to re-aim the radar per frame, and in the multi-target demo the frames
+        # where the aimed target was the weak one ended with zero detections.
+        _cam_pos = [float(v) for v in (_cam.get('pos') or [0.0, 0.0, 0.0])]
+        _aim_pt = [float(v) for v in (_cam.get('look_at') or [0.0, 0.0, -1.0])]
+        _fwd = [(_aim_pt[k] - _cam_pos[k]) for k in range(3)]
+        _fn = math.sqrt(sum(v * v for v in _fwd))
+        _worst = 0.0
+        if _fn > 1e-9:
+            _fwd = [v / _fn for v in _fwd]
+            for _o in objects:
+                if not _o.get('label', True):
+                    continue
+                try:
+                    _d = [float(_o['pos'][k]) - _cam_pos[k] for k in range(3)]
+                except (KeyError, IndexError, TypeError, ValueError):
+                    continue
+                _dn = math.sqrt(sum(v * v for v in _d))
+                if _dn <= 1e-6:
+                    continue
+                _cos = max(-1.0, min(1.0, sum(_d[k] * _fwd[k] for k in range(3)) / _dn))
+                _worst = max(_worst, math.degrees(math.acos(_cos)))
+        if _worst > 0.0:
+            _need_span = round(2.0 * (1.12 * _worst + 0.1), 2)
+            for _key, _label in (('az_span_deg', '方位'), ('el_span_deg', '俯仰')):
+                _cur = float(_rcb.get(_key) or 0.0)
+                if _need_span > _cur:
+                    notes.append('雷达%s扇区由 %.1f° 扩到 %.1f° 以覆盖编队'
+                                 % (_label, _cur, _need_span))
+                    _rcb[_key] = _need_span
     cfg['notes'] = notes
 
     if r['ecm']['mode'] != 'none':
@@ -1896,6 +2394,12 @@ def env_summary(recipe):
     parts = [ENV_LABELS[r['environment']['kind']],
              WEATHER_LABELS[r['environment']['weather']],
              BACKGROUND_LABELS[r['environment']['background']['mode']]]
+    # A nadir multi-target radar run is separated only by the height ladder; say
+    # so in the one line the operator reads before the build, rather than let a
+    # single bright RD cell look like a rendering bug.
+    sep = _nadir_separation_note(r)
+    if sep:
+        parts.append(sep)
     return ' · '.join(parts)
 
 

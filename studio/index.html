@@ -88,9 +88,17 @@
               <input type="number" id="placeSpeed" min="1" max="1200" step="1" value="80" />
               <span class="note">m/s（所有目标共用）</span>
             </div>
+            <div class="place-speed">
+              <span class="label">接近速度</span>
+              <input type="number" id="placeClimb" min="0" max="600" step="10" value="0" />
+              <span class="note">m/s 垂直分量（正俯视时径向速度几乎全由它给出，0 = 纯平飞）</span>
+            </div>
+            <p class="place-hint geo" id="placeGeoHint" hidden></p>
+            <p class="place-hint route" id="placeRouteWarn" hidden></p>
             <div class="place-actions">
               <button type="button" class="btn small" id="placePreviewBtn">渲染预览</button>
-              <button type="button" class="btn small quiet" id="placeClearBtn">清除轨迹</button>
+              <button type="button" class="btn small quiet" id="placeClearBtn"
+                      title="清除所有目标已画的轨迹点；目标位置（放置点）保留">清除轨迹</button>
               <span class="place-status" id="placeStatus"></span>
             </div>
             <div class="place-out" id="placeOut" hidden>
@@ -425,6 +433,7 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <noscript><div class="noscript">这个界面需要 JavaScript 才能连接本地服务。</div></noscript>
 
+<script src="align.js"></script>
 <script src="app.js"></script>
 <script src="bench.js"></script>
 </body>

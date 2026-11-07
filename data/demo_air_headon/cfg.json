@@ -95,7 +95,7 @@
     "max_speed_mps": 700.0,
     "max_accel_mps2": 30.0,
     "max_climb_mps": 250.0,
-    "min_altitude_m": 50.0,
+    "min_altitude_m": 0.0,
     "max_bank_deg": 65.0
    },
    "visible": true,
@@ -152,7 +152,7 @@
    "tx_power_dbm": 43.0,
    "noise_figure_db": 8.0,
    "clutter_density": 0.0,
-   "mti_min_vr_mps": 0.8,
+   "mti_min_vr_mps": 0.0,
    "pfa": 1e-06,
    "swerling": "I",
    "clutter_db": -12.0,

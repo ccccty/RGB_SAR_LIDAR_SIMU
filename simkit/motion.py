@@ -360,6 +360,43 @@ class Envelope:
             out[k] = v if np.isfinite(v) else None
         return out
 
+    def lateral_accel_cap(self):
+        """The hardest horizontal acceleration a turn can hold, m/s^2.
+
+        Two limits meet here and the smaller one binds.  The structure allows
+        a_lat = g*sqrt(n_max^2 - 1) in a level turn (n = sqrt(1 + (a_lat/g)^2)),
+        and the usable bank allows a_lat = g*tan(bank_max).  Only the first is
+        an airframe number; the second is the wing's own limit, and on every
+        aerodynamic class here it is the smaller one -- 65 deg of bank is 2.14 g
+        of lateral acceleration, not the 8.9 g that max_g = 9 would permit.
+        Reading max_g alone is how a 21 g corner was once called legal on an
+        airframe that cannot exceed 65 deg of bank.
+
+        A car or a ship does not turn on bank at all: max_bank_deg there
+        describes body roll, so the along-track acceleration limit is the honest
+        cap on how hard it can corner.
+        """
+        n = max(float(self.max_g), 1.0)
+        structural = G * float(np.sqrt(max(n * n - 1.0, 0.0)))
+        if self.kind in _AERODYNAMIC:
+            phi = min(max(float(self.max_bank_deg), 1.0), 89.0)
+            banked = G * float(np.tan(np.radians(phi)))
+            return float(min(structural, banked))
+        return float(min(structural, max(float(self.max_accel_mps2), 0.0)))
+
+    def min_turn_radius_m(self, speed_mps):
+        """v^2 / a_lat_max: the tightest arc this class can hold at a speed."""
+        a = self.lateral_accel_cap()
+        v = abs(float(speed_mps))
+        if a <= 0.0 or v <= 0.0:
+            return 0.0
+        return float(v * v / a)
+
+    def max_speed_for_radius(self, radius_m):
+        """The fastest this class can fly a radius: sqrt(a_lat_max * R)."""
+        r = max(float(radius_m), 0.0)
+        return float(np.sqrt(max(self.lateral_accel_cap() * r, 0.0)))
+
 
 def envelope_for(spec):
     """Shorthand for tools and tests: the envelope a config object flies in."""
@@ -1185,6 +1222,485 @@ class Waypoints(Path):
         arc = self._distance(float(t))[0]
         return _yaw_of(self._at(arc)[1])
 
+
+# ---------------------------------------------------------------------------
+# Route pre-shaping: a hand-drawn stroke is a sketch, not a flight path
+# ---------------------------------------------------------------------------
+# A plate view is 600 m across and an operator clicks four to six points on it,
+# which puts 10-30 m between them.  Flown at 80 m/s every vertex costs v^2/R of
+# lateral acceleration: a 14 deg corner inside 7 m is a 29 m radius, i.e. 22 g
+# and 84 deg of bank, and the measured jerk on the three-aircraft plate demo was
+# 32037 m/s^3 against a 400 m/s^3 limit.  The geometry is not wrong -- the
+# stroke is a gesture about where the aircraft should go -- but nothing can fly
+# it as drawn, so the route is shaped before it is published:
+#
+#   fillet  each corner becomes a circular arc as wide as the drawing has room
+#           for.  The arc is tangent to both legs, so the endpoints and the
+#           directions of the stroke are untouched: only the corner is cut.
+#   speed   when the room-limited arc is still too tight for the requested
+#           speed, the SPEED is what gives: v = sqrt(a_lat_max * R).  That is
+#           the trade the studio canvas already warns about, and it is a
+#           physical result, never a hard-coded number.
+#   relax   a floor stops that trade -- an airframe below its own minimum speed
+#           is not flying legally.  When the floor speed still needs a wider arc
+#           than the stroke can hold, the shape gives way instead, and how much
+#           corner had to be thrown away is reported so the caller can print it.
+#           Silently straightening an operator's route is worse than saying so.
+#
+# Every verdict is measured on the spline that will actually be published
+# (Waypoints, differenced the way tools/motion_diagnose.py differences it) and
+# not on the polyline: the promise is about the flown jerk, and only the flown
+# path can answer for it.
+
+def _route_array(points):
+    """Waypoints as an (N, 3) float array, duplicates and collinear knots removed."""
+    P = np.asarray(points, float)
+    if P.ndim != 2 or P.shape[1] != 3 or len(P) < 2 or not np.isfinite(P).all():
+        raise ValueError("route needs at least two finite 3D points")
+    keep = [0]
+    for i in range(1, len(P)):
+        if float(np.linalg.norm(P[i] - P[keep[-1]])) > 1e-6:
+            keep.append(i)
+    P = P[keep]
+    if len(P) < 2:
+        raise ValueError("route needs at least two distinct points")
+    return P
+
+
+def _route_turns(P):
+    """Turning angle at every vertex, radians (0 = straight on, pi = reversal)."""
+    d = np.diff(P, axis=0)
+    d = d / np.maximum(np.linalg.norm(d, axis=1, keepdims=True), 1e-12)
+    turns = np.zeros(len(P))
+    for i in range(1, len(P) - 1):
+        turns[i] = float(np.arccos(min(max(float(d[i - 1] @ d[i]), -1.0), 1.0)))
+    return turns
+
+
+def _route_min_radius(P):
+    """Smallest circumradius of any consecutive triple, metres (inf if straight).
+
+    This is the discrete curvature of the polyline itself, so it answers "how
+    tight is the drawn shape" without fitting anything: the circumradius of a
+    triangle is exactly the radius of the circle through its three corners.
+    """
+    P = np.asarray(P, float)
+    best = np.inf
+    for i in range(1, len(P) - 1):
+        a, b = P[i - 1] - P[i], P[i + 1] - P[i]
+        la, lb = float(np.linalg.norm(a)), float(np.linalg.norm(b))
+        cross = float(np.linalg.norm(np.cross(a, b)))
+        if la < 1e-9 or lb < 1e-9 or cross < 1e-12:
+            continue
+        chord = float(np.linalg.norm(P[i + 1] - P[i - 1]))
+        best = min(best, la * lb * chord / (2.0 * cross))
+    return float(best)
+
+
+def _fillet_room(P, turns, share=0.45):
+    """Tangent length available at each vertex, metres, without crossing corners.
+
+    A fillet eats t = r*tan(theta/2) of each adjacent leg, and two neighbouring
+    fillets share the leg between them, so the room has to be booked for both.
+    Three sweeps are enough for the shrink to settle: each sweep only shortens.
+    """
+    L = np.linalg.norm(np.diff(P, axis=0), axis=1)
+    t = np.zeros(len(P))
+    for i in range(1, len(P) - 1):
+        t[i] = share * float(min(L[i - 1], L[i]))
+    for _ in range(3):
+        for j in range(len(L)):
+            a, b = t[j], t[j + 1]          # the two fillets on this leg
+            total = a + b
+            if total > share * 2.0 * float(L[j]) and total > 1e-9:
+                k = (share * 2.0 * float(L[j])) / total
+                t[j], t[j + 1] = a * k, b * k
+    return t
+
+
+def _arc_between(centre, a_vec, b_vec, sweep, samples):
+    """Points on the circle (centre, |a_vec|) from a_vec to b_vec, endpoints in."""
+    n = max(int(samples), 2)
+    r = float(np.linalg.norm(a_vec))
+    if r < 1e-9 or sweep < 1e-6:
+        return []
+    ua, ub = a_vec / r, b_vec / r
+    sin_s = float(np.sin(sweep))
+    out = []
+    for k in range(n + 1):
+        u = k / float(n)
+        if abs(sin_s) < 1e-9:
+            w = ua * (1.0 - u) + ub * u
+            w = w / max(float(np.linalg.norm(w)), 1e-12)
+        else:
+            w = (ua * float(np.sin((1.0 - u) * sweep))
+                 + ub * float(np.sin(u * sweep))) / sin_s
+        out.append(centre + w * r)
+    return out
+
+
+def _round_corners(P, turns, share=0.45, arc_deg=10.0, max_sweep=150.0):
+    """Replace every corner with a tangent circular fillet. (points, radii).
+
+    radii[i] is the fillet radius actually fitted at vertex i (0 where the
+    corner was dropped as straight).  The largest radius the drawing allows is
+    used, which for a gentle bend is far more than "half the leg": the tangent
+    length is r*tan(theta/2), so a 12 deg corner turns 3 m of leg into a 28 m
+    radius.  That is why the radius has to be solved from the room instead of
+    pinned to a fraction of the segment.
+    """
+    t = _fillet_room(P, turns, share=share)
+    out = [P[0].copy()]
+    radii = np.zeros(len(P))
+    for i in range(1, len(P) - 1):
+        theta = float(turns[i])
+        if theta < np.radians(0.5) or t[i] <= 1e-6:
+            continue                      # straight: the knot buys nothing
+        theta = min(theta, np.radians(max_sweep))
+        r = t[i] / float(np.tan(theta * 0.5))
+        if not np.isfinite(r) or r < 1e-3:
+            out.append(P[i].copy())
+            continue
+        d1, d2 = P[i] - P[i - 1], P[i + 1] - P[i]
+        d1 = d1 / max(float(np.linalg.norm(d1)), 1e-12)
+        d2 = d2 / max(float(np.linalg.norm(d2)), 1e-12)
+        a = P[i] - d1 * (r * float(np.tan(theta * 0.5)))
+        b = P[i] + d2 * (r * float(np.tan(theta * 0.5)))
+        bis = d2 - d1
+        bis = bis / max(float(np.linalg.norm(bis)), 1e-12)
+        # The centre sits r/cos(theta/2) along the internal bisector: the
+        # tangent point is t = r*tan(theta/2) back along the leg and the
+        # centre is r perpendicular to it, so |P-C|^2 = r^2 + t^2 and the
+        # bisector distance is sqrt(r^2+t^2) = r/cos(theta/2).  r/sin(theta/2)
+        # is the formula for the *inscribed* circle of the wedge, not for the
+        # tangent fillet: at a 1 deg corner it put the centre 43 km away and
+        # the arc 2 m off its own chord.
+        centre = P[i] + bis * (r / max(float(np.cos(theta * 0.5)), 1e-9))
+        arc = _arc_between(centre, a - centre, b - centre, theta,
+                           max(2.0, np.degrees(theta) / arc_deg))
+        for p in arc:
+            if float(np.linalg.norm(p - out[-1])) > 1e-4:
+                out.append(np.asarray(p, float))
+        radii[i] = r
+    if float(np.linalg.norm(P[-1] - out[-1])) > 1e-9:
+        out.append(P[-1].copy())
+    return np.asarray(out, float), radii
+
+
+def _relax_route(P, target_r, sweeps=240, lam=0.5):
+    """Laplacian smoothing with pinned endpoints until the polyline is gentler.
+
+    This is the shape-sacrificing knob: the endpoints stay, the stroke's bend is
+    spread until no vertex is tighter than target_r.  Repeated averaging
+    converges to the straight chord, so any finite target is reachable; the
+    sweep cap only bounds the work (and leaves the residue to be reported).
+    """
+    Q = np.array(P, float)
+    if len(Q) < 3 or not np.isfinite(target_r):
+        return Q
+    for _ in range(int(sweeps)):
+        if _route_min_radius(Q) >= target_r:
+            break
+        # Horizontally only: a corner is widened, a climb is not flattened.
+        # Averaging z as well turned a 100 m step climb into a 1.5 deg drift,
+        # i.e. it silently deleted the altitude profile the operator drew --
+        # and the altitude ladder with it.  A climb that is too steep to fly is
+        # reported (_see the pitch note in shape_route) instead of being
+        # smoothed away.
+        Q[1:-1, :2] = (1.0 - lam) * Q[1:-1, :2] + lam * 0.5 * (Q[:-2, :2] + Q[2:, :2])
+    return Q
+
+
+def densify_route(points, cell_m=None, max_points=192):
+    """Split long legs so the C1 spline's per-knot tangents stay proportionate.
+
+    A Waypoints knot tangent is half the sum of its two neighbouring chords, so
+    a 7 m cell next to a 115 m cruise leg asks for a 61 m tangent inside a 7 m
+    cell: the cubic overshoots and the same route that measured 32000 m/s^3
+    measured 127858 m/s^3 after the leg was appended.  An operator can never
+    draw such a pair on purpose, so the fix belongs in the geometry: every leg
+    is cut to roughly the typical cell of the drawing.
+    """
+    P = np.asarray(points, float)
+    if len(P) < 2:
+        return [list(map(float, p)) for p in P]
+    L = np.linalg.norm(np.diff(P, axis=0), axis=1)
+    total = float(np.sum(L))
+    if total <= 1e-9:
+        return [list(map(float, p)) for p in P]
+    # The SHORTEST drawn leg sets the cell, not the median: a 6 m cell beside a
+    # 100 m one is exactly the mismatch this function exists to remove, and the
+    # median of [6, 100] is 53 m, which leaves it in place.  The point budget
+    # (max_points) is the floor, so a route with one 0.5 m cell and a kilometre
+    # of legs cannot explode into ten thousand waypoints.
+    cell = float(cell_m) if cell_m else max(total / float(max_points), 0.5)
+    n = max(2, min(int(np.ceil(total / max(cell, 1e-3))), int(max_points)))
+    # Uniform by ARC LENGTH, not per-leg: a cell that matches its neighbours is
+    # what the spline's per-knot tangent (half the sum of the two adjacent
+    # chords) is designed for.  Cutting each leg into its own number of pieces
+    # leaves a 30 m cell beside a 60 m one and the cubic oscillates between
+    # them -- measured on a 936 m route: the acceleration alternated 0 / -18 /
+    # +36 m/s^2 along a route whose arcs are all 355 m.
+    out = [P[0]]
+    for k in range(1, n):
+        out.append(_along(P, total * k / float(n)))
+    out.append(P[-1])
+    return [[round(float(c), 4) for c in p] for p in out]
+
+
+def _along(P, arc):
+    """The point at an arc length along a polyline."""
+    acc = 0.0
+    for i in range(len(P) - 1):
+        seg = P[i + 1] - P[i]
+        L = float(np.linalg.norm(seg))
+        if acc + L >= arc:
+            return P[i] + seg * ((arc - acc) / max(L, 1e-12))
+        acc += L
+    return P[-1]
+
+
+def route_heading(points):
+    """Unit tangent of a route at its first point (its initial flight direction)."""
+    P = _route_array(points)
+    return _unit(P[1] - P[0])
+
+
+def _measure_route(path, frames=24, dt=0.1):
+    """Worst per-frame accelerations of the published spline, as the checker sees them.
+
+    The differencing scheme is motion_diagnose's on purpose: h = dt/4 for the
+    acceleration (what an observer of these frames can measure) and the cruising
+    part of the route only, because an open route's run-out is a different event
+    from the leg being shaped.
+    """
+    h = max(float(dt) * 0.25, 1e-4)
+    span = float(path.length) / max(float(path.v), 1e-9)
+    # Cover the WHOLE route, not just the clip window.  Sampling the first 2 s
+    # only left a 2 km route measured for its first 10 %: a 59 deg climb at
+    # x = 500 m and any tight corner past the window went unseen, and a route can
+    # only be certified if every part of it was looked at.  Inside the clip
+    # window the step is the frame interval, so the numbers stay the ones the
+    # checker will see.
+    # Stay clear of the run-out: at arc == length the path publishes zero
+    # velocity (it has arrived), and a difference taken across that clamp reads
+    # 24480 m/s^3 on a route whose real worst is 130 -- the same edge artefact as
+    # frame 0, at the other end of the clock.
+    end = max(span - 4.0 * h, 2.0 * h)
+    n = max(int(frames), 1)
+    step = float(dt) if end <= n * float(dt) else end / float(n)
+    ts = [k * step for k in range(int(end / step) + 1)]
+    worst = dict(accel_mps2=0.0, bank_deg=0.0, jerk_mps3=0.0, g=1.0,
+                 pitch_deg=0.0, turn_rate_dps=0.0)
+
+    def accel_at(t):
+        if t - h < 0.0:
+            # The first sample of a clip sits on the edge of the scene clock,
+            # where every planner freezes the position for t < 0: a centred
+            # step there reads half the real acceleration and reports it as a
+            # 200 m/s^2 "spike".  Three-point forward, same O(h^2) order.
+            return (-3.0 * np.asarray(path.vel(t), float)
+                    + 4.0 * np.asarray(path.vel(t + h), float)
+                    - np.asarray(path.vel(t + 2.0 * h), float)) / (2.0 * h)
+        return (np.asarray(path.vel(t + h), float)
+                - np.asarray(path.vel(t - h), float)) / (2.0 * h)
+
+    for t in ts:
+        v = np.asarray(path.vel(t), float)
+        a = accel_at(t)
+        a2 = accel_at(t + h)
+        worst["accel_mps2"] = max(worst["accel_mps2"], float(np.linalg.norm(a)))
+        worst["jerk_mps3"] = max(worst["jerk_mps3"],
+                                float(np.linalg.norm(a2 - a)) / (2.0 * h))
+        worst["g"] = max(worst["g"], load_factor(v, a))
+        worst["bank_deg"] = max(worst["bank_deg"], abs(coordinated_bank_deg(v, a)))
+        worst["pitch_deg"] = max(worst["pitch_deg"], abs(climb_angle_deg(v)))
+        worst["turn_rate_dps"] = max(worst["turn_rate_dps"],
+                                     abs(float(np.degrees(turn_rate(v, a)))))
+    return worst
+
+
+def shape_route(points, speed=8.0, envelope=None, safety=0.85, dt=0.1,
+                frames=24, max_sweeps=4):
+    """Turn a drawn polyline into a route the claimed airframe can fly.
+
+    Returns {points, speed_mps, info}.  info carries the numbers a caller needs
+    to explain itself: requested vs used speed, length and radius before and
+    after, the measured worst load / bank / jerk of the flown spline, and
+    ready-made Chinese notes for cfg["notes"].
+
+    The boundary between "round the corner" and "fly it slower" is the room the
+    drawing leaves.  r_room is the largest tangent fillet that fits between its
+    two neighbours and v_room = sqrt(a_lat_max * r_room) is the fastest that arc
+    can be flown: above it nothing changes, below it the speed gives.  Below the
+    airframe's own minimum speed the speed stops being a free variable -- a
+    legal-looking track that is stalled is not legal -- and the route shape is
+    relaxed instead, with the loss reported rather than hidden.
+    """
+    P = _route_array(points)
+    env = envelope if envelope is not None else Envelope.preset("uav_fixed")
+    a_cap = max(float(safety) * env.lateral_accel_cap(), 1e-6)
+    v_floor = max(float(env.min_speed_mps), 0.0)
+    # Never fly the floor itself: the C1 spline's speed ripples by a fraction of
+    # a percent around the value the arc was solved for (measured: 59.9999 m/s on
+    # a route commanded at exactly 60), and a 1e-4 m/s dip is a speed_min
+    # violation.  2 % is smaller than any operator would notice and larger than
+    # the ripple.
+    v_min = v_floor * 1.02 if v_floor > 0.0 else 0.0
+    v_ceil = float(env.max_speed_mps)
+    v_req = float(speed)
+    v = min(max(v_req, v_min), v_ceil)
+    length_in = float(np.sum(np.linalg.norm(np.diff(P, axis=0), axis=1)))
+    r_drawn = _route_min_radius(P)
+    info = dict(envelope=env.kind, speed_requested_mps=v_req, speed_mps=v,
+                # The drawn stroke's own cell size, so a caller that appends a
+                # cruise leg can cut it to the same scale (see densify_route).
+                cell_m=1.0,
+                length_in_m=length_in, length_m=length_in,
+                radius_drawn_m=r_drawn, radius_room_m=r_drawn,
+                accel_cap_mps2=a_cap, min_speed_mps=v_floor,
+                slowed=bool(v < v_req - 1e-9), relaxed=False, shaped=False,
+                measured=None, overrun=0.0, notes=[])
+    turns = _route_turns(P)
+
+    if len(P) < 3 or float(np.max(turns)) < np.radians(0.5):
+        # A straight leg needs no fillet, and densifying it would only rewrite
+        # the operator's two points as thirty collinear ones.
+        if info["slowed"]:
+            info["notes"].append("速度 %.0f m/s 低于机型最低速度，按 %.0f m/s 飞行"
+                                 % (v_req, v))
+        return dict(points=[[round(float(c), 3) for c in p] for p in P],
+                    speed_mps=float(v), info=info)
+
+    info["shaped"] = True
+    pts, radii = _round_corners(P, turns)
+    r_room = _float_min(radii, r_drawn)
+    info["radius_room_m"] = float(r_room)
+    v_room = float(np.sqrt(a_cap * max(r_room, 1e-6)))
+    if v_room < v - 1e-6:
+        if v_room >= v_min - 1e-9:
+            # Keep the shape, give up speed: the trade the canvas already warns
+            # about, and the one a pilot would make.
+            v = v_room
+            info["slowed"] = True
+        else:
+            # The floor binds.  No legal speed flies this stroke, so the shape is
+            # what gives -- and the note says by how much.  The relaxation is
+            # solved for the FLOOR speed, not for the requested one: slowing to
+            # the floor and relaxing only as far as the floor needs is the least
+            # shape that has to be given up, while relaxing for the request and
+            # then discovering it is still illegal gives up more.
+            v = v_min
+            relaxed = _relax_route(P, v * v / a_cap)
+            # Round the relaxed corners as well: averaging leaves a shallow
+            # polygon, and a polygon is a train of small curvature steps -- a
+            # 391 m arc sampled every 7 m still measured 392 m/s^3 of jerk,
+            # because each vertex is a step even when the step is 1 deg.
+            pts, radii = _round_corners(relaxed, _route_turns(relaxed))
+            info["relaxed"] = True
+            info["radius_room_m"] = _float_min(radii, _route_min_radius(relaxed))
+
+    # Each attempt re-derives the route from the DRAWING with a single
+    # relaxation, never by stacking transforms on the previous attempt: stack
+    # them and the third pass has averaged and corner-cut the stroke into a
+    # straight line, which measures beautifully and is not the route anyone drew.
+    relax_r = None if not info["relaxed"] else max(v * v / a_cap, 1.0)
+    drawn_cell = float(np.median(np.linalg.norm(np.diff(P, axis=0), axis=1)))
+    pts = None
+    cell = max(min(drawn_cell, max(r_room, 1.0) * float(np.radians(10.0))), 1.0)
+    best = None
+    for _ in range(max(int(max_sweeps), 1)):
+        base = P if relax_r is None else _relax_route(P, relax_r)
+        pts, radii = _round_corners(base, _route_turns(base))
+        # Resample at the ARC's resolution, not at whatever the point budget
+        # allows: an arc held by three points and then cut into 13 m cells
+        # becomes a chain of sharp 4 deg corners, and the spline through them
+        # wobbles hard enough to fail a route that is geometrically legal
+        # (measured: score 0.99 at 150 m/s became 3.4 once the cell was finer
+        # than the arc's own sampling).
+        r_now = _float_min(radii, _route_min_radius(base))
+        cell = max(min(drawn_cell, max(r_now, 1.0) * float(np.radians(10.0))), 1.0)
+        cand = densify_route(pts, cell_m=cell)
+        path = Waypoints([list(map(float, p)) for p in cand], speed=v,
+                         loop=False, ramp_in=False)
+        worst = _measure_route(path, frames=frames, dt=dt)
+        score = _route_overrun(worst, env, v)
+        if best is None or score < best[0]:
+            best = (score, np.asarray(cand, float), v, worst,
+                    _float_min(radii, _route_min_radius(base)))
+        if score <= 1.0:
+            break
+        if v > v_min + 1e-6 and relax_r is None:
+            v = max(v_min, v * float(np.sqrt(1.0 / score)))
+            continue
+        # The floor binds (or the speed no longer helps): widen the shape.
+        cur = relax_r if relax_r is not None else max(_route_min_radius(P), 1.0)
+        relax_r = cur * 1.35
+        info["relaxed"] = True
+    pts = best[1]
+
+    score, pts, v, worst, r_room = best
+    length_out = float(np.sum(np.linalg.norm(np.diff(pts, axis=0), axis=1)))
+    # The resampling cell: the drawing's own cell, or the arc-sampling
+    # resolution (10 deg of the fitted radius) when the drawing is coarser than
+    # the arcs that now make up its corners -- whichever is finer.
+    info.update(speed_mps=float(v), measured=worst, length_m=length_out,
+                overrun=float(score), slowed=bool(v < v_req - 1e-9),
+                radius_room_m=float(r_room),
+                cell_m=float(cell))
+    if info["relaxed"]:
+        info["notes"].append(
+            "航路太碎：原折线最小转弯半径 %.0f m，%.0f m/s（机型最低 %.0f m/s）需要 "
+            "%.0f m，任何合法速度都飞不出这个形状；已把航路拉直到 %.0f m，"
+            "原折线总转角 %.0f° 降到 %.0f°"
+            % (min(r_drawn, 1e4) if np.isfinite(r_drawn) else 1e4,
+               v, v_floor, v * v / a_cap,
+               info["radius_room_m"], np.degrees(float(np.sum(turns))),
+               np.degrees(float(np.sum(_route_turns(pts))))))
+    elif info["slowed"]:
+        info["notes"].append(
+            "航路太碎：相邻点之间只放得下 %.0f m 转弯半径，%.0f m/s 下需要 %.0f m；"
+            "速度由 %.0f 降到 %.0f m/s 以满足 %.1f g / %.0f° 坡度包线"
+            % (r_room, v_req, v_req * v_req / a_cap, v_req, v,
+               a_cap / G, env.max_bank_deg))
+    else:
+        info["notes"].append("航路倒角 %.0f m，%.0f m/s 下满足包线"
+                             % (r_room, v))
+    if worst["pitch_deg"] > float(env.max_gamma_deg) + 1e-6:
+        info["notes"].append("航路爬升角 %.0f° 超过 %.0f° 包线，请减小相邻点高度差"
+                             % (worst["pitch_deg"], env.max_gamma_deg))
+    return dict(points=[[round(float(c), 3) for c in p] for p in pts],
+                speed_mps=float(v), info=info)
+
+
+def _float_min(values, fallback):
+    vals = [float(v) for v in np.asarray(values, float) if float(v) > 0.0]
+    return min(vals) if vals else float(fallback)
+
+
+def _route_overrun(worst, env, v, margin=0.9):
+    """How far into its own limits a measured route reaches, as a ratio.
+
+    <= 1 means legal *with* that margin.  The margin is not politeness: the
+    shaped polyline is flown by a C1 spline, and where a fillet meets its
+    tangent the spline is measurably tighter than the arc -- 79.6 m/s on a
+    355 m fillet measured 20.6 m/s^2 against the 17.9 m/s^2 the arc asks for,
+    i.e. 15 % of overshoot that the design radius alone does not predict.
+    """
+    ratio = 0.0
+    for key, limit in (("accel_mps2", env.max_accel_mps2),
+                       ("bank_deg", env.max_bank_deg),
+                       ("g", env.max_g),
+                       ("jerk_mps3", env.max_jerk_mps3),
+                       ("pitch_deg", env.max_gamma_deg)):
+        limit = float(limit) * float(margin)
+        if limit > 0.0 and np.isfinite(limit):
+            ratio = max(ratio, float(worst.get(key, 0.0)) / limit)
+    if v > 0.0 and env.kind in _AERODYNAMIC:
+        omega = float(np.degrees(G * np.tan(np.radians(min(env.max_bank_deg, 89.0)))
+                                 / max(v, 1.0))) * float(margin)
+        ratio = max(ratio, float(worst.get("turn_rate_dps", 0.0)) / max(omega, 1e-9))
+    return float(ratio)
 
 class FlightManeuver(Path):
     """One continuous manoeuvre: roll in, turn, climb, roll out.

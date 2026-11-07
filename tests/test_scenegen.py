@@ -220,6 +220,115 @@ class PlacementTests(unittest.TestCase):
         self.assertAlmostEqual(y, (0.5 - 0.30) * 600.0 * 0.75, places=1)
 
 
+class TopDownRadarSeparationTests(unittest.TestCase):
+    """A nadir plate view must not collapse a formation into one RD peak.
+
+    Reported from the studio: three fighters placed on one 600 m plate all sat
+    at z = 0, their slant ranges fell inside two 6.27 m range cells, the level
+    tracks produced a ~0 m/s closing rate for every one of them, and the RD map
+    showed one bright cell with three coincident boxes_rd. This geometry has no
+    velocity contrast to offer -- the camera looks straight down, so the line of
+    sight is perpendicular to the track -- hence the height ladder: height IS
+    the line of sight in a nadir view, and range is the only separable axis.
+    """
+
+    SPAN = 600.0
+    FOV = 8.0
+    UV = ((0.30, 0.62), (0.42, 0.50), (0.54, 0.38))
+
+    def _recipe(self, sensors=('optical', 'radar')):
+        from simkit import scenegen
+        r = scenegen.default_recipe()
+        r['name'] = 'top_down_radar_separation'
+        # A plate view needs an actual plate (build_scene falls back to the
+        # scene's own engagement without one), and the sky category is the one
+        # the reported studio run used.
+        r['environment'].update(
+            kind='sky', weather='clear',
+            background={'mode': 'library', 'category': 'sky'})
+        r['objects'] = [dict(asset='军用飞机/双发战斗机.obj', cls='fighter',
+                             scale=1.0, count=1, uv=list(uv))
+                        for uv in self.UV]
+        r['view'].update(aspect='top_down', ground_span_m=self.SPAN,
+                         fov_deg=self.FOV)
+        r['capture'].update(sensors=list(sensors), frames=1)
+        return r
+
+    def test_top_down_radar_formation_is_separated_in_range(self):
+        from simkit import scene, scenegen
+        cfg = scenegen.build_scene(scenegen.validate_recipe(self._recipe()))
+        self.assertEqual(cfg['view']['aspect'], 'top_down')
+        objs = [o for o in cfg['objects'] if o.get('label', True)]
+        self.assertEqual(len(objs), 3)
+
+        # 1. Slant ranges are separated by more than the 50 m the geometry used
+        #    to collapse to, and by at least the 8 cells the ladder promises.
+        radar_cfg = cfg['sensors']['radar']
+        cam = radar_cfg['pos']
+        ranges = sorted(math.sqrt(sum((float(o['pos'][i]) - float(cam[i])) ** 2
+                                    for i in range(3))) for o in objs)
+        for a, b in zip(ranges, ranges[1:]):
+            self.assertGreaterEqual(b - a, 50.0,
+                                    'slant ranges %s share one cell'
+                                    % [round(x, 1) for x in ranges])
+            self.assertGreaterEqual(b - a, 8.0 * float(radar_cfg['range_res_m']),
+                                    'slant ranges %s are not 8 cells apart'
+                                    % [round(x, 1) for x in ranges])
+
+        # 2. The ladder must not push the formation out of the optical frame.
+        #    Same projection the consistency checker uses for its C6 view test:
+        #    basis from the emitted sensor block, half-frame limits at the
+        #    target's own depth.
+        cam_opt = cfg['sensors']['optical']
+        p0, right, up, fwd = scene.sensor_basis(
+            cam_opt['pos'], cam_opt['look_at'], cam_opt.get('up', (0, 0, 1)))
+        width, height = float(cam_opt['width']), float(cam_opt['height'])
+        fov_h = math.radians(float(cam_opt['fov_deg']))
+        fov_v = 2.0 * math.atan(math.tan(fov_h / 2.0) * height / width)
+        for o in objs:
+            d = [float(o['pos'][i]) - float(p0[i]) for i in range(3)]
+            depth = sum(d[i] * float(fwd[i]) for i in range(3))
+            self.assertGreater(depth, 0.0, o['name'])
+            h_off = sum(d[i] * float(right[i]) for i in range(3))
+            v_off = sum(d[i] * float(up[i]) for i in range(3))
+            self.assertLess(abs(h_off), depth * math.tan(fov_h / 2.0), o['name'])
+            self.assertLess(abs(v_off), depth * math.tan(fov_v / 2.0), o['name'])
+
+        # 3. The click mapping is untouched: only z moved, x/y still solve from
+        #    u/v with the plate centred on the origin (the existing contract
+        #    pinned by PlacementTests).
+        for (u, v), obj in zip(self.UV, objs):
+            self.assertAlmostEqual(float(obj['pos'][0]), (u - 0.5) * self.SPAN,
+                                   places=2)
+            self.assertAlmostEqual(float(obj['pos'][1]),
+                                   (0.5 - v) * self.SPAN * 0.75, places=2)
+        # Without radar there is no ladder, so the original flat placement and
+        # its z = 0 stand: a plate with no RD map must not gain altitude.
+        flat = scenegen.build_scene(scenegen.validate_recipe(
+            self._recipe(sensors=('optical',))))
+        self.assertEqual([float(o['pos'][2]) for o in flat['objects']],
+                         [0.0, 0.0, 0.0])
+        # An explicit altitude is the operator's placement, never overwritten,
+        # and the remaining targets still end up resolvable around it.
+        pinned_recipe = self._recipe()
+        pinned_recipe['objects'][1]['z'] = 120.0
+        pinned = scenegen.build_scene(scenegen.validate_recipe(pinned_recipe))
+        self.assertEqual(float(pinned['objects'][1]['pos'][2]), 120.0)
+        self.assertEqual(float(pinned['recipe']['objects'][1]['z']), 120.0)
+        self.assertEqual(pinned['view']['radar_resolvable_targets'], 3)
+
+        # 4. The ladder is written where a reader can see it: the scene view
+        #    block, the notes the studio shows, and the recipe write-back.
+        ladder = cfg['view']['height_ladder_m']
+        self.assertEqual(len(ladder), 3)
+        self.assertGreater(ladder[1], ladder[0])
+        self.assertGreater(ladder[2], ladder[1])
+        self.assertTrue(any('俯视' in n and '可分辨' in n for n in cfg['notes']),
+                        cfg['notes'])
+        self.assertEqual([float(o['z']) for o in cfg['recipe']['objects']],
+                         [round(float(v), 3) for v in ladder])
+
+
 class BackdropLibraryTests(unittest.TestCase):
     """The collected plate library and its nadir filter."""
 

@@ -7,8 +7,8 @@ import time
 
 import numpy as np
 
-from . import (engine, interference, ir, labels, lidar, png, radar, scene,
-               thermal, weather)
+from . import (engine, interference, ir, labels, lidar, png, radar, radar_scope,
+               scene, thermal, weather)
 
 
 def _read_json(path):
@@ -496,6 +496,101 @@ def _ecm_summary(cfg, frames):
     )
 
 
+def _po_rcs_db(world, obj_id, u, lam):
+    """Physical-optics RCS of one object seen from the radar, in dBsm.
+
+    radar.coherent_po_sigma sums the facet fields before squaring, so the answer
+    does not depend on how finely the airframe was triangulated. The Lambertian
+    diffuse term is not included: this is the specular number the range-Doppler
+    echo is dominated by, and quoting a composite would hide the aspect
+    dependence that makes a fighter's RCS swing 20 dB in a few degrees.
+    """
+    try:
+        from . import materials as matlib
+        faces = np.asarray(world.face_obj) == int(obj_id)
+        if not faces.any():
+            return None
+        tri = world.verts[world.faces[faces]]
+        centres = tri.mean(axis=1)
+        normals = radar._face_normals(world)[faces]
+        areas = radar._face_areas(world)[faces]
+        names = sorted(matlib.MATERIALS)
+        rho_tab = np.array([matlib.MATERIALS[n]["rf_rho"] for n in names])
+        rho = rho_tab[world.face_mat[faces]]
+        sigma = radar.coherent_po_sigma(centres, normals, areas, rho,
+                                        -np.asarray(u, float), np.asarray(u, float), lam)
+        if not np.isfinite(sigma) or sigma <= 0.0:
+            return None
+        return 10.0 * np.log10(sigma)
+    except (AttributeError, KeyError, TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+def radar_target_rows(world, radar_cfg, detections):
+    """Truth range/closing speed per labelled object, plus its measured peak.
+
+    The RD/RA figures print this list, not the detection list. A target the
+    detector missed still has a true range and closing speed, and printing only
+    detections made a clutter peak look like the target it was standing next to;
+    conversely a target whose echo merged with another one shows up as two rows
+    at the same range, which is exactly the information a reader needs to see
+    that a single bright cell is two aircraft.
+    """
+    pos = np.asarray(radar_cfg.get("pos", [0.0, 0.0, 0.0]), float)
+    v_pl = np.asarray(radar_cfg.get("vel", [0.0, 0.0, 0.0]), float)
+    _fc = float(radar_cfg.get("fc_ghz") or 0.0)
+    if _fc <= 0.0:
+        _fc = 15.0                      # Ku default, the band most scenes pick
+    lam = radar.C_LIGHT / (_fc * 1e9)
+    try:
+        _p, right, up, forward = scene.sensor_basis(
+            radar_cfg.get("pos"), radar_cfg.get("look_at"),
+            radar_cfg.get("up", (0.0, 0.0, 1.0)), radar_cfg.get("roll_deg", 0.0))
+    except (KeyError, TypeError, ValueError):
+        right, up, forward = np.array([1.0, 0, 0]), np.array([0, 1.0, 0]), np.array([0, 0, 1.0])
+    best = {}
+    for det in detections or []:
+        oid = int(det.get("obj", -1))
+        if oid < 0:
+            continue
+        cur = best.get(oid)
+        if cur is None or float(det.get("snr_db", 0.0)) > float(cur.get("snr_db", 0.0)):
+            best[oid] = det
+    rows = []
+    for o in getattr(world, "objs", None) or []:
+        if not o.get("label", True):
+            continue
+        c = np.asarray(o["corners"], float).mean(axis=0)
+        v = c - pos
+        R = float(np.linalg.norm(v))
+        if R < 1e-6:
+            continue
+        u = v / R
+        front = float(u @ forward)
+        az = float(np.degrees(np.arctan2(float(u @ right), front))) if front != 0.0 else 0.0
+        el = float(np.degrees(np.arctan2(float(u @ up), front))) if front != 0.0 else 0.0
+        vr = float(-(u @ (np.asarray(o.get("vel", [0.0, 0.0, 0.0]), float) - v_pl)))
+        # RCS of this airframe at this aspect, from the same physical-optics
+        # integral the echo is built from. A table that lists range and closing
+        # speed but not RCS cannot answer "how bright is this thing supposed to
+        # be", which is the first question a radar dataset has to answer.
+        rcs_db = o.get("rcs_db")
+        if rcs_db is None:
+            rcs_db = _po_rcs_db(world, o["id"], u, lam)
+        row = dict(name=o["name"], cls=o.get("cls"), range=round(R, 1),
+                   v_r=round(vr, 1), az=round(az, 2), el=round(el, 2),
+                   rcs_dbsm=(round(float(rcs_db), 1) if rcs_db is not None else None))
+        det = best.get(int(o["id"]))
+        if det is not None:
+            row.update(measured_range=round(float(det["range"]), 1),
+                       measured_v_r=round(float(det["v_r"]), 2),
+                       snr_db=round(float(det["snr_db"]), 1), detected=True)
+        else:
+            row["detected"] = False
+        rows.append(row)
+    return rows
+
+
 def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, quiet=False,
         frame_offset=0, part=None, total_frames=None):
     cfg = scene.load_config(cfg_path)
@@ -534,7 +629,13 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
     # modality exists.
     dirs = {}
     if "radar" in sensors:
+        # Two images per map: the annotated figure (axes + target table) and the
+        # clean picture (same map and axes, no table, no markers). The table used
+        # to be painted into the only image, so a training loader saw text and a
+        # paper had no plain sensor picture to show.
         dirs.update(radar="images/radar", radar_ra="images/radar_ra",
+                    radar_clean="images/radar_clean",
+                    radar_ra_clean="images/radar_ra_clean",
                     label_radar="labels/radar")
     if "lidar" in sensors:
         dirs.update(lidar_range="lidar/range", lidar_intensity="lidar/intensity",
@@ -661,35 +762,75 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                 # scenery objects carry no dataset class (they are geometry only)
                 o["cls_id"] = cls_id.get(o["cls"], 0) if o.get("label", True) else 0
 
-        # Radar and lidar are body-fixed to the same gimbal as the camera. The
-        # scenes author them pointing at the world origin, which in a seeker
-        # geometry is nowhere near the target: an aircraft 9 deg above that
-        # boresight falls outside a 1.2 deg beam and a 4 deg lidar raster, so both
-        # sensors returned pure noise at ANY transmit power (measured: 0
-        # detections from 10 W to 100 kW). Point them along the primary view.
+        # Radar and lidar are body-fixed to the same gimbal as the camera, so all
+        # four modalities share one line of sight. Two rules fought here:
+        #   * the scenes author radar/lidar pointing at the world origin, which in
+        #     a seeker geometry is nowhere near the target -- an aircraft 9 deg off
+        #     that boresight falls outside a 1.2 deg beam and a 4 deg lidar raster
+        #     and both returned pure noise at ANY transmit power (measured: 0
+        #     detections from 10 W to 100 kW);
+        #   * pointing the radar at the target while the camera keeps looking at
+        #     the authored aim point broke co-boresight instead: on a nadir plate
+        #     the same aircraft sat 0.68 deg apart in elevation between optical and
+        #     radar (about 220 px in a 2.2 deg frame), so the two modalities could
+        #     not be fused at all.
+        # The gimbal answer is: follow the camera. Re-aim only when the primary
+        # target would otherwise fall outside THIS sensor's field of regard, which
+        # is exactly the case the old rule was written for.
         if ("radar" in sensors or "lidar" in sensors) and views:
             vp0 = _view_pose(s, views[0], cfg)
+            _cam_pos = np.asarray(vp0["pos"], float)
+            _aim = [float(x) for x in vp0["look_at"]]
+            _tgt = None
+            for _o in getattr(w, "objs", None) or []:
+                if _o.get("label", True):
+                    try:
+                        _tgt = np.asarray(_o["corners"], float).mean(axis=0)
+                    except (KeyError, TypeError, ValueError):
+                        _tgt = None
+                    break
             for _sen in ("radar", "lidar"):
                 if _sen not in sensors:
                     continue
                 blk = fr_cfg.setdefault("sensors", {}).setdefault(_sen, {})
                 blk["pos"] = [float(x) for x in vp0["pos"]]
-                # Aim at the target itself, not at the optical gimbal's LAGGED
-                # aim point. The optical chain deliberately trails the target by
-                # lag_s; a 2 deg radar beam tied to that trail misses whenever the
-                # geometry is steep. In a look-down scene (40 deg depression) the
-                # lag cost 3.5 deg of pointing error -- four times the beam half
-                # width -- and every ground frame came back with zero detections.
-                _aim = None
-                for _o in getattr(w, "objs", None) or []:
-                    if _o.get("label", True):
-                        try:
-                            _aim = [float(v) for v in
-                                    np.asarray(_o["corners"], float).mean(axis=0)]
-                        except (KeyError, TypeError, ValueError):
-                            _aim = None
-                        break
-                blk["look_at"] = _aim or [float(x) for x in vp0["look_at"]]
+                # Same gimbal means the same roll: take the imaging view's up
+                # vector. Left at a scene default of (0,0,1) in a look-down view,
+                # sensor_basis' degenerate-up fallback could trigger on one
+                # aperture and not the other, rolling the two 51 deg apart.
+                _cam_up = ((fr_cfg.get("sensors") or {}).get("optical") or {}).get("up") \
+                    or ((fr_cfg.get("sensors") or {}).get("ir_camera") or {}).get("up")
+                if _cam_up:
+                    blk["up"] = [float(v) for v in _cam_up]
+                _use = list(_aim)
+                if _tgt is not None:
+                    try:
+                        _p, _r, _u, _f = scene.sensor_basis(
+                            blk["pos"], _aim, blk.get("up", (0.0, 0.0, 1.0)),
+                            blk.get("roll_deg", 0.0))
+                        _d = _tgt - _cam_pos
+                        _n = float(np.linalg.norm(_d))
+                        if _n > 1e-6:
+                            _d = _d / _n
+                            _az = float(np.degrees(np.arctan2(float(_d @ _r), float(_d @ _f))))
+                            _el = float(np.degrees(np.arctan2(float(_d @ _u), float(_d @ _f))))
+                            if _sen == "radar":
+                                _lim_az = 0.5 * float(blk.get("az_span_deg") or 2.0)
+                                _lim_el = 0.5 * float(blk.get("el_span_deg") or 1.6)
+                            else:
+                                _lim_az = 0.45 * float(blk.get("fov_deg") or 4.0)
+                                _lim_el = 0.45 * float(blk.get("vfov_deg") or blk.get("fov_deg") or 4.0)
+                            if abs(_az) > _lim_az or abs(_el) > _lim_el:
+                                # Outside this sensor's own field of regard: the
+                                # authored aim cannot see it at all, so point at
+                                # the target and say so.
+                                _use = [float(x) for x in _tgt]
+                                print("  [提示] %s 视野未覆盖目标（方位 %.2f° / 俯仰 %.2f°，"
+                                      "半视场 %.2f°×%.2f°），该帧改瞄目标。"
+                                      % (_sen, _az, _el, _lim_az, _lim_el), file=sys.stderr)
+                    except (KeyError, TypeError, ValueError):
+                        _use = list(_aim)
+                blk["look_at"] = _use
                 blk["vel"] = list(s["sensor_velocity_mps"])
 
         if cfg.get("research_baseline"):
@@ -773,41 +914,58 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
             # the numbers a consumer needs to know which is which are kept.
             if out.get("ecm"):
                 ecm_frames.append(dict(frame=int(f), t=float(t), **out["ecm"]))
+            # Every radar frame also ships as a tensor, not only as a figure: a
+            # fusion model reads the range-Doppler power map with its axes, and
+            # the frame index is the sibling key to optical/IR of the same frame.
+            # float32 (n_range, n_doppler), the same orientation the figure draws.
+            raw_dir = os.path.join(out_dir, "raw", "radar")
+            os.makedirs(raw_dir, exist_ok=True)
+            np.save(os.path.join(raw_dir, "%06d.npy" % f),
+                    np.asarray(out["rd_map"], np.float32))
             if cfg.get("research_baseline"):
-                raw_dir = os.path.join(out_dir, "raw", "radar")
-                os.makedirs(raw_dir, exist_ok=True)
                 np.savez_compressed(os.path.join(raw_dir, "%06d.npz" % f),
                                     power=out["rd_map"].T,
                                     range_m=out["range_axis"],
                                     closing_speed_mps=out["doppler_axis"])
             name = "%06d.png" % f
-            # Both maps are noise-dominated: the median IS the noise floor. The
-            # display window is anchored on that median with a fixed 45 dB
-            # contrast range, which is roughly what a scope's STC curve gives
-            # you. Anchoring on a high percentile instead lets one very bright
-            # target (the sea scene) swallow the whole scale.
-            def scope(db, dyn_db=45.0, gamma=0.85):
-                lo = float(np.percentile(db, 50.0))      # the noise floor
-                hi = lo + dyn_db                        # fixed contrast window
-                v = np.clip((db - lo) / dyn_db, 0.0, 1.0) ** gamma
-                return np.round(v * 255.0)
-
-            # range/Doppler map, range on the horizontal axis (waterfall layout)
-            rd_db = radar.to_db(out["rd_map"])
-            # A RD map is read by contrast against its own noise floor, and a
-            # 16 dB target disappears inside the 45 dB scope window used for the
-            # range-angle map: keep the window at 30 dB so the noise shows as
-            # speckle and the target stands out.
-            rd_img = np.ascontiguousarray(scope(rd_db.T, dyn_db=30.0, gamma=1.0))
-            png.write_gray8(os.path.join(out_dir, dirs["radar"], name),
-                            rd_img.astype(np.uint8))
-            # Boxes in the RD map's own space: a detection is one range/Doppler
-            # cell, so a label here is a point target, not a silhouette. Without
-            # this the RD image had no ground truth at all and could only be
-            # looked at, never trained on.
-            rd_h, rd_w = rd_img.shape
             r_ax = np.asarray(out["range_axis"], float)
             d_ax = np.asarray(out["doppler_axis"], float)
+            _rc = out.get("radar_cfg") or {}
+            # Ground truth for the figure's own target table: every labelled
+            # target with its true range and closing speed, plus the peak the
+            # detector measured for it. Two rows at the same range mean two
+            # airframes inside one resolution cell -- the honest reading of a
+            # single bright cell, and the number a reader needs to see why.
+            rows = radar_target_rows(w, _rc, out["detections"])
+            _meta = dict(band=str(_rc.get("band") or "—"),
+                         fc_ghz=float(_rc.get("fc_ghz") or 0.0) or None,
+                         range_res_m=float(r_ax[1] - r_ax[0]) if r_ax.size > 1 else None,
+                         vel_res_mps=float(d_ax[1] - d_ax[0]) if d_ax.size > 1 else None,
+                         frame=int(f), scene=str(cfg.get("name") or ""))
+            # Range/Doppler figure. The map is one receiver channel's power, so
+            # the window is anchored on the noise median and the speckle spread
+            # fills it; the axes and the target table are drawn into the PNG so
+            # the picture carries its own numbers.
+            # 40 dB scope window: the noise floor is exponential (10-90 spread
+            # 13.4 dB), so 30 dB clipped the bottom of the speckle and made the
+            # field read as a flat blue wash; 40 dB keeps the grain while the
+            # peak still saturates, which is what a real STC curve gives.
+            rd_fig = radar_scope.render_rd(out["rd_map"], r_ax, d_ax,
+                                           targets=rows, meta=_meta, dyn_db=40.0)
+            png.write_rgb8(os.path.join(out_dir, dirs["radar"], name), rd_fig["rgb"])
+            rd_clean = radar_scope.render_rd(out["rd_map"], r_ax, d_ax,
+                                             targets=rows, meta=_meta, dyn_db=40.0,
+                                             annotate=False)
+            png.write_rgb8(os.path.join(out_dir, dirs["radar_clean"], name),
+                           rd_clean["rgb"])
+            rd_h, rd_w = int(rd_fig["rgb"].shape[0]), int(rd_fig["rgb"].shape[1])
+            # A detection is one range/Doppler cell, i.e. a fraction of a pixel
+            # in the figure, so its box is padded to the echo's few-cell extent
+            # with a 5 px floor: a consumer has to be able to see the label.
+            _px0, _py0, _px1, _py1 = (float(v) for v in rd_fig["plot"])
+            _cw = max(1.0, (_px1 - _px0) / max(r_ax.size, 1))
+            _ch = max(1.0, (_py1 - _py0) / max(d_ax.size, 1))
+            _padx, _pady = max(2.5, 1.5 * _cw), max(2.5, 1.5 * _ch)
             # labelled objects only: a fence is scenery, and putting it in the
             # label file makes the YOLO export either skip it (class unknown) or,
             # worse, teach the detector that fences are targets
@@ -836,10 +994,12 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                     nm = name_of.get(oid)
                 if nm is None:
                     continue
-                ix = int(np.argmin(np.abs(r_ax - float(det["range"]))))
-                iy = int(np.argmin(np.abs(d_ax - float(det["v_r"]))))
-                b = dict(x0=max(0.0, ix - 1.0), y0=max(0.0, iy - 1.0),
-                         x1=min(float(rd_w), ix + 2.0), y1=min(float(rd_h), iy + 2.0),
+                px = float(np.clip(float(rd_fig["range_px"](float(det["range"]))),
+                                   _px0, _px1))
+                py = float(np.clip(float(rd_fig["doppler_px"](float(det["v_r"]))),
+                                   _py0, _py1))
+                b = dict(x0=max(0.0, px - _padx), y0=max(0.0, py - _pady),
+                         x1=min(float(rd_w), px + _padx), y1=min(float(rd_h), py + _pady),
                          pixels=1, visible=True,
                          source=("ecm" if oid < 0 else "detection"))
                 prev = boxes_rd.get(nm)
@@ -848,20 +1008,39 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                     b["x1"] = max(prev["x1"], b["x1"]); b["y1"] = max(prev["y1"], b["y1"])
                     b["pixels"] = prev["pixels"] + 1
                 boxes_rd[nm] = b
-            # range/angle map: one row per beam, one column per range bin.
-            # This is the picture that answers "did it see the target".
-            ra_db = radar.to_db(out["range_angle"].T)      # (n_beams, n_s)
-            ra_img = np.ascontiguousarray(scope(ra_db.T))
-            png.write_gray8(os.path.join(out_dir, dirs["radar_ra"], name),
-                            ra_img.astype(np.uint8))
+            # Range/azimuth map: one row per azimuth look, one column per range
+            # bin. The beam raster is (n_el x n_az), so elevation is collapsed by
+            # a maximum instead of a sum -- one beam carries the target, and
+            # averaging over elevation would bury a single-beam echo in clutter.
+            ra = np.asarray(out["range_angle"], float)      # (n_beams, n_s)
+            # The per-beam spectrum is not sliced to the positive-frequency band
+            # the way the RD map is; keep only the bins the range axis describes
+            # or the RA picture would show a mirrored negative-frequency half.
+            ra = ra[:, :r_ax.size]
+            _az = np.asarray(out["beams"], float)[:, 0]
+            _uniq_az, _inv = np.unique(np.round(_az, 6), return_inverse=True)
+            ra_az = np.zeros((_uniq_az.size, ra.shape[1]))
+            np.maximum.at(ra_az, _inv, ra)
+            ra_fig = radar_scope.render_ra(ra_az, r_ax, _uniq_az, targets=rows,
+                                           meta=dict(_meta, ra_layout="beams_range"))
+            png.write_rgb8(os.path.join(out_dir, dirs["radar_ra"], name), ra_fig["rgb"])
+            ra_clean = radar_scope.render_ra(ra_az, r_ax, _uniq_az, targets=rows,
+                                             meta=dict(_meta, ra_layout="beams_range"),
+                                             annotate=False)
+            png.write_rgb8(os.path.join(out_dir, dirs["radar_ra_clean"], name),
+                           ra_clean["rgb"])
             rlab = labels.radar_labels(w, out["detections"], fid)
-            # Where the brightest echo sits in that picture. A range/angle map is
-            # mostly noise floor; without this the viewer cannot tell a target
-            # from speckle without hunting for one white pixel.
-            iy, ix = np.unravel_index(int(np.argmax(ra_img)), ra_img.shape)
-            rlab["ra_peak"] = dict(px=int(ix), py=int(iy),
-                                   db=round(float(ra_db.max()), 1),
-                                   w=int(ra_img.shape[1]), h=int(ra_img.shape[0]))
+            # Where the brightest echo sits in that picture, in figure pixels and
+            # in physical units: the map is mostly noise floor and one 1-cell
+            # return is otherwise impossible to find by eye.
+            _ay, _ax = np.unravel_index(int(np.argmax(ra_az)), ra_az.shape)
+            rlab["ra_peak"] = dict(px=float(ra_fig["range_px"](float(r_ax[_ax]))),
+                                   py=float(ra_fig["doppler_px"](float(_uniq_az[_ay]))),
+                                   db=round(float(radar.to_db(ra_az.max())), 1),
+                                   w=int(ra_fig["rgb"].shape[1]),
+                                   h=int(ra_fig["rgb"].shape[0]),
+                                   range_m=round(float(r_ax[_ax]), 1),
+                                   az_deg=round(float(_uniq_az[_ay]), 3))
             if out.get("targets_beyond_range"):
                 # Silence is the worst outcome here: the dataset looks fine, the
                 # labels are empty, and nothing on screen says why.
@@ -871,6 +1050,38 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                       % (float(out.get("range_window_m") or 0),
                          "/".join("%.0f" % r for r in _far[:4])), file=sys.stderr)
             rlab["boxes_rd"] = boxes_rd
+            # What a consumer needs to map a detection back onto the picture
+            # without re-deriving the renderer's layout: the plot rectangle and
+            # the pixel position of the first/last axis value.
+            rlab["figure"] = dict(
+                rd=dict(plot=[float(v) for v in rd_fig["plot"]],
+                        db_window=[float(v) for v in rd_fig["db_window"]],
+                        range_m=[float(r_ax[0]), float(r_ax[-1])],
+                        range_px=[float(rd_fig["range_px"](float(r_ax[0]))),
+                                  float(rd_fig["range_px"](float(r_ax[-1])))],
+                        v_r=[float(d_ax[0]), float(d_ax[-1])],
+                        v_px=[float(rd_fig["doppler_px"](float(d_ax[0]))),
+                              float(rd_fig["doppler_px"](float(d_ax[-1])))]),
+                ra=dict(plot=[float(v) for v in ra_fig["plot"]],
+                        db_window=[float(v) for v in ra_fig["db_window"]],
+                        az_deg=[float(_uniq_az[0]), float(_uniq_az[-1])],
+                        az_px=[float(ra_fig["doppler_px"](float(_uniq_az[0]))),
+                               float(ra_fig["doppler_px"](float(_uniq_az[-1])))]))
+            # The clean copy has no table, so its map keeps the full width and
+            # its own mapping. Boxes stay in the annotated figure's pixels; a
+            # consumer that trains on the clean map converts with this rect.
+            rlab["figure"]["rd"]["clean"] = dict(
+                path="images/radar_clean/%06d.png" % f,
+                plot=[float(v) for v in rd_clean["plot"]],
+                range_px=[float(rd_clean["range_px"](float(r_ax[0]))),
+                          float(rd_clean["range_px"](float(r_ax[-1])))],
+                v_px=[float(rd_clean["doppler_px"](float(d_ax[0]))),
+                      float(rd_clean["doppler_px"](float(d_ax[-1])))])
+            rlab["figure"]["ra"]["clean"] = dict(
+                path="images/radar_ra_clean/%06d.png" % f,
+                plot=[float(v) for v in ra_clean["plot"]],
+                az_px=[float(ra_clean["doppler_px"](float(_uniq_az[0]))),
+                       float(ra_clean["doppler_px"](float(_uniq_az[-1])))])
             # Same world the radar saw, and the radar own position: a target
             # beyond the window returns nothing and the frame exits 0, so a
             # silent zero here would look exactly like a clean miss.
@@ -885,17 +1096,54 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                       "距离窗 %.0f m，请检查 sensors.radar.n_samples 是否足够。"
                       % (len(_labeled), _rwin), file=sys.stderr)
             rlab["processing"] = out.get("processing")
+            rlab["targets"] = rows
+            rlab["tensor"] = dict(path="raw/radar/%06d.npy" % f, dtype="float32",
+                                  shape=[int(np.shape(out["rd_map"])[0]),
+                                         int(np.shape(out["rd_map"])[1])],
+                                  axis_order=["range", "doppler"],
+                                  unit="W (received power, one-way normalised)")
+            # The pieces a fused loader needs to rebuild this frame without the
+            # scene file: the instant, where the antenna was, and the waveform
+            # the numbers were measured with.
+            rlab["t"] = round(float(t), 4)
+            rlab["sensor_pose"] = dict(pos=[float(v) for v in (_rc.get("pos") or [])],
+                                       look_at=[float(v) for v in (_rc.get("look_at") or [])],
+                                       up=[float(v) for v in (_rc.get("up") or [])])
+            rlab["waveform"] = dict(
+                fc_ghz=_rc.get("fc_ghz"), bandwidth_mhz=_rc.get("bandwidth_mhz"),
+                n_samples=_rc.get("n_samples"), n_chirps=_rc.get("n_chirps"),
+                chirp_us=_rc.get("chirp_us"), pri_us=_rc.get("pri_us"),
+                tx_power_dbm=_rc.get("tx_power_dbm"),
+                noise_figure_db=_rc.get("noise_figure_db"),
+                range_res_m=float(r_ax[1] - r_ax[0]) if r_ax.size > 1 else None,
+                vel_res_mps=float(d_ax[1] - d_ax[0]) if d_ax.size > 1 else None,
+                vel_nyquist_mps=float(np.max(np.abs(d_ax))),
+                range_window_m=out.get("range_window_m"))
             rlab["unassociated_detections"] = [d for d in out["detections"] if d["obj"] < 0]
             rlab["axes"] = dict(range_m=out["range_axis"].tolist(),
                                  closing_speed_mps=out["doppler_axis"].tolist(),
                                  velocity_convention="positive closing; single-PRF aliased")
+            # How the RA picture was built from the beam raster. Without this a
+            # consumer cannot tell a 40x20 scanned raster from a 40-beam fan and
+            # would read the y axis as if it were degrees of azimuth on a fan.
+            rlab["beam_raster"] = dict(
+                n_az=int(_rc.get("n_az") or 0), n_el=int(_rc.get("n_el") or 0),
+                az_span_deg=_rc.get("az_span_deg"), el_span_deg=_rc.get("el_span_deg"),
+                beamwidth_az_deg=_rc.get("beamwidth_az_deg"),
+                beamwidth_el_deg=_rc.get("beamwidth_el_deg"),
+                ra_layout="range x azimuth",
+                elevation_reduction="max over n_el (one beam carries the echo)")
             rlab["width"], rlab["height"] = int(rd_w), int(rd_h)
             labels.write_json(os.path.join(out_dir, dirs["label_radar"], "%06d.json" % f), rlab)
             radar_frames.append(dict(
-                frame=int(f),
+                frame=int(f), image=name,
+                width=int(rlab.get("width") or 0), height=int(rlab.get("height") or 0),
                 n=int(rlab.get("num_points", 0)),
                 clutter=int(rlab.get("clutter_count", 0)),
                 boxes=rlab.get("boxes_3d") or [],
+                targets=rlab.get("targets") or [],
+                boxes_rd=boxes_rd,
+                tensor=rlab.get("tensor"),
                 snr_max=round(float(max([d["snr_db"] for d in out["detections"]], default=0.0)), 2)))
 
         if "lidar" in sensors:
@@ -1052,6 +1300,40 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
         for v in views:
             labels.write_json(os.path.join(out_dir, anno_name("optical" + v["tag"])),
                               coco_opt[v["tag"]])
+    # Radar is the one modality whose pictures are figures, not pixels: the
+    # RD map is a tensor with its own axes, and a fused loader needs the frame
+    # index plus the truth range/closing speed that the figure prints. One file
+    # ties the tensor, the figure box and the truth row together for every
+    # frame, using the same "frame" key as the optical/IR label directories.
+    if "radar" in sensors and radar_frames:
+        # COCO-shaped on purpose: the README, the site and any fused loader
+        # already read annotations_*_coco.json, so a bespoke schema would show
+        # up as "radar 0 images / 0 boxes". Each image record carries the tensor
+        # path and the truth table on top of the COCO fields.
+        _rimg, _rann = [], []
+        for _r in radar_frames:
+            _rows = _r.get("targets") or []
+            _rimg.append(dict(id=int(_r["frame"]), file_name=_r.get("image"),
+                              width=_r.get("width"), height=_r.get("height"),
+                              tensor=_r.get("tensor"), targets=_rows,
+                              n_points=_r.get("n"), snr_max=_r.get("snr_max")))
+            _cls_of = {row["name"]: row.get("cls") for row in _rows}
+            for _nm, _b in (_r.get("boxes_rd") or {}).items():
+                _w = float(_b["x1"] - _b["x0"])
+                _h = float(_b["y1"] - _b["y0"])
+                _rann.append(dict(id=len(_rann) + 1, image_id=int(_r["frame"]),
+                                  category_id=int(cls_id.get(_cls_of.get(_nm), 0)),
+                                  bbox=[round(float(_b["x0"]), 2), round(float(_b["y0"]), 2),
+                                        round(_w, 2), round(_h, 2)],
+                                  area=round(_w * _h, 2), iscrowd=0,
+                                  object_name=_nm, source=_b.get("source", "detection")))
+        labels.write_json(os.path.join(out_dir, "annotations_radar.json"),
+                          dict(info=dict(description="simkit radar range-Doppler frames "
+                                                     "(per-frame truth + figure boxes)",
+                                         version="0.1",
+                                         coordinate_system="figure pixels, top-left origin",
+                                         tensor_layout="float32 (range, doppler)"),
+                               categories=cats, images=_rimg, annotations=_rann))
     if "lidar" in sensors:
         labels.write_json(os.path.join(out_dir, anno_name("lidar")), coco_lidar)
     if have_sar:

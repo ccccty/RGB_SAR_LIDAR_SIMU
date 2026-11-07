@@ -41,7 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from simkit import motion, plan, scene  # noqa: E402
 
 
-def _accel_at(state_of, t, h):
+def _accel_at(state_of, t, h, one_sided=False):
     """d(velocity)/dt from the *published* velocity, not from a re-derived path.
 
     Deliberately a finite difference: the question this tool answers is "what
@@ -49,7 +49,22 @@ def _accel_at(state_of, t, h):
     same velocity the renderer and the labels read.  If that velocity is not the
     derivative of the position, the error surfaces in the derivative column
     instead of being hidden by a cleverer formula.
+
+    one_sided=True is for the first sample of a clip.  A clip is a window onto a
+    track that has a beginning: the planners publish the right-hand derivative
+    at t=0 (my measured case publishes 80.0 m/s there) but their position function
+    is frozen for t<0.  A centred step across that edge reads
+    (v(+h) - v(-h)) / 2h with v(-h) == v(0), i.e. half the real acceleration --
+    it under-reported 133.4 m/s^2 as 44.9 and 80 m/s of velocity as a 40 m/s
+    "derivative error".  The three-point forward formula keeps the scheme's own
+    error at O(h^2), the same order the centred step has in the interior, so the
+    first frame is measured as accurately as every other one.
     """
+    if one_sided:
+        v0 = np.asarray(state_of(t)[1], float)
+        v1 = np.asarray(state_of(t + h)[1], float)
+        v2 = np.asarray(state_of(t + 2.0 * h)[1], float)
+        return (-3.0 * v0 + 4.0 * v1 - v2) / (2.0 * h)
     return (np.asarray(state_of(t + h)[1], float)
             - np.asarray(state_of(t - h)[1], float)) / (2.0 * h)
 
@@ -75,11 +90,28 @@ def _track(modes, t, dt, ground_z):
     rows = []
     for k in range(int(modes["frames"])):
         tt = t + k * dt
+        # The first sample of the run sits on the edge of the scene clock: the
+        # left neighbour t-h would be negative, where every planner here freezes
+        # the position (a clip is a window onto a track that has a beginning).
+        # Differencing across that edge reads a half step and reports half the
+        # velocity as an "error", which is a defect of the scheme, not of the
+        # motion.  Both derivatives therefore switch to a three-point forward
+        # formula there; see _accel_at for the measurement behind this.
+        first = (tt - h_deriv < 0.0)
         p, v, yaw = modes["state"](tt)
-        a = _accel_at(modes["state"], tt, h)
+        a = _accel_at(modes["state"], tt, h, one_sided=first)
         a2 = _accel_at(modes["state"], tt + h, h)
-        p2 = modes["state"](tt + h_deriv)[0]
-        p0 = modes["state"](tt - h_deriv)[0]
+        if first:
+            p2 = modes["state"](tt + 2.0 * h_deriv)[0]
+            p1 = modes["state"](tt + h_deriv)[0]
+            # three-point forward: exact to O(h^2) on a smooth track, and it
+            # never reads t < 0
+            psec = (-3.0 * np.asarray(p, float) + 4.0 * np.asarray(p1, float)
+                    - np.asarray(p2, float)) / (2.0 * h_deriv)
+        else:
+            p2 = modes["state"](tt + h_deriv)[0]
+            p0 = modes["state"](tt - h_deriv)[0]
+            psec = (np.asarray(p2, float) - np.asarray(p0, float)) / (2.0 * h_deriv)
         speed = float(np.linalg.norm(v))
         hspeed = float(np.hypot(v[0], v[1]))
         rows.append(dict(
@@ -96,8 +128,7 @@ def _track(modes, t, dt, ground_z):
             climb_mps=round(float(v[2]), 4),
             altitude_m=round(float(p[2]) - float(ground_z), 4),
             derivative_error_mps=round(float(np.linalg.norm(
-                v - (np.asarray(p2, float) - np.asarray(p0, float))
-                / (2.0 * h_deriv))), 6),
+                np.asarray(v, float) - psec)), 6),
         ))
     return rows
 

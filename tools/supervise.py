@@ -89,14 +89,14 @@ def netd_check(scene_path, work):
 
 
 def clutter_check(work, scene_file):
-    """Range-Doppler statistics: noise floor, target SNR and clutter occupancy.
+    """Range-Doppler statistics: noise floor, speckle shape and peak contrast.
 
     The label counts only clutter that passed the detector gate, and at these
     carrier-to-noise ratios the patches sit below it, so that count is zero on
     a scene whose RD map is far from empty. The statistics have to come from
     the map itself: a noise floor that is not degenerate, a target peak well
-    above it, and a small fraction of cells lifted by clutter -- none at all
-    would mean a ground radar looking at an empty world.
+    above it, and a speckle spread that is a single exponential channel's --
+    a map without either is not a measurement of anything.
     """
     sys.path.insert(0, ROOT)
     from simkit import radar, scene
@@ -113,19 +113,23 @@ def clutter_check(work, scene_file):
         chk("雷达 RD 噪声底", floor, 1e-30, None, "", "噪声底不能是零")
         return
     chk("雷达 RD 噪声底", floor, 1e-30, None, "", "地图必须要有噪声")
-    # Peak-to-floor is reported but not asserted. The two sides of that ratio are
-    # on different bases: the radar equation quotes a single-beam SNR, while the
-    # floor of rd_map is the maximum over every beam, and the maximum of ~800
-    # exponential cells sits about 12 dB above the single-beam mean. Measured
-    # -12.5 dB on all three domains, i.e. exactly that lift, not a defect. The
-    # self-consistency that IS well posed is the equation-versus-detection check
-    # below, which agrees to 0.01 dB.
-    # No Rayleigh-shape test here on purpose. rd_map is the maximum over every
-    # beam of the per-cell power, and the maximum of ~800 exponential draws has a
-    # p90/p50 near 1.27, not Rayleigh's 2.14. The narrow floor is the map being
-    # what it says it is; a Rayleigh expectation would have condemned correct
-    # output. Clutter shows up in this map as discrete lifted cells, so it is
-    # covered by the peak-to-floor and equation-consistency checks instead.
+    # rd_map is now ONE display channel, so peak and floor share a basis and the
+    # ratio is a real target-to-noise contrast instead of a comparison between a
+    # single-beam SNR and the maximum of ~800 exponential cells. Measured 50.1 /
+    # 47.4 / 58.7 dB on the air / ground / sea scenes, against -12.5 dB when the
+    # floor was that maximum. A scene whose target never enters the aperture
+    # reads ~5 dB here, so the bound is what separates "target present" from
+    # "empty sky" rather than a tuned number.
+    chk("雷达 峰值/噪声底", float(10.0 * np.log10(peak / floor)), 20.0, None, "dB",
+        "单通道图上目标应显著高于噪声底")
+    # Speckle shape is well posed on a single channel and was not on a maximum:
+    # an exponential cell power puts its 10th percentile at 0.105*mean and its
+    # 90th at 2.303*mean, i.e. 13.45 dB apart. The per-cell maximum over ~800
+    # beams compressed that to 1.2-1.8 dB -- the "too clean" flat grey field this
+    # check is here to catch. Measured 13.35-13.37 dB on all three domains.
+    db = radar.to_db(rd)
+    chk("雷达 RD 散斑 10-90 分位差", float(np.percentile(db, 90) - np.percentile(db, 10)),
+        12.0, 15.0, "dB", "单通道指数分布应给出约 13.4 dB 的散斑起伏")
     # The radar equation and the detection stage live in the same module,
     # so they have to agree. A gap here means a gain is counted twice.
     eq = np.asarray(out.get("snr_db"), float).ravel()
@@ -139,9 +143,10 @@ def clutter_ab(scene_file):
 
     The only well-posed way to score clutter without depending on a distribution
     assumption. Everything else in the scene is identical, so any rise in the
-    range-Doppler tail comes from the ground returning energy. Absolute
-    occupancy is a poor metric here because rd_map is a max over beams, but a
-    difference between two runs of the same construction is direct.
+    range-Doppler tail comes from the ground returning energy. With one display
+    channel the absolute occupancy now means something too, but it still mixes
+    the target's own skirt with the clutter ridge; a difference between two runs
+    of the same construction isolates the surface without that bookkeeping.
     """
     import copy as _copy
     sys.path.insert(0, ROOT)
