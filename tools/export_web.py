@@ -356,6 +356,53 @@ def scene_budget(cfg_path, bands):
     return out
 
 
+def write_curated(dest, path, scenes):
+    """Publish the hand-picked frame list the showcase page reads.
+
+    The gallery should not show whatever the renderer happened to produce first:
+    a frame with a tiny target, motion blur or a missed radar echo explains
+    nothing. tools/curate_web.py scores the frames and a human signs off on the
+    list; this only names the file the site fetches and keeps it honest by
+    dropping entries whose scene or frame is not actually in the export.
+
+    Set SIMKIT_WEB_CURATED=<json> at publish time; without it the page falls back
+    to the first frames of each scene, so a missing file is never a blank site.
+    """
+    data = os.path.join(dest, "data")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            src = json.load(fh)
+    except (OSError, ValueError) as exc:
+        print("curated list skipped: %s" % exc)
+        return
+    have = {s["id"]: s for s in scenes}
+    keep = []
+    for sc in src.get("scenes") or []:
+        sid = sc.get("id")
+        if sid not in have:
+            continue
+        frames = [int(f) for f in (sc.get("frames") or [])]
+        frames = [f for f in frames if 0 <= f < len(have[sid].get("frames") or [])]
+        if not frames:
+            continue
+        item = dict(sc)
+        item["frames"] = frames
+        hero = sc.get("hero") or {}
+        try:
+            hf = int(hero.get("frame"))
+        except (TypeError, ValueError):
+            hf = frames[0]
+        item["hero"] = dict(mod=hero.get("mod") or "optical",
+                            frame=hf if hf in frames else frames[0])
+        keep.append(item)
+    out = dict(generated=src.get("generated") or "simkit",
+               domain="air", scenes=keep)
+    with open(os.path.join(data, "curated.json"), "w", encoding="utf-8") as fh:
+        json.dump(out, fh, ensure_ascii=False, indent=1)
+    print("curated: %d scene(s), %d frame(s) picked"
+          % (len(keep), sum(len(s["frames"]) for s in keep)))
+
+
 def main(dest, runs):
     if not os.path.isdir(runs):
         sys.exit("export_web: no such runs directory: %s\n"
@@ -630,6 +677,10 @@ def main(dest, runs):
             opt_images.optimize(data)
         except Exception as exc:            # never fail an export over this
             print("webp optimisation skipped: %s" % exc)
+
+    _cur = os.environ.get("SIMKIT_WEB_CURATED", "").strip()
+    if _cur:
+        write_curated(dest, _cur, scenes)
 
     total = 0
     for root, _, files in os.walk(data):

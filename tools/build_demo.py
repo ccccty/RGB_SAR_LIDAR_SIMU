@@ -21,11 +21,17 @@ SPECS = {
     "demo_air_headon": dict(
         title="空中目标 · 迎头", kind="sky", cat="sky",
         asset="军用飞机/双发战斗机.obj", cls="fighter",
-        aspect="head_on", range_km=1.2, fov_deg=2.2),
+        # 3.2 deg, not 2.2: at 1.2 km a 20 m fighter spanned 555 px in a 1280 px
+        # frame and the wing tip left the picture (label x1 pinned to 1280 on all
+        # eight frames). The showcase needs the whole airframe in shot.
+        # 4.5 deg: the seeker block wanders +-1.12 deg to mimic a hand-held mount,
+        # and a 20 m fighter is 0.48 deg wide at 1.2 km; at 3.2 deg those add up
+        # to the half-frame, so the wing sat on the right edge from frame 5 on.
+        aspect="head_on", range_km=1.2, fov_deg=4.5),
     "demo_air_pursuit": dict(
         title="空中目标 · 追击", kind="sky", cat="sky",
         asset="军用飞机/双发战斗机.obj", cls="fighter",
-        aspect="pursuit", range_km=1.2, fov_deg=2.2),
+        aspect="pursuit", range_km=1.2, fov_deg=4.5),
     "demo_ground_plate": dict(
         title="地面目标 · 俯视板", kind="ground", cat="city",
         asset="军用地面车辆/主战坦克.obj", cls="vehicle",

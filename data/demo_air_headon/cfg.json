@@ -114,7 +114,7 @@
     0.0,
     2500.0
    ],
-   "fov_deg": 2.2,
+   "fov_deg": 4.5,
    "width": 1280,
    "height": 960
   },
@@ -129,7 +129,7 @@
     0.0,
     2500.0
    ],
-   "fov_deg": 2.2,
+   "fov_deg": 4.5,
    "width": 1280,
    "height": 960
   },
@@ -184,7 +184,7 @@
     0.0,
     2500.0
    ],
-   "fov_deg": 2.2,
+   "fov_deg": 4.5,
    "width": 960,
    "height": 720,
    "n_az": 256,
@@ -233,7 +233,7 @@
    {
     "name": "seeker",
     "tag": "",
-    "fov_deg": 2.2,
+    "fov_deg": 4.5,
     "width": 1280,
     "height": 960
    }
@@ -248,13 +248,13 @@
    "closing_mps": 250.0,
    "target_m": 20.013,
    "target_px": [
-    291.8,
-    583.7
+    142.6,
+    285.2
    ],
    "az_span_deg": 0.6,
    "el_span_deg": 0.3,
    "los_jitter_deg": 0.04,
-   "wander_deg": 0.77,
+   "wander_deg": 1.575,
    "wander_hz": 0.09,
    "keep_z": false,
    "lag_s": 0.02,
@@ -311,7 +311,7 @@
    "range_km": 1.2,
    "aspect": "head_on",
    "ground_span_m": null,
-   "fov_deg": 2.2,
+   "fov_deg": 4.5,
    "views": "single",
    "closing_mps": null,
    "trajectory": {

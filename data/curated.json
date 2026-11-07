@@ -1,0 +1,147 @@
+{
+ "generated": "2026-11-07T11:42:15+08:00",
+ "domain": "air",
+ "scenes": [
+  {
+   "id": "demo_air_headon",
+   "title": "迎头接近 · 战机",
+   "cls": "fighter",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "mwir",
+    "lwir",
+    "radar",
+    "radar_ra",
+    "lidar_range",
+    "lidar_intensity"
+   ],
+   "frames": [
+    1,
+    3,
+    5,
+    7
+   ],
+   "hero": {
+    "mod": "optical",
+    "frame": 7
+   },
+   "note": "4 帧 · 雷达 1.2 km · 闭速 178 m/s",
+   "caption": "迎头姿态下机翼前缘和机身轮廓清楚，背景是真实云层。"
+  },
+  {
+   "id": "demo_air_pursuit",
+   "title": "尾追跟拍 · 战机",
+   "cls": "fighter",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "mwir",
+    "lwir",
+    "radar",
+    "radar_ra",
+    "lidar_range",
+    "lidar_intensity"
+   ],
+   "frames": [
+    0,
+    2,
+    5,
+    7
+   ],
+   "hero": {
+    "mod": "optical",
+    "frame": 7
+   },
+   "note": "4 帧 · 雷达 1.4 km · 远离 118 m/s",
+   "caption": "从后方跟拍，机翼后缘与尾喷清楚，目标在缓慢拉开距离。"
+  },
+  {
+   "id": "final_air",
+   "title": "大型无人机 · 侧后视角",
+   "cls": "uav",
+   "band": "Ka",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "mwir",
+    "lwir",
+    "radar",
+    "radar_ra",
+    "lidar_range",
+    "lidar_intensity"
+   ],
+   "frames": [
+    1,
+    3,
+    5
+   ],
+   "hero": {
+    "mod": "optical",
+    "frame": 1
+   },
+   "note": "3 帧 · 雷达 1.5 km · 远离 5 m/s",
+   "caption": "大型无人机侧后方，翼展约占画幅五分之一，纯色天空把机体轮廓衬出来。"
+  },
+  {
+   "id": "seeker_air2air_high",
+   "title": "高空目标 · 双视场",
+   "cls": "uav",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "optical_wide",
+    "mwir",
+    "lwir",
+    "mwir_wide",
+    "lwir_wide",
+    "radar",
+    "radar_ra",
+    "lidar_range",
+    "lidar_intensity"
+   ],
+   "frames": [
+    0,
+    8,
+    13,
+    17
+   ],
+   "hero": {
+    "mod": "lwir",
+    "frame": 17
+   },
+   "note": "4 帧 · 雷达 7.5 km · 闭速 251 m/s",
+   "caption": "窄视场里目标只有三十来像素，先靠宽视场找到，再用窄视场分辨。"
+  },
+  {
+   "id": "demo_three_ships_plate",
+   "title": "三机俯视板面",
+   "cls": "fighter",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "mwir",
+    "lwir",
+    "radar",
+    "radar_ra",
+    "lidar_range",
+    "lidar_intensity"
+   ],
+   "frames": [
+    4,
+    10,
+    12
+   ],
+   "hero": {
+    "mod": "optical",
+    "frame": 4
+   },
+   "note": "3 帧 · 雷达 4.3 km · 远离 2 m/s · 3 个目标",
+   "caption": "俯视云海上的三架飞机同框，间距均匀，便于看编队几何。"
+  }
+ ]
+}
