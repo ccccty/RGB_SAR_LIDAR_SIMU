@@ -796,16 +796,386 @@
     getJSON('data/curated.json', null).then(function (curated) {
       if (curated && isArr(curated.scenes) && curated.scenes.length) {
         finish(doc, buildModel(curated, null));
+        loadJamLab();
         return;
       }
       afterFirstScreen(doc, function () {
         getJSON('data/manifest.json', null).then(function (manifest) {
           finish(doc, buildModel(curated, manifest));
+          loadJamLab();
         });
       });
     }).catch(function () {
       finish(doc, buildModel(null, null));
+      loadJamLab();
     });
+  }
+
+  /* --------------------------------------------------------------- jam lab */
+  /* W3: interference lab. This is the only file that owns this feature.
+   * - every DOM lookup is guarded, every dynamic string is esc()'d
+   * - a missing / broken / malformed data/jam_lab.json hides #jamlab quietly
+   * - loadJamLab runs after finish() so it never blocks first paint
+   * - jamLabView is a pure, browser-free view model for headless checks       */
+
+  var jamState = { data: null, idx: 0, split: 50, loaded: false };
+  var jamDrag = { dragging: false, el: null };
+
+  function jamAsset(p) { return typeof p === 'string' && p ? 'data/' + p : ''; }
+  function jamNum(v) { var n = Number(v); return isFinite(n) ? n : null; }
+  function jamFix(v) { var n = jamNum(v); return n === null ? '—' : n.toFixed(1); }
+
+  // Pure view model. Missing/empty input -> {empty:true}, never throws.
+  function jamLabView(data, idx) {
+    if (!data || typeof data !== 'object' || !isArr(data.domains)) { return { empty: true }; }
+    var domains = [];
+    for (var k = 0; k < data.domains.length; k++) {
+      if (data.domains[k] && typeof data.domains[k] === 'object') { domains.push(data.domains[k]); }
+    }
+    if (!domains.length) { return { empty: true }; }
+    var i = toInt(idx, 0);
+    if (i < 0 || i >= domains.length) { i = 0; }
+    var d = domains[i];
+
+    var tabs = domains.map(function (dd, n) {
+      return {
+        idx: n,
+        id: typeof dd.id === 'string' ? dd.id : '',
+        label: typeof dd.label === 'string' && dd.label ? dd.label : ('干扰域 ' + (n + 1)),
+        on: n === i
+      };
+    });
+
+    var c = d.compare && typeof d.compare === 'object' ? d.compare : {};
+    var compare = {
+      clean: jamAsset(c.clean),
+      jam: jamAsset(c.jam),
+      clean_label: typeof c.clean_label === 'string' && c.clean_label ? c.clean_label : '干净',
+      jam_label: typeof c.jam_label === 'string' && c.jam_label ? c.jam_label : '干扰',
+      w: toInt(c.w, 1280),
+      h: toInt(c.h, 720)
+    };
+
+    var metrics = (isArr(d.metrics) ? d.metrics.slice(0, 4) : []).map(function (m) {
+      m = m && typeof m === 'object' ? m : {};
+      var val = jamNum(m.value);
+      if (val === null) { val = 0; }
+      var max = jamNum(m.max);
+      if (max === null || max <= 0) { max = 1; }
+      return {
+        key: typeof m.key === 'string' ? m.key : '',
+        label: typeof m.label === 'string' ? m.label : '—',
+        value: val,
+        display: val.toFixed(1),
+        unit: typeof m.unit === 'string' ? m.unit : '',
+        max: max,
+        pct: Math.max(0, Math.min(100, (val / max) * 100))
+      };
+    });
+
+    var rawTiers = isArr(d.tiers) ? d.tiers : [];
+    var finalAt = -1;
+    for (var z = 0; z < rawTiers.length; z++) {
+      if (rawTiers[z] && rawTiers[z].key === 'final') { finalAt = z; }
+    }
+    if (finalAt < 0) { finalAt = rawTiers.length - 1; }
+    var tiers = rawTiers.map(function (t, n) {
+      t = t && typeof t === 'object' ? t : {};
+      return {
+        key: typeof t.key === 'string' ? t.key : '',
+        label: typeof t.label === 'string' ? t.label : ('档位 ' + (n + 1)),
+        rd: jamAsset(t.rd),
+        floor_db: jamFix(t.floor_db),
+        center_db: jamFix(t.center_db),
+        detected: !!t.detected,
+        detected_txt: t.detected ? '检出' : '未检出',
+        on: n === finalAt
+      };
+    });
+
+    var entities = (isArr(d.entities) ? d.entities : []).map(function (e) {
+      e = e && typeof e === 'object' ? e : {};
+      return {
+        name: typeof e.name === 'string' ? e.name : '—',
+        group: e.group === 'passive' ? 'passive' : 'active',
+        spec: typeof e.spec === 'string' ? e.spec : ''
+      };
+    });
+
+    return {
+      empty: false,
+      idx: i,
+      domain: {
+        id: typeof d.id === 'string' ? d.id : '',
+        label: typeof d.label === 'string' ? d.label : '',
+        kind: typeof d.kind === 'string' ? d.kind : '',
+        tier: typeof d.tier === 'string' ? d.tier : '',
+        note: typeof d.note === 'string' ? d.note : ''
+      },
+      tabs: tabs,
+      compare: compare,
+      metrics: metrics,
+      tiers: tiers,
+      entities: entities,
+      optical: jamAsset(d.optical),
+      note: typeof d.note === 'string' ? d.note : ''
+    };
+  }
+
+  /* ---------------------------------------------------------- html builders */
+
+  function jamImgTag(o, lazy) {
+    return '<img src="' + esc(o.src) + '"' +
+      (o.w ? ' width="' + o.w + '"' : '') +
+      (o.h ? ' height="' + o.h + '"' : '') +
+      (lazy ? ' loading="lazy"' : '') +
+      ' alt="' + esc(o.alt || '') + '" data-jam-img="1">' +
+      '<span class="jam-empty" style="display:none">图像暂不可用</span>';
+  }
+
+  function jamTabsHtml(vm) {
+    return vm.tabs.map(function (t) {
+      return '<button type="button" class="jam-tab' + (t.on ? ' on' : '') +
+        '" data-jam-idx="' + t.idx + '" aria-pressed="' + (t.on ? 'true' : 'false') + '">' +
+        esc(t.label) + '</button>';
+    }).join('');
+  }
+
+  function jamCompareHtml(vm) {
+    var c = vm.compare;
+    var clean = jamImgTag({ src: c.clean, w: c.w, h: c.h, alt: c.clean_label + '（干净）参考图' }, false);
+    var jam = jamImgTag({ src: c.jam, w: c.w, h: c.h, alt: c.jam_label + '（干扰）对比图' }, false);
+    return '<div class="jam-compare" style="--jam-split:' + jamState.split + '%">' +
+      clean +
+      '<div class="jam-top">' + jam + '</div>' +
+      '<span class="jam-badge clean">' + esc(c.clean_label) + '</span>' +
+      '<span class="jam-badge jam">' + esc(c.jam_label) + '</span>' +
+      '<div class="jam-handle"></div>' +
+      '<input type="range" class="jam-range" min="0" max="100" value="' + Math.round(jamState.split) +
+        '" aria-label="干扰对比位置" data-jam-range="1"' +
+        ' style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;">' +
+      '</div>';
+  }
+
+  function jamOpticalHtml(vm) {
+    return '<div class="jam-optical">' +
+      jamImgTag({ src: vm.optical, alt: '同一帧光学参考图' }, true) +
+      '<p>同一帧光学：目标仍是 31 px 小目标，干扰主要体现在 RD 与红外</p></div>';
+  }
+
+  function jamEntitiesHtml(vm) {
+    if (!vm.entities.length) { return ''; }
+    return '<div class="jam-entities">' + vm.entities.map(function (e) {
+      return '<span class="jam-entity ' + e.group + '">' +
+        esc(e.name) + (e.spec ? ' · ' + esc(e.spec) : '') + '</span>';
+    }).join('') + '</div>';
+  }
+
+  function jamNoteHtml(vm) {
+    return vm.note ? '<p class="jam-note">' + esc(vm.note) + '</p>' : '';
+  }
+
+  function jamMetricsHtml(vm) {
+    if (!vm.metrics.length) { return '<p class="jam-empty">暂无指标</p>'; }
+    return vm.metrics.map(function (m) {
+      return '<div class="jam-metric">' +
+        '<span class="lab">' + esc(m.label) + '</span>' +
+        '<span>' + esc(m.display) + (m.unit ? ' ' + esc(m.unit) : '') + '</span>' +
+        '<span class="jam-bar"><i style="width:' + m.pct.toFixed(1) + '%"></i></span>' +
+        '</div>';
+    }).join('');
+  }
+
+  function jamTiersHtml(vm) {
+    if (!vm.tiers.length) { return '<p class="jam-empty">暂无档位</p>'; }
+    return vm.tiers.map(function (t) {
+      return '<div class="jam-tier' + (t.on ? ' on' : '') +
+        '" data-jam-rd="' + esc(t.rd) + '" role="button" tabindex="0"' +
+        ' aria-pressed="' + (t.on ? 'true' : 'false') + '">' +
+        jamImgTag({ src: t.rd, alt: t.label + ' RD 图' }, true) +
+        '<strong>' + esc(t.label) + '</strong>' +
+        '<small>底噪 ' + esc(t.floor_db) + ' dB · 中心 ' + esc(t.center_db) + ' dB · ' +
+        esc(t.detected_txt) + '</small></div>';
+    }).join('');
+  }
+
+  /* --------------------------------------------------------------- plumbing */
+
+  function hideJamLab(doc) {
+    var sec = byId(doc, 'jamlab');
+    if (!sec) { return; }
+    sec.hidden = true;
+    if (sec.setAttribute) { sec.setAttribute('hidden', 'hidden'); }
+  }
+
+  function renderJamLab(data, idx) {
+    var doc = (typeof document !== 'undefined') ? document : null;
+    var vm = jamLabView(data, idx);
+    var sec = byId(doc, 'jamlab');
+    var tabsEl = byId(doc, 'jamTabs');
+    var body = byId(doc, 'jamBody');
+    var metricsEl = byId(doc, 'jamMetrics');
+    var tiersEl = byId(doc, 'jamTiers');
+    if (vm.empty) { hideJamLab(doc); return; }
+    if (!tabsEl || !body || !metricsEl || !tiersEl) { return; }
+    jamState.idx = vm.idx;
+    if (sec) {
+      sec.hidden = false;
+      if (sec.removeAttribute) { sec.removeAttribute('hidden'); }
+    }
+    tabsEl.innerHTML = jamTabsHtml(vm);
+    body.innerHTML = jamCompareHtml(vm) + jamOpticalHtml(vm) + jamEntitiesHtml(vm) + jamNoteHtml(vm);
+    metricsEl.innerHTML = jamMetricsHtml(vm);
+    tiersEl.innerHTML = jamTiersHtml(vm);
+    wireJamLab(doc);
+  }
+
+  // fetch after first paint; any failure / bad shape hides the section quietly.
+  function loadJamLab() {
+    if (jamState.loaded) { return; }
+    var doc = (typeof document !== 'undefined') ? document : null;
+    try {
+      if (typeof fetch !== 'function') { hideJamLab(doc); return; }
+      fetch('data/jam_lab.json', { cache: 'no-cache' }).then(function (res) {
+        if (!res || !res.ok) { throw new Error('jam_lab http'); }
+        return res.json();
+      }).then(function (data) {
+        if (!data || typeof data !== 'object' || !isArr(data.domains) || !data.domains.length) {
+          hideJamLab(doc); return;
+        }
+        if (jamLabView(data, 0).empty) { hideJamLab(doc); return; }
+        jamState.loaded = true;
+        jamState.data = data;
+        renderJamLab(data, 0);
+      }).catch(function () { hideJamLab(doc); });
+    } catch (e) { hideJamLab(doc); }
+  }
+
+  /* ------------------------------------------------------------ interaction */
+
+  function jamBound(el) {
+    return !!(el && typeof el.getAttribute === 'function' && el.getAttribute('data-bound') === '1');
+  }
+  function jamMark(el) {
+    if (el && typeof el.setAttribute === 'function') { el.setAttribute('data-bound', '1'); }
+  }
+  function jamClientX(ev) {
+    if (ev.touches && ev.touches.length) { return ev.touches[0].clientX; }
+    if (ev.changedTouches && ev.changedTouches.length) { return ev.changedTouches[0].clientX; }
+    return ev.clientX;
+  }
+  function jamFindCompare(t) {
+    return t && t.closest ? t.closest('.jam-compare') : null;
+  }
+  function jamSetSplit(el, clientX) {
+    if (!el || typeof el.getBoundingClientRect !== 'function') { return; }
+    var rect = el.getBoundingClientRect();
+    if (!rect || !rect.width) { return; }
+    var pct = ((clientX - rect.left) / rect.width) * 100;
+    pct = Math.max(0, Math.min(100, pct));
+    jamState.split = pct;
+    if (el.style && el.style.setProperty) { el.style.setProperty('--jam-split', pct + '%'); }
+    var range = el.querySelector ? el.querySelector('[data-jam-range]') : null;
+    if (range) { range.value = String(Math.round(pct)); }
+  }
+  function jamImgError(ev) {
+    var img = ev && ev.target;
+    if (!img || img.tagName !== 'IMG' || !img.getAttribute || img.getAttribute('data-jam-img') !== '1') { return; }
+    if (img.style) { img.style.display = 'none'; }
+    var ph = img.parentNode && img.parentNode.querySelector ? img.parentNode.querySelector('.jam-empty') : null;
+    if (ph) { ph.hidden = false; if (ph.style) { ph.style.display = ''; } }
+  }
+  function jamDown(ev) {
+    var el = jamFindCompare(ev.target);
+    if (!el) { return; }
+    jamDrag.dragging = true;
+    jamDrag.el = el;
+    if (el.setPointerCapture && ev.pointerId != null) {
+      try { el.setPointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
+    }
+    jamSetSplit(el, jamClientX(ev));
+    if (ev.preventDefault) { try { ev.preventDefault(); } catch (e) { /* ignore */ } }
+  }
+  function jamMove(ev) {
+    if (!jamDrag.dragging || !jamDrag.el) { return; }
+    jamSetSplit(jamDrag.el, jamClientX(ev));
+    if (ev.preventDefault) { try { ev.preventDefault(); } catch (e) { /* ignore */ } }
+  }
+  function jamUp() { jamDrag.dragging = false; jamDrag.el = null; }
+  function jamRangeInput(ev) {
+    var r = ev.target;
+    if (!r || !r.getAttribute || r.getAttribute('data-jam-range') !== '1') { return; }
+    var el = jamFindCompare(r);
+    if (!el) { return; }
+    var p = Math.max(0, Math.min(100, Number(r.value) || 0));
+    jamState.split = p;
+    if (el.style && el.style.setProperty) { el.style.setProperty('--jam-split', p + '%'); }
+  }
+
+  function wireJamLab(doc) {
+    var sec = byId(doc, 'jamlab');
+    if (!sec) { return; }
+    if (!jamBound(sec) && typeof sec.addEventListener === 'function') {
+      jamMark(sec);
+      sec.addEventListener('error', jamImgError, true);
+    }
+    var tabsEl = byId(doc, 'jamTabs');
+    if (tabsEl && !jamBound(tabsEl) && typeof tabsEl.addEventListener === 'function') {
+      jamMark(tabsEl);
+      tabsEl.addEventListener('click', function (ev) {
+        var t = ev.target && ev.target.closest ? ev.target.closest('.jam-tab') : null;
+        if (!t || !jamState.data) { return; }
+        var idx = toInt(t.getAttribute('data-jam-idx'), -1);
+        if (idx < 0) { return; }
+        renderJamLab(jamState.data, idx);
+      });
+    }
+    var tiersEl = byId(doc, 'jamTiers');
+    if (tiersEl && !jamBound(tiersEl) && typeof tiersEl.addEventListener === 'function') {
+      jamMark(tiersEl);
+      tiersEl.addEventListener('click', function (ev) {
+        var t = ev.target && ev.target.closest ? ev.target.closest('.jam-tier') : null;
+        if (!t) { return; }
+        var all = tiersEl.querySelectorAll ? tiersEl.querySelectorAll('.jam-tier') : [];
+        for (var j = 0; j < all.length; j++) {
+          if (all[j].classList) { all[j].classList.remove('on'); }
+          if (all[j].setAttribute) { all[j].setAttribute('aria-pressed', 'false'); }
+        }
+        if (t.classList) { t.classList.add('on'); }
+        if (t.setAttribute) { t.setAttribute('aria-pressed', 'true'); }
+        var rd = t.getAttribute('data-jam-rd');
+        var top = doc.querySelector ? doc.querySelector('.jam-compare .jam-top img') : null;
+        if (top && rd) {
+          top.setAttribute('src', rd);
+          if (top.style) { top.style.display = ''; }
+          var ph = top.parentNode && top.parentNode.querySelector ? top.parentNode.querySelector('.jam-empty') : null;
+          if (ph && ph.style) { ph.style.display = 'none'; }
+          // handle / --jam-split are intentionally untouched.
+        }
+      });
+    }
+    var body = byId(doc, 'jamBody');
+    if (body && !jamBound(body) && typeof body.addEventListener === 'function') {
+      jamMark(body);
+      var hasPointer = (typeof window !== 'undefined' && typeof window.PointerEvent === 'function');
+      if (hasPointer) {
+        body.addEventListener('pointerdown', jamDown);
+        body.addEventListener('pointermove', jamMove);
+        body.addEventListener('pointerup', jamUp);
+        body.addEventListener('pointercancel', jamUp);
+        body.addEventListener('pointerleave', jamUp);
+      } else {
+        body.addEventListener('mousedown', jamDown);
+        body.addEventListener('mousemove', jamMove);
+        body.addEventListener('mouseup', jamUp);
+        body.addEventListener('mouseleave', jamUp);
+        body.addEventListener('touchstart', jamDown);
+        body.addEventListener('touchmove', jamMove);
+        body.addEventListener('touchend', jamUp);
+        body.addEventListener('touchcancel', jamUp);
+      }
+      body.addEventListener('input', jamRangeInput);
+    }
   }
 
   var API = {
@@ -824,7 +1194,10 @@
     renderAll: renderAll,
     loadModel: loadModel,
     applySplit: applySplit,
-    boot: boot
+    boot: boot,
+    jamLabView: jamLabView,
+    loadJamLab: loadJamLab,
+    renderJamLab: renderJamLab
   };
   if (typeof window !== 'undefined') { window.__SIMKIT_SITE = API; }
 

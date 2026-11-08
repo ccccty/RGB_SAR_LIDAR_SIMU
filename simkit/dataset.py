@@ -227,15 +227,24 @@ def _skin_plate(cfg, out_dir):
         return None
 
 
-def _render_config(cfg, views, out_dir, part=None):
+def _render_config(cfg, views, out_dir, part=None, base_seed=None):
     """Side-car scene config for the Blender pass.
 
     Blender re-reads the config from disk, so two things have to be true there:
     the per-clip view list is present, and every model path is absolute (the
     side-car does not live next to the scene JSON, so relative OBJ paths would
     silently resolve to the wrong place).
+
+    base_seed is the effective CLI/config seed used by plan_frames for the numpy
+    modalities.  Blender derives its photon/camera noise from cfg['seed'] with
+    the SAME formula (seed * 100003 + frame), so pinning the side-car to the
+    scene file's literal seed split the random streams: --seed changed IR/radar
+    but left the optical frames bit-identical.  Propagate it explicitly; when
+    the caller omits it the value equals cfg['seed'] and nothing changes.
     """
     rc = json.loads(json.dumps(cfg))
+    if base_seed is not None:
+        rc["seed"] = int(base_seed)
     base = rc.get("_base_dir", ".")
     for spec in rc.get("objects", []):
         m = spec.get("model")
@@ -729,7 +738,8 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
             # (and absolute model paths, because the temp config lives
             # elsewhere) are baked into a side-car file instead of mutating the
             # scene JSON the user owns.
-            rcfg, rcfg_path = _render_config(cfg, views, out_dir, part)
+            rcfg, rcfg_path = _render_config(cfg, views, out_dir, part,
+                                             base_seed=base_seed)
             optical.render_frames(rcfg, rcfg_path, out_dir, manifest, script, quiet=quiet,
                                   view_tags=[v["tag"] for v in views])
         else:

@@ -271,3 +271,200 @@ code{font:12.5px/1.4 var(--mono);background:#0a1018;border:1px solid var(--line)
   html{scroll-behavior:auto}
   *{transition:none!important;animation:none!important}
 }
+
+/* ============================================================
+   W2 视觉/结构增量 —— 全部为追加规则，不改动上方任何已有声明值
+   ============================================================ */
+
+/* ---- A1 :root 新变量（独立块，仅新增，不重定义原有变量） ---- */
+:root{
+  --acc2:#a78bfa;
+  --jam:#f472b6;
+  --hot:#fbbf24;
+  --glow:0 0 0 1px rgba(167,139,250,.35);
+  --shadow-1:0 10px 30px -18px rgba(0,0,0,.9);
+  --shadow-2:0 22px 46px -20px rgba(0,0,0,.95),0 0 0 1px rgba(167,139,250,.16);
+  --grad-1:linear-gradient(90deg,var(--acc),var(--acc2) 55%,var(--jam));
+  --grid-line:rgba(231,238,248,.028);
+}
+
+/* ---- A2 背景层次：body 只追加 position/z-index，新背景层由 .page-glow 承担 ---- */
+body{position:relative;z-index:0}
+.page-glow{
+  position:fixed;inset:0;z-index:-1;pointer-events:none;background-attachment:fixed;
+  background-image:
+    radial-gradient(900px 460px at 84% -6%,rgba(167,139,250,.10),transparent 62%),
+    radial-gradient(700px 420px at 6% 106%,rgba(244,114,182,.07),transparent 62%),
+    linear-gradient(var(--grid-line) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid-line) 1px,transparent 1px);
+  background-size:auto,auto,44px 44px,44px 44px;
+}
+
+/* ---- A4 动效 keyframes（reduce 媒体查询已全局禁用，不写 !important 对抗） ---- */
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulseDot{0%,100%{box-shadow:0 0 0 4px rgba(56,189,248,.14)}50%{box-shadow:0 0 0 9px rgba(56,189,248,.02)}}
+@keyframes scan{0%{top:-2px;opacity:0}12%{opacity:.5}88%{opacity:.5}100%{top:100%;opacity:0}}
+@keyframes barGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.sect-h{animation:fadeUp .55s ease both}
+.pulse{animation:pulseDot 2.2s ease-in-out infinite}
+.card{animation:fadeUp .5s ease backwards}
+
+/* ---- A5 字号层级：仅追加新类/新属性，不改 h1/h2/h3 字号 ---- */
+.eyebrow{font-family:var(--mono);font-weight:500}
+.sect-h .kicker{
+  grid-column:1/-1;margin-top:4px;font:600 10.5px/1.4 var(--mono);
+  letter-spacing:.18em;text-transform:uppercase;color:var(--acc2);
+}
+.tech-badge{
+  font:600 10px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-2);border:1px solid var(--line-2);background:var(--panel-2);
+  border-radius:999px;padding:5px 9px;white-space:nowrap;
+}
+
+/* ---- A6 首屏技术徽章 ---- */
+.hero-badges{display:flex;flex-wrap:wrap;gap:7px;margin:16px 0 0}
+
+/* ---- A3 卡片层次：阴影 / 过渡 / 抬升 / 渐变边框高亮 / 图片缩放 ---- */
+.card,.phys{position:relative;box-shadow:var(--shadow-1);transition:transform .28s ease,box-shadow .28s ease,border-color .28s ease}
+.card:hover,.phys:hover{transform:translateY(-4px);box-shadow:var(--shadow-2);border-color:var(--acc2)}
+.card::after,.phys::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;padding:1px;
+  background:var(--grad-1);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  opacity:0;transition:opacity .28s ease;
+}
+.card:hover::after,.phys:hover::after{opacity:.9}
+.card-fig img{transition:transform .35s ease}
+.card-fig:hover img{transform:scale(1.035)}
+
+/* ---- C 契约：干扰实验室容器与动态 HTML ---- */
+.jamlab{position:relative}
+.jamlab::before{
+  content:"";position:absolute;left:20px;right:20px;top:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--jam),transparent);opacity:.5;
+}
+.jam-tabs{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 16px}
+.jam-tab{
+  cursor:pointer;font:600 11.5px/1 var(--mono);letter-spacing:.04em;
+  padding:7px 13px;border-radius:999px;border:1px solid var(--line-2);
+  background:var(--panel);color:var(--ink-2);transition:border-color .16s,color .16s,background .16s;
+}
+.jam-tab:hover{border-color:var(--jam);color:var(--ink)}
+.jam-tab.on{background:rgba(244,114,182,.14);border-color:var(--jam);color:var(--jam)}
+.jam-body{display:grid;grid-template-columns:1fr;gap:14px;margin:0 0 16px}
+.jam-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:0 0 16px}
+.jam-metric{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+.jam-metric .lab{display:block;font:600 10px/1.4 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
+.jam-bar{height:7px;border-radius:4px;background:#101a26;overflow:hidden;border:1px solid var(--line)}
+.jam-bar i{
+  display:block;height:100%;width:var(--val,60%);border-radius:4px;background:var(--grad-1);
+  transform-origin:left center;animation:barGrow .7s ease;
+}
+.jam-tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.jam-tier{
+  cursor:pointer;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:9px;transition:border-color .18s,box-shadow .18s,transform .18s;
+}
+.jam-tier:hover{transform:translateY(-2px);border-color:var(--acc2)}
+.jam-tier.on{border-color:var(--jam);box-shadow:var(--glow),0 0 18px -6px rgba(244,114,182,.5)}
+.jam-tier img{width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;border-radius:6px;background:#04070c;display:block}
+.jam-entity{display:inline-flex;align-items:center;font:600 10px/1 var(--mono);letter-spacing:.05em;padding:4px 8px;border-radius:6px;border:1px solid var(--line-2);background:var(--bg-soft);color:var(--ink-2)}
+.jam-entity.active{border-color:var(--jam);color:var(--jam)}
+.jam-entity.passive{border-color:var(--acc2);color:var(--acc2)}
+.jam-optical{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px}
+.jam-note{margin:0 0 16px;padding:9px 12px;border-left:2px solid var(--acc2);background:linear-gradient(90deg,rgba(167,139,250,.07),transparent 70%);font-size:12px;line-height:1.7;color:var(--ink-3)}
+.jam-empty{margin:0;padding:20px;border:1px dashed var(--line-2);border-radius:var(--r);color:var(--ink-3);font-size:12.5px;line-height:1.7;text-align:center}
+
+/* ---- C 契约：clean<->jammed 拖拽对比 ----------------------------------
+   W3 在 #jamBody 内生成如下结构（两张 img 绝对定位叠放）：
+   <div class="jam-compare" style="--jam-split:50%">
+     <img class="jam-base" src="<clean 干净帧>"  alt="干净帧">
+     <img class="jam-top"  src="<jammed 干扰帧>" alt="干扰帧">
+     <span class="jam-handle" role="slider" aria-label="拖动对比干扰强度"></span>
+     <span class="jam-badge clean">CLEAN</span>
+     <span class="jam-badge jam">JAMMED</span>
+   </div>
+   裁切方案（唯一、可工作）：
+   - 下层 .jam-base = 干净帧；上层 .jam-top = 干扰帧，二者都由
+     .jam-compare img{position:absolute;inset:0} 铺满同一容器。
+   - 上层用 clip-path: inset(0 0 0 var(--jam-split,50%))，
+     含义是「从左边裁掉 split」：左半边露出下层 clean，
+     右半边显示 jammed，分割线正好落在 left = split 处。
+   - .jam-handle 也定位在 left:var(--jam-split,50%)，与裁切边严格对齐。
+   - W3 的 pointer 事件只需执行
+     el.style.setProperty('--jam-split', pct + '%')（0-100），
+     clip-path 与 handle 会同步移动；不要再改任何元素的 width。
+   -------------------------------------------------------------------- */
+.jam-compare{
+  --jam-split:50%;position:relative;aspect-ratio:16/9;overflow:hidden;
+  border:1px solid var(--line-2);border-radius:var(--r);background:#04070c;
+  cursor:ew-resize;touch-action:pan-y;user-select:none;
+}
+.jam-compare img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.jam-compare .jam-top{clip-path:inset(0 0 0 var(--jam-split,50%));z-index:2}
+/* W3 把 jam 图包在 <div class="jam-top"> 里（不是裸 img），所以这一层
+   必须先成为定位容器并铺满，clip-path 才有正确的裁剪盒；里面的 img
+   由 .jam-compare img 规则相对它绝对定位铺满。 */
+.jam-compare > .jam-top{position:absolute;inset:0;width:100%;height:100%}
+.jam-entities{display:flex;flex-wrap:wrap;gap:6px;margin:0}
+.jam-optical img{width:100%;height:auto;border-radius:8px;background:#04070c}
+.jam-optical p{margin:8px 0 0;font-size:11.5px;line-height:1.6;color:var(--ink-3)}
+.jam-handle{
+  position:absolute;top:0;bottom:0;left:var(--jam-split,50%);width:2px;
+  transform:translateX(-1px);background:var(--jam);box-shadow:0 0 14px rgba(244,114,182,.6);
+  z-index:3;cursor:ew-resize;touch-action:none;
+}
+.jam-handle::after{
+  content:"↔";position:absolute;top:50%;left:50%;width:30px;height:30px;
+  transform:translate(-50%,-50%);display:grid;place-items:center;
+  border-radius:50%;border:1px solid var(--jam);background:var(--panel);
+  color:var(--jam);font:14px/1 var(--mono);box-shadow:0 2px 10px rgba(0,0,0,.6);
+}
+.jam-badge{
+  position:absolute;top:10px;z-index:4;font:600 10px/1 var(--mono);letter-spacing:.1em;
+  padding:4px 8px;border-radius:6px;background:rgba(5,9,14,.78);border:1px solid var(--line-2);
+  pointer-events:none;
+}
+.jam-badge.clean{left:10px;color:var(--ok)}
+.jam-badge.jam{right:10px;color:var(--jam)}
+
+/* ---- B 纯 SVG 干扰链路示意（颜色全部来自 CSS 变量 / currentColor） ---- */
+.jam-chain-box{
+  position:relative;overflow:hidden;margin:0 0 14px;
+  border:1px solid var(--line);border-radius:var(--r);
+  background:linear-gradient(180deg,var(--bg-soft),var(--bg));
+}
+.jam-chain-box::after{
+  content:"";position:absolute;left:0;right:0;top:-2px;height:2px;opacity:.35;
+  background:linear-gradient(90deg,transparent,var(--acc),transparent);
+  pointer-events:none;animation:scan 4.6s linear infinite;
+}
+.jam-chain{display:block;width:100%;height:auto;color:var(--acc)}
+.jam-chain .lnk{fill:none;stroke-width:1.2;opacity:.42}
+.jam-chain .lnk.hot{stroke:var(--jam);opacity:.6}
+.jam-chain .nd rect{fill:var(--panel-2);stroke:var(--line-2);stroke-width:1.2}
+.jam-chain .nd.end rect{fill:#0a121c;stroke:var(--acc)}
+.jam-chain .nd.jam-hot rect{stroke:var(--jam)}
+.jam-chain .nd.jam-passive rect{stroke:var(--acc2)}
+.jam-chain .nd.jam-amber rect{stroke:var(--hot)}
+.jam-chain .nd.jam-clutter rect{stroke:var(--ok)}
+.jam-chain .nd.jam-sea rect{stroke:var(--acc)}
+.jam-chain text{fill:var(--ink);font:11px var(--mono)}
+.jam-chain text.sub{fill:var(--ink-3);font-size:8.5px;letter-spacing:.06em}
+.jam-chain .lg text{fill:var(--ink-3);font-size:9.5px}
+
+/* ---- A7 新增断点（640 断点里 .brand em / .gh 的隐藏规则保持原样） ---- */
+@media (max-width:480px){
+  .hero-badges{flex-wrap:wrap;gap:6px}
+  .hero-badges .tech-badge{font-size:9.5px;padding:3px 7px}
+  #jamlab .jam-metrics,#jamlab .jam-tiers,#jamlab .jam-body{grid-template-columns:1fr}
+  .jam-compare{aspect-ratio:4/3}
+  .jam-chain-box{border-radius:8px}
+}
+@media (min-width:1400px){
+  .jam-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .jam-tiers{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .hero-badges{gap:10px}
+  .page-glow{background-size:auto,auto,56px 56px,56px 56px}
+}

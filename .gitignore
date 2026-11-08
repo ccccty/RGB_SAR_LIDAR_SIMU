@@ -60,3 +60,6 @@ CLAUDE.md
 # Node tooling: the site probes and the orchestration CLIs install here
 node_modules/
 .ruflo/
+
+# workspace memory / agent notes (never published)
+.workbuddy/

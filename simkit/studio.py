@@ -336,6 +336,15 @@ def _recipe_to_form(rec):
         sensors=cap.get("sensors"), seed=cap.get("seed"),
         aspect=view.get("aspect"), weather=env.get("weather"),
         narrow_fov=view.get("fov_deg"))
+    # Image dimensions ride on the flat lens keys. Only keys the recipe carries
+    # are offered; _parse fills absent body values, so an old recipe (no size
+    # keys) keeps the factory 960x720 / 1280x960 defaults bit-for-bit.
+    for form_key, view_key in (("narrow_width", "width"),
+                               ("narrow_height", "height"),
+                               ("wide_width", "wide_width"),
+                               ("wide_height", "wide_height")):
+        if view.get(view_key) is not None:
+            out[form_key] = view[view_key]
     fx = rec.get("effects") or {}
     out["plume"] = bool(fx.get("plume", False))
     out["supersample"] = int(fx.get("supersample", 0) or 0)
@@ -845,10 +854,80 @@ def _preflight_payload(q):
     elif est["megabytes"] > 1500:
         warnings.append("预计 %.0f GB，生成时间较长" % (est["megabytes"] / 1024.0))
 
+    # ---- New contract: named, machine-readable checks. Older clients ignore
+    # the extra key; the flat errors/warnings above keep their exact meaning.
+    checks = {}
+
+    def _check(key, ok, level, msg):
+        checks[key] = dict(ok=bool(ok), level=level, message=msg)
+
+    if not sensors:
+        _check("sensors", False, "error", "至少选一个模态（sensors 为空或缺省）")
+    else:
+        _check("sensors", True, "ok", "已选 %d 个模态" % len(sensors))
+
+    # size: 0x0 or out-of-range dimensions
+    dim_bad = []
+    lo, hi = LIM["dim"]
+    for label, blk in (("窄", q.get("narrow")), ("宽", q.get("wide"))):
+        if not isinstance(blk, dict):
+            continue
+        w, h = blk.get("width"), blk.get("height")
+        if not w or not h or w <= 0 or h <= 0:
+            dim_bad.append("%s视场为 0x0" % label)
+        elif not (lo <= w <= hi and lo <= h <= hi):
+            dim_bad.append("%s视场 %sx%s 超出 %s–%s" % (label, w, h, lo, hi))
+    if dim_bad:
+        msg = "；".join(dim_bad)
+        errors.append("尺寸无效：" + msg)
+        _check("size", False, "error", msg)
+    else:
+        _check("size", True, "ok", "尺寸在 %s–%s 范围内" % (lo, hi))
+
+    # jitter: the stabilisation error must fit inside the narrow FOV
+    fov_deg = float(q["narrow"]["fov_deg"])
+    jit = q.get("jitter_deg")
+    if jit is None:
+        try:
+            from . import scene as s_scene
+            sc = s_scene.load_config(q["scene_path"])
+            sk = (sc.get("clip") or {}).get("seeker") or {}
+            jit = float(sk.get("los_jitter_deg", 0.0)) + float(sk.get("wander_deg", 0.0))
+        except Exception:
+            jit = 0.0
+    jit = float(jit or 0.0)
+    if jit > fov_deg:
+        msg = "抖动 %.3f° 超过窄视场 %.3f°，目标会出画" % (jit, fov_deg)
+        errors.append(msg)
+        _check("jitter", False, "error", msg)
+    elif jit > 0.5 * fov_deg:
+        msg = "抖动 %.3f° 超过窄视场的一半 %.3f°" % (jit, fov_deg)
+        warnings.append(msg)
+        _check("jitter", True, "warn", msg)
+    else:
+        _check("jitter", True, "ok", "抖动在窄视场内")
+
+    # radar window: the unambiguous range must cover 1.4 * slant range
+    R = float((q.get("range_m") or [0.0, 8000.0])[1])
+    r_max = None
+    try:
+        from . import scene as s_scene
+        sc = s_scene.load_config(q["scene_path"])
+        r_max = float(((sc.get("sensors") or {}).get("radar") or {}).get("r_max_m") or 0.0) or None
+    except Exception:
+        pass
+    if r_max is not None and r_max < 1.4 * R:
+        msg = ("雷达不模糊距离 %.0f m 小于 1.4×视线距离 %.0f m，远距目标会回绕"
+               % (r_max, 1.4 * R))
+        warnings.append(msg)
+        _check("radar_window", False, "warn", msg)
+    else:
+        _check("radar_window", True, "ok", "雷达距离窗覆盖视线距离")
+
     return dict(errors=errors, warnings=warnings,
                 ok=not errors, level=("error" if errors else
                                       "warn" if warnings else "ok"),
-                estimate=est)
+                estimate=est, checks=checks)
 
 
 def _parse(body):
@@ -1181,10 +1260,12 @@ def _compose(q, cfg):
                                        "wide_fov", "wide_width", "wide_height"})
     same_narrow = (not lens_given) or (
         _near(q["narrow"]["fov_deg"], ref_n.get("fov_deg", q["narrow"]["fov_deg"]))
-        and _near(q["narrow"]["width"], ref_n.get("width", q["narrow"]["width"])))
+        and _near(q["narrow"]["width"], ref_n.get("width", q["narrow"]["width"]))
+        and _near(q["narrow"]["height"], ref_n.get("height", q["narrow"]["height"])))
     same_wide = (not lens_given) or (
         _near(q["wide"]["fov_deg"], ref_w.get("fov_deg", q["wide"]["fov_deg"]))
-        and _near(q["wide"]["width"], ref_w.get("width", q["wide"]["width"])))
+        and _near(q["wide"]["width"], ref_w.get("width", q["wide"]["width"]))
+        and _near(q["wide"]["height"], ref_w.get("height", q["wide"]["height"])))
     views_touched = (q["views_mode"] != scene_mode) or not same_narrow \
         or (q["views_mode"] == "dual" and not same_wide)
     if not views_touched and scene_views:
@@ -1198,6 +1279,16 @@ def _compose(q, cfg):
             clip["views"] = views
         else:
             clip.pop("views", None)
+            # Single view drops clip.views, so an explicit lens (especially a
+            # height-only edit, which same_narrow now detects) must also reach
+            # the legacy camera blocks or the size would silently vanish.
+            if lens_given:
+                for name in ("ir_camera", "optical", "eo_camera", "camera"):
+                    cam = cfg.setdefault("sensors", {}).get(name)
+                    if isinstance(cam, dict):
+                        cam["fov_deg"] = float(q["narrow"]["fov_deg"])
+                        cam["width"] = int(q["narrow"]["width"])
+                        cam["height"] = int(q["narrow"]["height"])
 
     # The camera dicts still drive the renderers that predate clip.views, so the
     # narrow view is written into every camera the scene owns -- but only when
@@ -1504,18 +1595,38 @@ def _place_preview(body):
     """
     q = _parse(body)
     cfg = _compose(q, _load_scene(q["scene_path"]))
-    width = max(160, min(960, int(body.get("width") or 320)))
-    height = int(round(width * 0.75))
+    nr = q["narrow"]
+    ratio = (float(nr["height"]) / float(nr["width"])) if nr["width"] else 0.75
+    # New contract: an explicit preview size wins. Without it the legacy
+    # "width" key still drives the fast frame, but the height now follows the
+    # narrow view's real aspect instead of a hard-coded 4:3.
+    pw, ph = body.get("preview_width"), body.get("preview_height")
+    if pw not in (None, ""):
+        base_w = max(1, int(pw))
+        base_h = (max(1, int(ph)) if ph not in (None, "")
+                  else max(1, int(round(base_w * ratio))))
+    elif ph not in (None, ""):
+        base_h = max(1, int(ph))
+        base_w = max(1, int(round(base_h / ratio))) if ratio else base_h
+    else:
+        base_w = max(160, min(960, int(body.get("width") or 320)))
+        base_h = max(1, int(round(base_w * ratio)))
     views = ((cfg.get("clip") or {}).get("views") or [])
     if views:
+        # Dual view keeps each view's own aspect and relative size; never
+        # flatten every view onto the narrow 4:3 frame.
+        scale = base_w / (float(nr["width"]) or 1.0)
         for v in views:
-            v["width"], v["height"] = width, height
+            vw = float(v.get("width") or nr["width"]) or 1.0
+            vh = float(v.get("height") or nr["height"]) or 1.0
+            v["width"] = max(1, int(round(vw * scale)))
+            v["height"] = max(1, int(round(vh * scale)))
     else:
         # legacy path: dataset.py reads the size from the camera block
         for key in ("optical", "ir_camera"):
             blk = (cfg.get("sensors") or {}).get(key)
             if isinstance(blk, dict):
-                blk["width"], blk["height"] = width, height
+                blk["width"], blk["height"] = base_w, base_h
     cfg.setdefault("optical", {})["samples"] = int(body.get("samples") or 12)
     _abs_models(cfg)
     sensors = [s for s in q["sensors"] if s in ("optical", "ir", "radar", "sar", "lidar")]
@@ -1675,6 +1786,22 @@ def _plan_payload(q, cfg):
         views.append(dict(name="wide", fov_deg=q["wide"]["fov_deg"],
                           width=q["wide"]["width"], height=q["wide"]["height"]))
 
+    # Optics contract: per-view angular sampling and ground sample distance.
+    # fov is radians inside both formulas so the units are physical (mrad and
+    # metres per pixel). R is the far slant range, the honest worst case.
+    rng = q.get("range_m")
+    R = float(rng[1]) if rng else 8000.0
+    tx_lo, tx_hi = float(q["target_px"][0]), float(q["target_px"][1])
+    optics = []
+    for v in views:
+        fov_rad = math.radians(float(v["fov_deg"]))
+        w = float(v["width"]) or 1.0
+        optics.append(dict(
+            name=v["name"], width=v["width"], height=v["height"],
+            ifov_mrad=round(1000.0 * fov_rad / w, 6),
+            gsd_m_per_px=round(2.0 * R * math.tan(fov_rad / 2.0) / w, 6),
+            target_px_lo=tx_lo, target_px_hi=tx_hi))
+
     for r in rows:
         r0, r1 = (r.get("range_m") or [0, 0])[:2]
         # plan.summary() already reports per-view pixel spans; when it does not
@@ -1711,7 +1838,7 @@ def _plan_payload(q, cfg):
     sar["range_res_m"] = round(150.0 / max(sar["bandwidth_mhz"], 1e-6), 3)
     sar["azimuth_res_m"] = None
     return dict(
-        clips=rows, views=views,
+        clips=rows, views=views, optics=optics,
         scene=dict(key=q["scene"], size_m=round(size, 2),
                    target_px=q["target_px"], range_m=q["range_m"],
                    traj=q["traj_mode"], weather=q["weather"],

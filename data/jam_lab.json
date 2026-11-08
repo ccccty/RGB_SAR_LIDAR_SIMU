@@ -1,0 +1,286 @@
+{
+ "generated": "2026-11-08T20:08:34+08:00",
+ "resolution": [
+  768,
+  576
+ ],
+ "frames": 30,
+ "domains": [
+  {
+   "id": "air",
+   "label": "空域 · 有源 + 无源 ECM",
+   "kind": "ecm",
+   "tier": "mid",
+   "entities": [
+    {
+     "name": "噪声压制 jammer",
+     "group": "active",
+     "spec": "3 W ERP / 200 MHz"
+    },
+    {
+     "name": "箔条云 chaff",
+     "group": "passive",
+     "spec": "RCS 140 m²"
+    }
+   ],
+   "metrics": [
+    {
+     "key": "floor",
+     "label": "噪声基底抬升",
+     "value": 16.8,
+     "unit": "dB",
+     "max": 40
+    },
+    {
+     "key": "ridge",
+     "label": "零多普勒中心带",
+     "value": 2.2,
+     "unit": "dB",
+     "max": 45
+    },
+    {
+     "key": "snr",
+     "label": "目标 SNR 均值",
+     "value": 25.7,
+     "unit": "dB",
+     "max": 80
+    },
+    {
+     "key": "detected",
+     "label": "逐帧检出",
+     "value": 100,
+     "unit": "%",
+     "max": 100
+    }
+   ],
+   "compare": {
+    "clean": "jamlab/air_clean.webp",
+    "jam": "jamlab/air_jam.webp",
+    "clean_label": "无干扰基线",
+    "jam_label": "有源压制 + 箔条 + 红外诱饵",
+    "w": 1280,
+    "h": 720
+   },
+   "optical": "jamlab/air_optical.webp",
+   "tiers": [
+    {
+     "key": "base",
+     "label": "无干扰",
+     "rd": "jamlab/air_tier_base.webp",
+     "floor_db": -64.0,
+     "center_db": 1.7,
+     "detected": true
+    },
+    {
+     "key": "mid",
+     "label": "中档",
+     "rd": "jamlab/air_tier_mid.webp",
+     "floor_db": -28.3,
+     "center_db": 1.7,
+     "detected": true
+    },
+    {
+     "key": "strong",
+     "label": "强档",
+     "rd": "jamlab/air_tier_strong.webp",
+     "floor_db": -20.5,
+     "center_db": 1.7,
+     "detected": false
+    },
+    {
+     "key": "final",
+     "label": "最终采用",
+     "rd": "jamlab/air_jam.webp",
+     "floor_db": -47.2,
+     "center_db": 2.2,
+     "detected": true
+    }
+   ],
+   "note": "30 帧 · 有源压制(3 W ERP / 200 MHz) + 箔条云(RCS 140 m²) + 假目标 + 红外诱饵 · 目标 31 px"
+  },
+  {
+   "id": "land",
+   "label": "陆域 · 地物杂物 + 地杂波",
+   "kind": "objects",
+   "tier": "strong",
+   "entities": [
+    {
+     "name": "地面静态杂物",
+     "group": "objects",
+     "spec": "label:false 建筑/杂物 · clutter_density 0.08"
+    },
+    {
+     "name": "地杂波 ground clutter",
+     "group": "clutter",
+     "spec": "ground_clutter_db -25 dB / clutter_db -6 dB"
+    }
+   ],
+   "metrics": [
+    {
+     "key": "floor",
+     "label": "噪声基底抬升",
+     "value": 0.0,
+     "unit": "dB",
+     "max": 40
+    },
+    {
+     "key": "ridge",
+     "label": "零多普勒中心带",
+     "value": 35.2,
+     "unit": "dB",
+     "max": 45
+    },
+    {
+     "key": "snr",
+     "label": "目标 SNR 均值",
+     "value": 52.7,
+     "unit": "dB",
+     "max": 80
+    },
+    {
+     "key": "detected",
+     "label": "逐帧检出",
+     "value": 100,
+     "unit": "%",
+     "max": 100
+    }
+   ],
+   "compare": {
+    "clean": "jamlab/land_clean.webp",
+    "jam": "jamlab/land_jam.webp",
+    "clean_label": "无干扰基线",
+    "jam_label": "地面杂物 + 地杂波",
+    "w": 1280,
+    "h": 720
+   },
+   "optical": "jamlab/land_optical.webp",
+   "tiers": [
+    {
+     "key": "base",
+     "label": "无干扰",
+     "rd": "jamlab/land_tier_base.webp",
+     "floor_db": -66.7,
+     "center_db": 22.1,
+     "detected": true
+    },
+    {
+     "key": "mid",
+     "label": "中档",
+     "rd": "jamlab/land_tier_mid.webp",
+     "floor_db": -66.7,
+     "center_db": 24.8,
+     "detected": true
+    },
+    {
+     "key": "strong",
+     "label": "强档",
+     "rd": "jamlab/land_tier_strong.webp",
+     "floor_db": -66.7,
+     "center_db": 34.4,
+     "detected": true
+    },
+    {
+     "key": "final",
+     "label": "最终采用",
+     "rd": "jamlab/land_jam.webp",
+     "floor_db": -66.7,
+     "center_db": 35.2,
+     "detected": true
+    }
+   ],
+   "note": "30 帧 · label:false 地面杂物/建筑 + 地杂波(clutter_density 0.08) · 目标 31 px"
+  },
+  {
+   "id": "naval",
+   "label": "海域 · 海杂波零多普勒脊",
+   "kind": "clutter",
+   "tier": "strong",
+   "entities": [
+    {
+     "name": "海杂波零多普勒脊",
+     "group": "clutter",
+     "spec": "clutter_ridge=True · Rayleigh + 常数 gamma"
+    },
+    {
+     "name": "海面杂波电平",
+     "group": "clutter",
+     "spec": "scale 6 dB / sea_clutter_db -15 dB"
+    }
+   ],
+   "metrics": [
+    {
+     "key": "floor",
+     "label": "噪声基底抬升",
+     "value": 0.3,
+     "unit": "dB",
+     "max": 40
+    },
+    {
+     "key": "ridge",
+     "label": "零多普勒中心带",
+     "value": 40.6,
+     "unit": "dB",
+     "max": 45
+    },
+    {
+     "key": "snr",
+     "label": "目标 SNR 均值",
+     "value": 63.3,
+     "unit": "dB",
+     "max": 80
+    },
+    {
+     "key": "detected",
+     "label": "逐帧检出",
+     "value": 100,
+     "unit": "%",
+     "max": 100
+    }
+   ],
+   "compare": {
+    "clean": "jamlab/naval_clean.webp",
+    "jam": "jamlab/naval_jam.webp",
+    "clean_label": "无干扰基线",
+    "jam_label": "海杂波零多普勒脊",
+    "w": 1280,
+    "h": 720
+   },
+   "optical": "jamlab/naval_optical.webp",
+   "tiers": [
+    {
+     "key": "base",
+     "label": "无干扰",
+     "rd": "jamlab/naval_tier_base.webp",
+     "floor_db": -64.0,
+     "center_db": 27.7,
+     "detected": true
+    },
+    {
+     "key": "mid",
+     "label": "中档",
+     "rd": "jamlab/naval_tier_mid.webp",
+     "floor_db": -63.7,
+     "center_db": 30.5,
+     "detected": true
+    },
+    {
+     "key": "strong",
+     "label": "强档",
+     "rd": "jamlab/naval_tier_strong.webp",
+     "floor_db": -63.6,
+     "center_db": 40.7,
+     "detected": true
+    },
+    {
+     "key": "final",
+     "label": "最终采用",
+     "rd": "jamlab/naval_jam.webp",
+     "floor_db": -63.6,
+     "center_db": 40.6,
+     "detected": true
+    }
+   ],
+   "note": "30 帧 · 海杂波零多普勒脊(clutter_ridge=True, scale 6 dB) · 目标 31 px"
+  }
+ ]
+}

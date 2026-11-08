@@ -37,6 +37,15 @@ MANIFEST = os.path.abspath(MANIFEST)
 CFG_PATH = os.path.abspath(CFG_PATH)
 sys.path.insert(0, PROJECT_ROOT)
 
+# Parallel --part workers share OUT_DIR.  A fixed probe name lets one worker
+# delete another's metering render mid-iteration; the failed load then silently
+# falls back to the configured exposure and leaves a brightness step between
+# chunks.  Derive the probe name from the manifest's part tag instead.
+_probe_tag = "whole"
+if ".part" in os.path.basename(MANIFEST):
+    _probe_tag = os.path.basename(MANIFEST).split(".part")[-1].split(".")[0]
+PROBE_PATH = os.path.join(OUT_DIR, "_exposure_probe.%s.png" % _probe_tag)
+
 from simkit import camera as sk_camera  # noqa: E402
 from simkit import scene as sk_scene  # noqa: E402
 
@@ -829,7 +838,7 @@ def auto_exposure(sc, view, base_bias):
     samples = sc.cycles.samples if ENGINE == "CYCLES" else None
     denoise = sc.cycles.use_denoising if ENGINE == "CYCLES" else None
     old_exp = sc.view_settings.exposure
-    probe = os.path.join(OUT_DIR, "_exposure_probe.png")
+    probe = PROBE_PATH
     exp = float(opt.get("exposure", 0.0))
     try:
         # each lens meters its own field of view: a 2.2 deg seeker and an 18 deg

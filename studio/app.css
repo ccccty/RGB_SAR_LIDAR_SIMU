@@ -174,7 +174,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .box-head {
   position: relative;
   display: grid;
-  grid-template-columns: 26px auto minmax(0, 1fr) 14px;
+  grid-template-columns: 26px auto minmax(0, 1fr) 12px 14px;
   align-items: center;
   gap: 4px;
   width: 100%;
@@ -752,8 +752,13 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent-line); outli
   top: 138px;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 12px;
   min-width: 0;
+  max-height: calc(100vh - 154px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 .rail-card {
   padding: 15px 16px;
@@ -1015,15 +1020,150 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent-line); outli
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .noscript { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; background: var(--bg); color: var(--text); }
 
+/* ------------------------------------------------------------- W1 · 步骤条 / 流程状态位 */
+.flow {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding-bottom: 4px;
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior-x: contain;
+}
+.flow-step {
+  flex: 1 1 0;
+  min-width: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--dim);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+.flow-step:hover { background: rgba(255, 255, 255, 0.06); border-color: var(--line-strong); color: var(--text); }
+.flow-num { color: inherit; font-variant-numeric: tabular-nums; }
+.flow-name { overflow: hidden; text-overflow: ellipsis; }
+/* W2 会往 flag 里写 ✓ / ! / ✗，按符号徽标排版，别让文字把圆点撑破 */
+.flow-flag {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 11px; height: 11px; flex: none;
+  border-radius: 50%; background: var(--faint);
+  color: #06101f; font-size: 8px; line-height: 1; overflow: hidden;
+}
+.flow-step.active { border-color: var(--accent-line); background: var(--accent-soft); color: #dcebff; }
+.flow-step.done .flow-flag { background: var(--ok); box-shadow: 0 0 7px rgba(72, 213, 151, 0.65); }
+.flow-step.warn .flow-flag { background: var(--warn); box-shadow: 0 0 7px rgba(229, 181, 103, 0.6); }
+.flow-step.error .flow-flag { background: var(--bad); box-shadow: 0 0 7px rgba(239, 115, 115, 0.6); }
+#flowProgress {
+  flex: none;
+  align-self: center;
+  padding-left: 4px;
+  color: var(--faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 箱体标题栏状态位（配合 .box-head 5 列 grid） */
+.box-flag {
+  display: inline-flex; align-items: center; justify-content: center;
+  justify-self: center;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--faint);
+  color: #06101f; font-size: 9px; line-height: 1; overflow: hidden;
+}
+.box.done .box-flag { background: var(--ok); box-shadow: 0 0 7px rgba(72, 213, 151, 0.6); }
+.box.warn .box-flag { background: var(--warn); box-shadow: 0 0 7px rgba(229, 181, 103, 0.55); }
+.box.error .box-flag { background: var(--bad); box-shadow: 0 0 7px rgba(239, 115, 115, 0.6); }
+.box.active .box-flag { background: var(--accent); box-shadow: 0 0 7px rgba(94, 168, 255, 0.65); }
+
+/* 智能建议条 */
+.next-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--faint);
+  border-radius: 0 8px 8px 0;
+  background: rgba(255, 255, 255, 0.028);
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.next-hint.ok { border-left-color: var(--ok); color: #9fd9bb; }
+.next-hint.warn { border-left-color: var(--warn); color: #e6c188; }
+.next-hint.bad { border-left-color: var(--bad); color: #f0a7a7; }
+.next-hint.checking { border-left-color: var(--accent); color: #a9c9ef; }
+#nextHintText { min-width: 0; }
+#nextActionBtn { flex: none; margin-left: auto; }
+
+/* 预检可点击错误行 / 结构化逐项检查 */
+.pf-line.clickable { cursor: pointer; border-radius: 6px; transition: background 0.16s ease; }
+.pf-line.clickable:hover { background: rgba(255, 255, 255, 0.05); text-decoration: underline; }
+.pf-checks { display: grid; gap: 5px; margin-top: 8px; }
+.pf-checks:empty { display: none; }
+.check-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.check-row::before { content: "·"; color: var(--faint); text-align: center; }
+.check-row.ok::before { content: "✓"; color: var(--ok); }
+.check-row.bad::before { content: "✗"; color: var(--bad); }
+.check-row.warn::before { content: "!"; color: var(--warn); }
+.check-row.ok { color: #9fd9bb; }
+.check-row.bad { color: #f0a7a7; }
+.check-row.warn { color: #e6c188; }
+
+/* 字段高亮：2s 渐隐；prefers-reduced-motion 由全局 !important 规则覆盖，此处不写 !important */
+@keyframes fieldFlash {
+  0% { box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px var(--accent-soft); background: rgba(94, 168, 255, 0.14); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.field-flash { animation: fieldFlash 1.8s ease-out; }
+
+/* 操作卡：rail 内部滚动时保持可见 */
+.rail-card.actions { position: sticky; bottom: 0; z-index: 3; }
+#autoBtn { margin-top: 8px; }
+#retryBtn { margin-top: 8px; }
+
 /* ------------------------------------------------------------- responsive */
 @media (max-width: 960px) {
-  .layout { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 20px 16px 104px; }
-  .rail { position: static; order: -1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 20px 16px 260px; }
+  .rail { position: static; order: -1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-height: none; overflow: visible; }
   .rail-card { padding: 13px 14px; }
   .rail-card:last-child { grid-column: 1 / -1; }
   .top { padding: 0 16px; }
   .taskbar-inner { padding: 9px 16px; }
   .drawer-bar, .drawer-inner { padding-left: 16px; padding-right: 16px; }
+  /* 窄屏时 .rail 是页面顶部的短 grid，sticky 会被父级边界带走；改用 fixed
+     让主按钮、进度与产物入口在整页滚动中始终可达，页面底部留足空间。 */
+  .rail-card.actions {
+    position: fixed; bottom: 52px; left: 16px; right: 16px; z-index: 30;
+    max-height: 44vh; overflow-y: auto;
+    box-shadow: 0 -8px 22px rgba(0, 0, 0, 0.38), 0 8px 24px rgba(0, 0, 0, 0.14);
+  }
+  .rail-card.actions .job-log,
+  .rail-card.actions .still img { display: none; }
+  #flowBar { overflow-x: auto; }
+  /* 展开运行历史时让抽屉盖住固定操作条，避免两块 fixed 面板互相压字 */
+  .drawer.open { z-index: 40; }
 }
 @media (max-width: 720px) {
   .taskbar-inner { flex-wrap: wrap; gap: 8px; }

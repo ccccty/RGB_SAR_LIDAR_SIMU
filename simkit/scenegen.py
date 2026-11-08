@@ -115,7 +115,8 @@ ECM_LABELS = {'none': '无', 'active': '有源', 'passive': '无源', 'mixed': '
 # accepted here, and a value it rejects gets a Chinese message not a traceback.
 LIM = dict(range_km=(0.05, 100.0), fov_deg=(0.1, 120.0), frames=(1, 20000),
            fps=(0.5, 120.0), seed=(0, 2 ** 32 - 1), scale=(0.02, 50.0),
-           count=(1, 64), objects=(1, 32), closing_mps=(0.1, 800.0))
+           count=(1, 64), objects=(1, 32), closing_mps=(0.1, 800.0),
+           dim=(64, 4096))
 
 # ------------------------------------------------------------------- assets
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -764,6 +765,12 @@ def validate_recipe(recipe):
         view_raw = {}
     if not isinstance(view_raw, dict):
         raise ValueError('view 必须是字典（收到 %r）' % (view_raw,))
+
+    def _dim(key, default):
+        v = view_raw.get(key)
+        return _integer(default if v in (None, '') else v,
+                        'view.' + key, LIM['dim'][0], LIM['dim'][1])
+
     # Optional: the user's own closing speed. When absent the class table
     # CLOSING_MPS decides -- never the frame count, which only says how long the
     # clip is.
@@ -784,6 +791,12 @@ def validate_recipe(recipe):
                         LIM['fov_deg'][0], LIM['fov_deg'][1], ' 度'),
         views=_choice(view_raw.get('views'), 'view.views',
                       ('single', 'dual'), 'single'),
+        # Image dimensions. Old recipes carry none of these and fall back to the
+        # legacy 960x720 / 1280x960 pair bit-for-bit.
+        width=_dim('width', 960),
+        height=_dim('height', 720),
+        wide_width=_dim('wide_width', 1280),
+        wide_height=_dim('wide_height', 960),
         closing_mps=closing,
         trajectory=_trajectory_spec(view_raw.get('trajectory')))
 
@@ -1503,11 +1516,12 @@ def _nadir_separation_note(r):
     return '俯视错层·雷达可分辨 %d 个目标' % plan['resolvable']
 
 
-def _sensors(cam, look, fov, range_m, site, v_req=0.0, up=None, env=None, plate=False):
+def _sensors(cam, look, fov, range_m, site, v_req=0.0, up=None, env=None,
+             plate=False, width=960, height=720):
     pos = [round(v, 3) for v in cam]
     aim = [round(v, 3) for v in look]
     camera = dict(pos=list(pos), look_at=list(aim), fov_deg=round(fov, 4),
-                  width=960, height=720)
+                  width=width, height=height)
     if up is not None:
         # Looking straight down makes the default up (0,0,1) parallel to the view
         # direction, so the basis is degenerate and the frame comes out rolled:
@@ -1545,7 +1559,7 @@ def _sensors(cam, look, fov, range_m, site, v_req=0.0, up=None, env=None, plate=
     # floor (the datasheet range for a 10 % target), so a target slightly beyond
     # the spec still returns a weaker echo instead of a second hard truncation.
     lidar = dict(pos=list(pos), look_at=list(aim), fov_deg=round(fov, 4),
-                 width=960, height=720, n_az=256, n_el=192,
+                 width=width, height=height, n_az=256, n_el=192,
                  max_range_m=round(max(1500.0, 1.6 * range_m), 1),
                  range_spec_m=round(1.1 * range_m, 1),
                  pulse_energy_nj=4000.0, aperture_mm=50.0)
@@ -1768,6 +1782,14 @@ def build_scene(recipe):
     env = r['environment']['kind']
     weather = r['environment']['weather']
     view = r['view']
+    # Image dimensions come from the recipe (validated with LIM['dim']); the
+    # legacy 960x720 / 1280x960 pair is the default, so an old recipe stays
+    # bit-for-bit unchanged. v_ratio replaces every hard-coded 4:3 below.
+    v_w = int(view.get('width') or 960)
+    v_h = int(view.get('height') or 720)
+    v_ww = int(view.get('wide_width') or 1280)
+    v_wh = int(view.get('wide_height') or 960)
+    v_ratio = float(v_h) / float(v_w) if v_w else 0.75
     cap = r['capture']
     fps = float(cap['fps'])
     frames = int(cap['frames'])
@@ -1918,9 +1940,9 @@ def build_scene(recipe):
                 _px, _py = float(_uv[0]), float(_uv[1])
                 if len(_uv) > 2 and count > 1:
                     _px = _px + float(_uv[2]) * (k - (count - 1) / 2.0)
-                # v is measured in FRAME heights, and the frame is 4:3, so the
-                # plate covers span_m horizontally and span_m*3/4 vertically.
-                _span_y = span_m * (720.0 / 960.0)
+                # v is measured in FRAME heights; the plate covers span_m
+                # horizontally and span_m*(H/W) vertically (0.75 for 4:3).
+                _span_y = span_m * v_ratio
                 _pos = [round((_px - 0.5) * span_m, 3),
                         round((0.5 - _py) * _span_y, 3),
                         round(float(spec.get('z') or 0.0), 3)]
@@ -2053,9 +2075,9 @@ def build_scene(recipe):
                 # A short stroke on the plate would otherwise stop the airframe
                 # a fraction of the way through the clip: extend it along its
                 # final heading so the route covers the clip at cruise speed.
-                # The plate frame is span_m wide and (4:3) span_m * 0.75 tall,
-                # centred on the origin; keep the extended route inside it.
-                _fh = (0.5 * float(span_m), 0.5 * float(span_m) * 0.75) if top_down else None
+                # The plate frame is span_m wide and span_m*(H/W) tall (4:3 =
+                # 0.75), centred on the origin; keep the extended route inside it.
+                _fh = (0.5 * float(span_m), 0.5 * float(span_m) * v_ratio) if top_down else None
                 _added = _extend_cruise_route(obj["trajectory"],
                                               float(frames) * float(dt), _fh)
                 if _added > 0.0:
@@ -2110,7 +2132,7 @@ def build_scene(recipe):
                            resolvable=int(min(_res, len(_slants))))
 
     fov = view['fov_deg']
-    px = _pixels(primary_size, range_m, fov, 960.0)
+    px = _pixels(primary_size, range_m, fov, float(v_w))
     seeker = dict(
         mode='seeker',
         range_m=[round(lo, 1), round(hi, 1)],
@@ -2134,10 +2156,10 @@ def build_scene(recipe):
     if dep is not None:
         seeker['depression_deg'] = round(float(dep), 3)
     views = [dict(name='seeker', tag='', fov_deg=round(fov, 4),
-                  width=960, height=720)]
+                  width=v_w, height=v_h)]
     if view['views'] == 'dual':
         views.append(dict(name='wide', tag='_wide', fov_deg=18.0,
-                          width=1280, height=960))
+                          width=v_ww, height=v_wh))
 
     # Occluders around the target. Derived from the backdrop category so a city
     # plate gets buildings and a forest plate gets trees; both are real geometry,
@@ -2208,7 +2230,8 @@ def build_scene(recipe):
         'sensors': _sensors(site['cam'], site['tgt'], fov, range_m, site,
                             up=((0.0, 1.0, 0.0) if top_down else None),
                                         v_req=abs(float(speed)), env=env,
-                                        plate=bool(top_down)),
+                                        plate=bool(top_down),
+                                        width=v_w, height=v_h),
         'clip': dict(
             frames_per_clip=frames,
             camera='ir_camera',
@@ -2286,7 +2309,7 @@ def build_scene(recipe):
         _g['backdrop_aligned'] = True
         _g['backdrop_offset'] = [0.5, 0.5]
         _g['backdrop_span_m'] = float(span_m)
-        _g['backdrop_span_y_m'] = float(span_m) * (720.0 / 960.0)
+        _g['backdrop_span_y_m'] = float(span_m) * v_ratio
     if top_down:
         cfg['view'] = dict(aspect=aspect, ground_span_m=float(span_m),
                            height_ladder_m=[round(float(o['pos'][2]), 3)

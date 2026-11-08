@@ -1,0 +1,785 @@
+{
+ "purpose": "W1 v3 physical-layer jamming probe: 3 domains x base/mid/strong, 1 frame each",
+ "target_px": [
+  28,
+  34
+ ],
+ "aim_px": 31.0,
+ "frames": 30,
+ "resolution": [
+  768,
+  576
+ ],
+ "jam_layer": "ecm (air) / objects+radar_clutter (ground) / radar_clutter (sea)",
+ "calibration": {
+  "air_plane": {
+   "source": "ds20_v2_air_plane.json",
+   "scale_start": 0.51056136,
+   "scale_first_pass": 0.8157215,
+   "scale_calibrated": 0.8438477,
+   "target_m_start": 10.3767,
+   "target_m_calibrated": 16.5789,
+   "r0_m": 2936.84,
+   "box_px_before": 19.403,
+   "box_px_first_pass": 29.967,
+   "box_px_verified": 31.0,
+   "backdrop": "../assets/backdrops/sky/17_Cloudscapes_from_6E-6325_DEL-IXR_1_jpg.jpg",
+   "background_branch": "sky_only_two_key",
+   "three_paths_same": true,
+   "three_paths_exist": true,
+   "ecm_load_mid": {
+    "ok": true,
+    "n_entities": 5,
+    "kinds": [
+     "chaff_cloud",
+     "false_target",
+     "infrared_flare",
+     "noise_jammer"
+    ]
+   },
+   "note": "30 frames; real 28..34 px; physics-layer mid jamming; two-pass closed-loop scale calibration"
+  },
+  "ground_vehicle": {
+   "source": "ds20_v2_ground_vehicle.json",
+   "scale_start": 0.91646844,
+   "scale_first_pass": 1.50310996,
+   "scale_calibrated": 1.55162714,
+   "target_m_start": 5.2152,
+   "target_m_calibrated": 8.5535,
+   "r0_m": 1211.05,
+   "box_px_before": 18.901,
+   "box_px_first_pass": 30.031,
+   "box_px_verified": 31.002,
+   "backdrop": "../assets/backdrops/desert/02_Dune_Formations_Namib_37730835362_jpg.jpg",
+   "background_branch": "three_key",
+   "three_paths_same": true,
+   "three_paths_exist": true,
+   "ecm_load_mid": {},
+   "note": "30 frames; real 28..34 px; physics-layer mid jamming; two-pass closed-loop scale calibration"
+  },
+  "sea_ship": {
+   "source": "ds20_v2_sea_ship.json",
+   "scale_start": 0.76003305,
+   "scale_first_pass": 1.22097386,
+   "scale_calibrated": 1.41821469,
+   "target_m_start": 12.5553,
+   "target_m_calibrated": 20.1741,
+   "r0_m": 2377.63,
+   "box_px_before": 19.297,
+   "box_px_first_pass": 26.689,
+   "box_px_verified": 31.008,
+   "backdrop": "../assets/backdrops/open/03_Sea_wave_abstract_texture_Unsplash.jpg",
+   "background_branch": "three_key",
+   "three_paths_same": true,
+   "three_paths_exist": true,
+   "ecm_load_mid": {},
+   "note": "30 frames; real 28..34 px; physics-layer mid jamming; two-pass closed-loop scale calibration"
+  }
+ },
+ "ecm_load_validation": {
+  "air_base": {
+   "ok": true,
+   "enabled": false,
+   "n_entities": 0,
+   "kinds": []
+  },
+  "air_mid": {
+   "ok": true,
+   "enabled": true,
+   "n_entities": 5,
+   "kinds": [
+    "chaff_cloud",
+    "false_target",
+    "infrared_flare",
+    "noise_jammer"
+   ]
+  },
+  "air_strong": {
+   "ok": true,
+   "enabled": true,
+   "n_entities": 7,
+   "kinds": [
+    "chaff_cloud",
+    "false_target",
+    "infrared_flare",
+    "noise_jammer"
+   ]
+  }
+ },
+ "verification": {
+  "sea_clutter_ridge": {
+   "tiers": {
+    "base": {
+     "ridge_rows_pct": 3.17,
+     "center_off_db": 21.27
+    },
+    "mid": {
+     "ridge_rows_pct": 98.63,
+     "center_off_db": 24.39
+    },
+    "strong": {
+     "ridge_rows_pct": 99.9,
+     "center_off_db": 34.6
+    }
+   },
+   "base_off_mid_on": true,
+   "conclusion": "clutter_ridge=false 真关脊(约3% range 单元)，mid/strong 真开脊(约99%)，证实 rc=dict(DEFAULTS) 默认 True 的坑"
+  },
+  "ground_clutter_in_frame": {
+   "tiers": {
+    "base": {
+     "changed_px_pct": 0.0,
+     "n_boxes": 1,
+     "box_names": [
+      "vehicle_01"
+     ]
+    },
+    "mid": {
+     "changed_px_pct": 0.689,
+     "n_boxes": 1,
+     "box_names": [
+      "vehicle_01"
+     ]
+    },
+    "strong": {
+     "changed_px_pct": 1.478,
+     "n_boxes": 1,
+     "box_names": [
+      "vehicle_01"
+     ]
+    }
+   },
+   "conclusion": "mid/strong 光学像素变化(>8DN) 约0.7%/1.5% 即杂物入画，但标注始终 boxes=1 仅主目标，label:false scenery 不进 COCO"
+  }
+ },
+ "domains": {
+  "air_plane": {
+   "domain": "air",
+   "seed": 7,
+   "tiers": {
+    "base": {
+     "optical": {
+      "std": 39.305,
+      "p99_minus_p1": 176.0,
+      "hf_laplacian": 4.4715,
+      "blobs_excl_target": 12,
+      "dead_black_pct": 0.0
+     },
+     "ir": {
+      "std": 39.787,
+      "dead_black_pct": 0.0,
+      "hotspots_excl_target": 1
+     },
+     "rd": {
+      "shape": [
+       2048,
+       64
+      ],
+      "noise_floor_db": -63.98,
+      "peak_snr_db": 41.69,
+      "center_rel_db": 1.7,
+      "center_abs_db": -62.28,
+      "p99_over_median_db": 8.38
+     },
+     "radar_label": {
+      "detected": true,
+      "snr_db": 51.1,
+      "n_targets": 1,
+      "ecm_source_boxes": 0,
+      "unassociated": 0
+     },
+     "optical_label": {
+      "box_px": 31.0,
+      "n_boxes": 1,
+      "coco_categories": [
+       "fighter"
+      ],
+      "coco_clean": true,
+      "coco_ann_counts": [
+       1,
+       1
+      ]
+     },
+     "noise_floor_db": -63.98,
+     "peak_snr_db": 41.69,
+     "center_rel_db": 1.7,
+     "optical_blobs": 12,
+     "ir_hotspots": 1,
+     "detected": true,
+     "snr_db": 51.1,
+     "box_px": 31.0,
+     "n_boxes": 1,
+     "coco_clean": true,
+     "ecm_source_boxes": 0,
+     "jam_delta": {
+      "noise_floor_db": 0.0,
+      "center_rel_db": 0.0,
+      "optical_blobs": 0,
+      "ir_hotspots": 0
+     },
+     "jam_effective": false,
+     "target_detectable": true,
+     "label_clean": true
+    },
+    "mid": {
+     "optical": {
+      "std": 39.231,
+      "p99_minus_p1": 176.0,
+      "hf_laplacian": 4.4777,
+      "blobs_excl_target": 18,
+      "dead_black_pct": 0.0
+     },
+     "ir": {
+      "std": 39.856,
+      "dead_black_pct": 0.0,
+      "hotspots_excl_target": 3
+     },
+     "rd": {
+      "shape": [
+       2048,
+       64
+      ],
+      "noise_floor_db": -28.32,
+      "peak_snr_db": 18.25,
+      "center_rel_db": 1.68,
+      "center_abs_db": -26.63,
+      "p99_over_median_db": 8.34
+     },
+     "radar_label": {
+      "detected": true,
+      "snr_db": 14.5,
+      "n_targets": 1,
+      "ecm_source_boxes": 5,
+      "unassociated": 5
+     },
+     "optical_label": {
+      "box_px": 31.0,
+      "n_boxes": 1,
+      "coco_categories": [
+       "fighter"
+      ],
+      "coco_clean": true,
+      "coco_ann_counts": [
+       1,
+       1
+      ]
+     },
+     "noise_floor_db": -28.32,
+     "peak_snr_db": 18.25,
+     "center_rel_db": 1.68,
+     "optical_blobs": 18,
+     "ir_hotspots": 3,
+     "detected": true,
+     "snr_db": 14.5,
+     "box_px": 31.0,
+     "n_boxes": 1,
+     "coco_clean": true,
+     "ecm_source_boxes": 5,
+     "jam_delta": {
+      "noise_floor_db": 35.66,
+      "center_rel_db": -0.02,
+      "optical_blobs": 6,
+      "ir_hotspots": 2
+     },
+     "jam_effective": true,
+     "target_detectable": true,
+     "label_clean": true
+    },
+    "strong": {
+     "optical": {
+      "std": 39.304,
+      "p99_minus_p1": 175.0,
+      "hf_laplacian": 4.4956,
+      "blobs_excl_target": 27,
+      "dead_black_pct": 0.0
+     },
+     "ir": {
+      "std": 39.861,
+      "dead_black_pct": 0.0,
+      "hotspots_excl_target": 5
+     },
+     "rd": {
+      "shape": [
+       2048,
+       64
+      ],
+      "noise_floor_db": -20.54,
+      "peak_snr_db": 16.26,
+      "center_rel_db": 1.69,
+      "center_abs_db": -18.85,
+      "p99_over_median_db": 8.33
+     },
+     "radar_label": {
+      "detected": false,
+      "snr_db": null,
+      "n_targets": 1,
+      "ecm_source_boxes": 9,
+      "unassociated": 9
+     },
+     "optical_label": {
+      "box_px": 31.0,
+      "n_boxes": 1,
+      "coco_categories": [
+       "fighter"
+      ],
+      "coco_clean": true,
+      "coco_ann_counts": [
+       1,
+       1
+      ]
+     },
+     "noise_floor_db": -20.54,
+     "peak_snr_db": 16.26,
+     "center_rel_db": 1.69,
+     "optical_blobs": 27,
+     "ir_hotspots": 5,
+     "detected": false,
+     "snr_db": null,
+     "box_px": 31.0,
+     "n_boxes": 1,
+     "coco_clean": true,
+     "ecm_source_boxes": 9,
+     "jam_delta": {
+      "noise_floor_db": 43.44,
+      "center_rel_db": -0.01,
+      "optical_blobs": 15,
+      "ir_hotspots": 4
+     },
+     "jam_effective": true,
+     "target_detectable": false,
+     "label_clean": true
+    }
+   },
+   "recommended_tier": "mid",
+   "reason": "strong 档淹没目标或未过门禁，mid 档干扰生效且目标可检出、标注干净，取 mid"
+  },
+  "ground_vehicle": {
+   "domain": "ground",
+   "seed": 17,
+   "tiers": {
+    "base": {
+     "optical": {
+      "std": 14.171,
+      "p99_minus_p1": 59.0,
+      "hf_laplacian": 3.6183,
+      "blobs_excl_target": 4,
+      "dead_black_pct": 0.0
+     },
+     "ir": {
+      "std": 17.977,
+      "dead_black_pct": 0.11,
+      "hotspots_excl_target": 10
+     },
+     "rd": {
+      "shape": [
+       1024,
+       64
+      ],
+      "noise_floor_db": -66.71,
+      "peak_snr_db": 50.0,
+      "center_rel_db": 22.08,
+      "center_abs_db": -44.63,
+      "p99_over_median_db": 14.74
+     },
+     "radar_label": {
+      "detected": true,
+      "snr_db": 57.9,
+      "n_targets": 1,
+      "ecm_source_boxes": 0,
+      "unassociated": 760
+     },
+     "optical_label": {
+      "box_px": 31.002,
+      "n_boxes": 1,
+      "coco_categories": [
+       "vehicle"
+      ],
+      "coco_clean": true,
+      "coco_ann_counts": [
+       1,
+       1
+      ]
+     },
+     "noise_floor_db": -66.71,
+     "peak_snr_db": 50.0,
+     "center_rel_db": 22.08,
+     "optical_blobs": 4,
+     "ir_hotspots": 10,
+     "detected": true,
+     "snr_db": 57.9,
+     "box_px": 31.002,
+     "n_boxes": 1,
+     "coco_clean": true,
+     "ecm_source_boxes": 0,
+     "jam_delta": {
+      "noise_floor_db": 0.0,
+      "center_rel_db": 0.0,
+      "optical_blobs": 0,
+      "ir_hotspots": 0
+     },
+     "jam_effective": false,
+     "target_detectable": true,
+     "label_clean": true
+    },
+    "mid": {
+     "optical": {
+      "std": 14.619,
+      "p99_minus_p1": 63.0,
+      "hf_laplacian": 3.6424,
+      "blobs_excl_target": 3,
+      "dead_black_pct": 0.0
+     },
+     "ir": {
+      "std": 19.298,
+      "dead_black_pct": 0.324,
+      "hotspots_excl_target": 10
+     },
+     "rd": {
+      "shape": [
+       1024,
+       64
+      ],
+      "noise_floor_db": -66.69,
+      "peak_snr_db": 49.99,
+      "center_rel_db": 24.76,
+      "center_abs_db": -41.94,
+      "p99_over_median_db": 22.76
+     },
+     "radar_label": {
+      "detected": true,
+      "snr_db": 57.9,
+      "n_targets": 1,
+      "ecm_source_boxes": 0,
+      "unassociated": 760
+     },
+     "optical_label": {
+      "box_px": 31.002,
+      "n_boxes": 1,
+      "coco_categories": [
+       "vehicle"
+      ],
+      "coco_clean": true,
+      "coco_ann_counts": [
+       1,
+       1
+      ]
+     },
+     "noise_floor_db": -66.69,
+     "peak_snr_db": 49.99,
+     "center_rel_db": 24.76,
+     "optical_blobs": 3,
+     "ir_hotspots": 10,
+     "detected": true,
+     "snr_db": 57.9,
+     "box_px": 31.002,
+     "n_boxes": 1,
+     "coco_clean": true,
+     "ecm_source_boxes": 0,
+     "jam_delta": {
+      "noise_floor_db": 0.02,
+      "center_rel_db": 2.68,
+      "optical_blobs": -1,
+      "ir_hotspots": 0
+     },
+     "jam_effective": false,
+     "target_detectable": true,
+     "label_clean": true
+    },
+    "strong": {
+     "optical": {
+      "std": 15.001,
+      "p99_minus_p1": 66.0,
+      "hf_laplacian": 3.6649,
+      "blobs_excl_target": 6,
+      "dead_black_pct": 0.0
+     },
+     "ir": {
+      "std": 20.508,
+      "dead_black_pct": 0.553,
+      "hotspots_excl_target": 10
+     },
+     "rd": {
+      "shape": [
+       1024,
+       64
+      ],
+      "noise_floor_db": -66.66,
+      "peak_snr_db": 60.08,
+      "center_rel_db": 34.36,
+      "center_abs_db": -32.3,
+      "p99_over_median_db": 34.19
+     },
+     "radar_label": {
+      "detected": true,
+      "snr_db": 57.9,
+      "n_targets": 1,
+      "ecm_source_boxes": 0,
+      "unassociated": 760
+     },
+     "optical_label": {
+      "box_px": 31.002,
+      "n_boxes": 1,
+      "coco_categories": [
+       "vehicle"
+      ],
+      "coco_clean": true,
+      "coco_ann_counts": [
+       1,
+       1
+      ]
+     },
+     "noise_floor_db": -66.66,
+     "peak_snr_db": 60.08,
+     "center_rel_db": 34.36,
+     "optical_blobs": 6,
+     "ir_hotspots": 10,
+     "detected": true,
+     "snr_db": 57.9,
+     "box_px": 31.002,
+     "n_boxes": 1,
+     "coco_clean": true,
+     "ecm_source_boxes": 0,
+     "jam_delta": {
+      "noise_floor_db": 0.05,
+      "center_rel_db": 12.28,
+      "optical_blobs": 2,
+      "ir_hotspots": 0
+     },
+     "jam_effective": true,
+     "target_detectable": true,
+     "label_clean": true
+    }
+   },
+   "recommended_tier": "strong",
+   "reason": "strong 档干扰生效且目标仍可检出、标注干净，取最强档"
+  },
+  "sea_ship": {
+   "domain": "sea",
+   "seed": 27,
+   "tiers": {
+    "base": {
+     "optical": {
+      "std": 25.089,
+      "p99_minus_p1": 100.0,
+      "hf_laplacian": 11.1391,
+      "blobs_excl_target": 53,
+      "dead_black_pct": 0.0
+     },
+     "ir": {
+      "std": 38.634,
+      "dead_black_pct": 0.142,
+      "hotspots_excl_target": 74
+     },
+     "rd": {
+      "shape": [
+       2048,
+       64
+      ],
+      "noise_floor_db": -63.98,
+      "peak_snr_db": 58.65,
+      "center_rel_db": 27.69,
+      "center_abs_db": -36.29,
+      "p99_over_median_db": 8.35
+     },
+     "radar_label": {
+      "detected": true,
+      "snr_db": 65.3,
+      "n_targets": 1,
+      "ecm_source_boxes": 0,
+      "unassociated": 763
+     },
+     "optical_label": {
+      "box_px": 31.008,
+      "n_boxes": 1,
+      "coco_categories": [
+       "ship"
+      ],
+      "coco_clean": true,
+      "coco_ann_counts": [
+       1,
+       1
+      ]
+     },
+     "noise_floor_db": -63.98,
+     "peak_snr_db": 58.65,
+     "center_rel_db": 27.69,
+     "optical_blobs": 53,
+     "ir_hotspots": 74,
+     "detected": true,
+     "snr_db": 65.3,
+     "box_px": 31.008,
+     "n_boxes": 1,
+     "coco_clean": true,
+     "ecm_source_boxes": 0,
+     "jam_delta": {
+      "noise_floor_db": 0.0,
+      "center_rel_db": 0.0,
+      "optical_blobs": 0,
+      "ir_hotspots": 0
+     },
+     "jam_effective": false,
+     "target_detectable": true,
+     "label_clean": true
+    },
+    "mid": {
+     "optical": {
+      "std": 25.089,
+      "p99_minus_p1": 100.0,
+      "hf_laplacian": 11.1391,
+      "blobs_excl_target": 53,
+      "dead_black_pct": 0.0
+     },
+     "ir": {
+      "std": 38.634,
+      "dead_black_pct": 0.142,
+      "hotspots_excl_target": 74
+     },
+     "rd": {
+      "shape": [
+       2048,
+       64
+      ],
+      "noise_floor_db": -63.68,
+      "peak_snr_db": 58.34,
+      "center_rel_db": 30.52,
+      "center_abs_db": -33.16,
+      "p99_over_median_db": 28.04
+     },
+     "radar_label": {
+      "detected": true,
+      "snr_db": 65.3,
+      "n_targets": 1,
+      "ecm_source_boxes": 0,
+      "unassociated": 763
+     },
+     "optical_label": {
+      "box_px": 31.008,
+      "n_boxes": 1,
+      "coco_categories": [
+       "ship"
+      ],
+      "coco_clean": true,
+      "coco_ann_counts": [
+       1,
+       1
+      ]
+     },
+     "noise_floor_db": -63.68,
+     "peak_snr_db": 58.34,
+     "center_rel_db": 30.52,
+     "optical_blobs": 53,
+     "ir_hotspots": 74,
+     "detected": true,
+     "snr_db": 65.3,
+     "box_px": 31.008,
+     "n_boxes": 1,
+     "coco_clean": true,
+     "ecm_source_boxes": 0,
+     "jam_delta": {
+      "noise_floor_db": 0.3,
+      "center_rel_db": 2.83,
+      "optical_blobs": 0,
+      "ir_hotspots": 0
+     },
+     "jam_effective": false,
+     "target_detectable": true,
+     "label_clean": true
+    },
+    "strong": {
+     "optical": {
+      "std": 25.089,
+      "p99_minus_p1": 100.0,
+      "hf_laplacian": 11.1391,
+      "blobs_excl_target": 53,
+      "dead_black_pct": 0.0
+     },
+     "ir": {
+      "std": 38.635,
+      "dead_black_pct": 0.145,
+      "hotspots_excl_target": 74
+     },
+     "rd": {
+      "shape": [
+       2048,
+       64
+      ],
+      "noise_floor_db": -63.64,
+      "peak_snr_db": 68.44,
+      "center_rel_db": 40.68,
+      "center_abs_db": -22.96,
+      "p99_over_median_db": 38.64
+     },
+     "radar_label": {
+      "detected": true,
+      "snr_db": 65.3,
+      "n_targets": 1,
+      "ecm_source_boxes": 0,
+      "unassociated": 763
+     },
+     "optical_label": {
+      "box_px": 31.008,
+      "n_boxes": 1,
+      "coco_categories": [
+       "ship"
+      ],
+      "coco_clean": true,
+      "coco_ann_counts": [
+       1,
+       1
+      ]
+     },
+     "noise_floor_db": -63.64,
+     "peak_snr_db": 68.44,
+     "center_rel_db": 40.68,
+     "optical_blobs": 53,
+     "ir_hotspots": 74,
+     "detected": true,
+     "snr_db": 65.3,
+     "box_px": 31.008,
+     "n_boxes": 1,
+     "coco_clean": true,
+     "ecm_source_boxes": 0,
+     "jam_delta": {
+      "noise_floor_db": 0.34,
+      "center_rel_db": 12.99,
+      "optical_blobs": 0,
+      "ir_hotspots": 0
+     },
+     "jam_effective": true,
+     "target_detectable": true,
+     "label_clean": true
+    }
+   },
+   "recommended_tier": "strong",
+   "reason": "strong 档干扰生效且目标仍可检出、标注干净，取最强档"
+  }
+ },
+ "thresholds": {
+  "jam_effective": "RD 中心带/噪声基底相对 base 提升 >=3 dB 或 排除目标框后亮点/热点数增加 >=2",
+  "target_detectable": "peak_snr >= 12 dB 且 detected=true 且真实框在 28..34 px",
+  "label_clean": "optical boxes==1 且 COCO 类别不增加",
+  "recommended_tier": "干扰生效但目标仍可检出的最强档（strong 淹没则 mid）"
+ },
+ "notes": [
+  "cfg 是 v2 配置的深拷贝；三键同源实拍背景、camera 5 阶段、atmosphere、preview_span_c=20、删 temp_c、sensor.enabled=false、auto_exposure=false 全部原样保留",
+  "ecm.load 白名单仅 enabled/entities/seed；每实体字段 = _COMMON | DEFAULTS[kind]。false_target 用 power_ratio/range_step_m/range_offset_m，chaff_cloud 用 rcs_m2（不是 rcs_db），noise_jammer 用 erp_w；band 必须是字符串，life 只收 start_s/end_s/fade_s。绝对 pos+vel，不用 parent/link",
+  "ecm.attach 强制 label=False，故 ECM 实体不进 COCO；地面杂物全部 label:false 且不写 temp_c/temp_c_hint，标注保持单类",
+  "海杂波脊：radar.py:319 rc=dict(DEFAULTS) 令 clutter_ridge 默认 True，且 v2 sea 配置没写该键，所以 v2 海场景其实已开脊；base 必须显式 clutter_ridge=false 才能真关，mid/strong 显式 true",
+  "image-layer interference 只导出 interfered/ 副本且不改 RD 张量，会破坏三模态对齐，本轮一律不用",
+  "sky_backdrop_card 用裸相对路径加载图片，Blender 不按 _base_dir 解析；V2.run_gen 用 sidecar 把 sky_image 绝对化，三份 authored 指针保持同源相对路径",
+  "标定的坑：单步 scale*=31/w 用 v2 20 帧标定时，30 帧配置改变了 frame0 斜距与俯视几何，竖长的 ship 横向真实框只到 26.69px（跌出 28..34）；对 v3 基础帧再跑一次 scale*=31/w 闭环修正，三域真实框回到 31.00/31.00/31.01px",
+  "跨帧复验修正：单帧探针因 ECM life.fade_s=0.05 只看到未全功率的 frame0，200 W 在全量 30 帧里 detected 仅 1/30；最终把 air/mid 的 erp_w 降到 3 W 并去掉 fade_s，让单帧探针代表整段，同时保留明显有源压制。",
+  "最终档位：air=mid(erp 3W) / ground=strong / sea=strong；ground 与 sea 在 30 帧全量下 detected 30/30、中心带较基线 +13 dB。",
+  "二次跨帧修正：Swerling I 的 frame10 深衰落让 3 W 档仍为 29/30；改 Swerling III（两次抽样、方差减半）并把 pfa 放宽到 1e-4（门限 11.4→9.6 dB），纯雷达 30 帧探针 30/30 检出，随后全量三模态重渲。"
+ ],
+ "final_adjustments": {
+  "air_plane": {
+   "issue": "1-frame probe blind spot: life.fade_s=0.05 made the jammer near-powerless on frame 0; full 30-frame run at erp_w=200 W had detected 1/30",
+   "probe_10W": "8/8 frames detected, but min SNR 14.1 dB vs ~11.4 dB gate -> only 2.7 dB margin",
+   "fix": "erp_w 200 -> 3 W and remove fade_s (full power from t=0)",
+   "expected": "noise floor still ~+17 dB over no-jam baseline; target SNR margin ~7-10 dB; detected 30/30",
+   "verified_by": "full 30-frame regeneration + validate_v3_jam.py",
+   "second_fix": "erp=3 W still lost frame 10 to a Swerling I deep fade (detected 29/30); swerling=\"III\" + pfa=1e-4 (gate 11.4 -> 9.6 dB) verified 30/30 on a radar-only 30-frame probe, SNR 13.9..30.3 dB"
+  }
+ }
+}

@@ -1,6 +1,6 @@
 {
- "generated": "2026-11-08T10:30:48+08:00",
- "domain": "air + sea",
+ "generated": "2026-11-08T20:08:37+08:00",
+ "domain": "air + sea + jam",
  "scenes": [
   {
    "id": "demo_air_headon",
@@ -170,6 +170,78 @@
    },
    "note": "4 帧 · 雷达 1.86 km · 舰船 243x112 px（占宽 19%、面积 2.2%）· 海面俯视",
    "caption": "开阔蓝色海面上的一艘中小型舰船，俯视轮廓能看清舰体与上层建筑，目标只占画面一小部分。"
+  },
+  {
+   "id": "v3jam_air",
+   "title": "干扰 · 空域有源/无源",
+   "cls": "fighter",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "lwir",
+    "radar"
+   ],
+   "frames": [
+    0,
+    9,
+    19,
+    29
+   ],
+   "hero": {
+    "mod": "radar",
+    "frame": 9
+   },
+   "note": "30 帧 · 有源压制(3 W ERP / 200 MHz) + 箔条云(RCS 140 m²) + 假目标 + 红外诱饵 · 目标 31 px",
+   "caption": "宽带噪声把 RD 基底整体抬高约 17 dB，目标仍可检出；光学目标轮廓不变，干扰只发生在雷达检测层。"
+  },
+  {
+   "id": "v3jam_land",
+   "title": "干扰 · 陆域地物/地杂波",
+   "cls": "vehicle",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "lwir",
+    "radar"
+   ],
+   "frames": [
+    0,
+    9,
+    19,
+    29
+   ],
+   "hero": {
+    "mod": "radar",
+    "frame": 9
+   },
+   "note": "30 帧 · label:false 地面杂物/建筑 + 地杂波(clutter_density 0.08) · 目标 31 px",
+   "caption": "地面域不抬升全图噪声基底，而是在零多普勒中心竖起强脊(约 +13 dB)；光学目标不变，杂物均不进 COCO 标注。"
+  },
+  {
+   "id": "v3jam_naval",
+   "title": "干扰 · 海域海杂波脊",
+   "cls": "ship",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "lwir",
+    "radar"
+   ],
+   "frames": [
+    0,
+    9,
+    19,
+    29
+   ],
+   "hero": {
+    "mod": "radar",
+    "frame": 9
+   },
+   "note": "30 帧 · 海杂波零多普勒脊(clutter_ridge=True, scale 6 dB) · 目标 31 px",
+   "caption": "海面同样以中央竖脊为特征：Rayleigh + 常数 gamma 合成的零多普勒脊较基线约 +13 dB；光学舰船轮廓不变。"
   }
  ]
 }

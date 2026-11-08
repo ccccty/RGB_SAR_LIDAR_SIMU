@@ -3,31 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>simkit · 空域与海域多模态精选：同一帧的可见光 / 红外 / 雷达</title>
-<meta name="description" content="同一帧、同一相机位姿、同一目标的多模态仿真精选：空域战机与海域舰船，可见光、中波/长波红外与毫米波雷达距离-多普勒图，配原理讲解、场景精选与已知局限。纯静态页面。">
+<title>simkit · 空域与海域多模态精选 · 干扰对照：同一帧的可见光 / 红外 / 雷达</title>
+<meta name="description" content="同一帧、同一相机位姿、同一目标的多模态仿真精选：空域战机与海域舰船，可见光、中波/长波红外与毫米波雷达距离-多普勒图，配原理讲解、场景精选与已知局限。纯静态页面。另设干扰实验室，覆盖有源压制、箔条云、假目标、红外诱饵与地 / 海杂波脊的 clean↔jammed 逐帧对照。">
 <meta name="theme-color" content="#070a0f">
 <meta name="color-scheme" content="dark">
 <meta property="og:type" content="website">
 <meta property="og:title" content="simkit · 同一帧，三种传感器各看到什么">
-<meta property="og:description" content="空域战机与海域舰船的多模态仿真精选对照：可见光、红外、雷达 RD 同帧同位姿，附带成像原理与局限说明。">
+<meta property="og:description" content="空域战机与海域舰船的多模态仿真精选对照：可见光、红外、雷达 RD 同帧同位姿，附带成像原理与局限说明。干扰实验室另给 clean↔jammed 对照与杂波 / 诱饵链路示意。">
 <meta property="og:image" content="data/demo_air_headon/optical/000004.webp">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='10' fill='none' stroke='%2338bdf8' stroke-width='3'/><circle cx='16' cy='16' r='3.6' fill='%2338bdf8'/><path d='M16 1v5M16 26v5M1 16h5M26 16h5' stroke='%2338bdf8' stroke-width='2'/></svg>">
 <link rel="stylesheet" href="site.css">
 <script src="site.js" defer></script>
 </head>
 <body>
+<div class="page-glow" aria-hidden="true"></div>
 <a class="skip" href="#main">跳到正文</a>
 
 <header class="bar">
   <a class="brand" href="#hero" aria-label="回到顶部">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".5"/><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     <span class="brand-name">simkit</span>
-    <em>空域 / 海域</em>
+    <em>空域 / 海域 / 干扰</em>
   </a>
   <nav class="nav" aria-label="页面导航">
     <a href="#hero">演示</a>
     <a href="#physics">原理</a>
     <a href="#scenes">场景</a>
+    <a href="#jamlab">干扰实验室</a>
     <a href="#rd">雷达图</a>
     <a href="#limits">局限</a>
   </nav>
@@ -57,6 +59,13 @@
       <div><dt>波段</dt><dd id="metaBand">Ku</dd></div>
       <div class="wide"><dt>备注</dt><dd id="metaNote">8 帧 · 雷达 1.3 km · 闭速 179 m/s</dd></div>
     </dl>
+
+    <div class="hero-badges" aria-label="技术参数徽章">
+      <span class="tech-badge">PHYSICS-LAYER ECM</span>
+      <span class="tech-badge">30 FPS CLIP</span>
+      <span class="tech-badge">768×576</span>
+      <span class="tech-badge">Ku-BAND RD</span>
+    </div>
   </div>
 
   <div class="hero-vis">
@@ -139,8 +148,8 @@
 <section id="scenes" class="sect">
   <header class="sect-h">
     <span class="num">03</span>
-    <h2>空域 / 海域场景精选</h2>
-    <p>空域场景之外新增一处海域精选：开阔海面上的中小型舰船目标。每个场景给几帧精选，点大图放大，点缩略条换帧。</p>
+    <h2>空域 / 海域场景精选 · 含干扰样本</h2>
+    <p>空域场景之外新增一处海域精选：开阔海面上的中小型舰船目标。每个场景给几帧精选，点大图放大，点缩略条换帧。含干扰样本的场景以「干扰」标签标出，可在下方干扰实验室里做 clean↔jammed 逐帧对照。</p>
   </header>
 
   <div class="scenes-grid" id="sceneGrid">
@@ -150,6 +159,96 @@
   <noscript>
     <p class="loading">精选帧列表需要 JavaScript 才能渲染；单张原图仍可直接访问，例如
       <a href="data/demo_air_headon/optical/000004.webp">data/demo_air_headon/optical/000004.webp</a>。</p>
+  </noscript>
+</section>
+
+<!-- ================= 干扰实验室（W3 数据驱动 · 静态兜底） ================= -->
+<section class="sect jamlab" id="jamlab">
+  <header class="sect-h">
+    <span class="num">ECM</span>
+    <h2>干扰实验室 · clean ↔ jammed 逐帧对照</h2>
+    <p>按干扰类型与强度分层：有源压制、箔条云、假目标、红外诱饵、地 / 海杂波脊。左侧干净帧、右侧干扰帧，拖动分割线看差异；下方给出指标条与强度分层卡片。</p>
+    <span class="kicker">JAM LAB · ACTIVE / PASSIVE / CLUTTER</span>
+  </header>
+
+  <!-- 纯 SVG 干扰链路示意：不依赖 JS；颜色由 site.css 中的 CSS 变量驱动 -->
+  <div class="jam-chain-box">
+    <svg class="jam-chain" viewBox="0 0 900 180" role="img" aria-label="干扰链路示意：目标回波经有源压制、箔条云、假目标、红外诱饵与地 / 海杂波脊注入，汇入同一 RD 成图通道">
+      <path class="lnk" stroke="currentColor" d="M144,92 C188,92 192,38 236,38"/>
+      <path class="lnk" stroke="currentColor" d="M144,92 C240,92 320,38 402,38"/>
+      <path class="lnk" stroke="currentColor" d="M144,92 C320,92 460,38 568,38"/>
+      <path class="lnk" stroke="currentColor" d="M144,92 C188,92 192,122 236,122"/>
+      <path class="lnk" stroke="currentColor" d="M144,92 C240,92 320,122 402,122"/>
+      <path class="lnk" stroke="currentColor" d="M144,92 C320,92 460,122 568,122"/>
+      <path class="lnk hot" stroke="currentColor" d="M374,38 C620,38 690,92 756,92"/>
+      <path class="lnk" stroke="currentColor" d="M540,38 C650,38 700,92 756,92"/>
+      <path class="lnk" stroke="currentColor" d="M706,38 C730,38 734,92 756,92"/>
+      <path class="lnk" stroke="currentColor" d="M374,122 C620,122 690,92 756,92"/>
+      <path class="lnk" stroke="currentColor" d="M540,122 C650,122 700,92 756,92"/>
+      <path class="lnk" stroke="currentColor" d="M706,122 C730,122 734,92 756,92"/>
+
+      <g class="nd end">
+        <rect x="16" y="72" width="128" height="40" rx="8"/>
+        <text x="80" y="90" text-anchor="middle">目标回波</text>
+        <text class="sub" x="80" y="103" text-anchor="middle">SOURCE / TRUTH</text>
+      </g>
+      <g class="nd jam-hot">
+        <rect x="236" y="20" width="138" height="36" rx="7"/>
+        <text x="305" y="34" text-anchor="middle">有源压制</text>
+        <text class="sub" x="305" y="47" text-anchor="middle">NOISE JAM</text>
+      </g>
+      <g class="nd jam-passive">
+        <rect x="402" y="20" width="138" height="36" rx="7"/>
+        <text x="471" y="34" text-anchor="middle">箔条云</text>
+        <text class="sub" x="471" y="47" text-anchor="middle">CHAFF CLOUD</text>
+      </g>
+      <g class="nd jam-passive">
+        <rect x="568" y="20" width="138" height="36" rx="7"/>
+        <text x="637" y="34" text-anchor="middle">假目标</text>
+        <text class="sub" x="637" y="47" text-anchor="middle">FALSE TARGET</text>
+      </g>
+      <g class="nd jam-amber">
+        <rect x="236" y="104" width="138" height="36" rx="7"/>
+        <text x="305" y="118" text-anchor="middle">红外诱饵</text>
+        <text class="sub" x="305" y="131" text-anchor="middle">IR DECOY / FLARE</text>
+      </g>
+      <g class="nd jam-clutter">
+        <rect x="402" y="104" width="138" height="36" rx="7"/>
+        <text x="471" y="118" text-anchor="middle">地杂波</text>
+        <text class="sub" x="471" y="131" text-anchor="middle">GROUND CLUTTER</text>
+      </g>
+      <g class="nd jam-sea">
+        <rect x="568" y="104" width="138" height="36" rx="7"/>
+        <text x="637" y="118" text-anchor="middle">海杂波脊</text>
+        <text class="sub" x="637" y="131" text-anchor="middle">SEA RIDGE · 0-DOPPLER</text>
+      </g>
+      <g class="nd end">
+        <rect x="756" y="72" width="128" height="40" rx="8"/>
+        <text x="820" y="90" text-anchor="middle">RD 成图通道</text>
+        <text class="sub" x="820" y="103" text-anchor="middle">RD / COCO OUT</text>
+      </g>
+
+      <g class="lg">
+        <rect x="236" y="158" width="9" height="9" rx="2" style="fill:var(--jam)"/>
+        <text x="250" y="167">有源 / 主动注入</text>
+        <rect x="402" y="158" width="9" height="9" rx="2" style="fill:var(--acc2)"/>
+        <text x="416" y="167">箔条 · 假目标 · 诱饵</text>
+        <rect x="590" y="158" width="9" height="9" rx="2" style="fill:var(--acc)"/>
+        <text x="604" y="167">地 / 海杂波脊</text>
+      </g>
+    </svg>
+  </div>
+  <p class="jam-note">链路说明：实线为目标回波主通道，六个节点是注入到同一 RD 通道的干扰 / 杂波项，颜色与下方指标、实体标签一一对应。此示意与说明为纯静态内容，不依赖脚本。</p>
+
+  <div class="jam-tabs" id="jamTabs"></div>
+  <div class="jam-body" id="jamBody">
+    <p class="jam-empty">干扰对照数据未载入。JavaScript 执行且数据加载成功后，此处会显示 clean ↔ jammed 拖拽对比；若数据缺失，整块由脚本隐藏。上方链路示意与说明不依赖脚本。</p>
+  </div>
+  <div class="jam-metrics" id="jamMetrics"></div>
+  <div class="jam-tiers" id="jamTiers"></div>
+
+  <noscript>
+    <p class="jam-empty">干扰实验室的对照图、指标与分层需要 JavaScript 才能渲染；上方链路示意、图例与说明为纯静态内容，可直接查看。</p>
   </noscript>
 </section>
 
@@ -228,6 +327,8 @@
         <li><b>红外相关</b>：两个波段预览高度相关（r≈0.995），差异主要在 16-bit 原始计数里。</li>
         <li><b>范围</b>：本页以空域三模态为主，另加一处海域精选；SAR 不在本页展示，站内其它入口保留完整管线。</li>
         <li><b>海域为俯视板面</b>：舰船按设计尺寸缩放，背景是实拍开阔海面；俯视几何下径向速度≈0，红外预览里船体呈冷色剪影。</li>
+        <li><b>海杂波是简化模型</b>：常数 gamma + Rayleigh 零多普勒脊，不是 K 分布；不仿真海浪谱、相关斑纹与多视统计。</li>
+        <li><b>干扰标注不进 COCO</b>：干扰实体以 <code>label:false</code> 落盘，不计入 COCO 标注；<code>images/radar*</code> 含图表叠字，不可作为训练像素。</li>
       </ul>
     </div>
   </div>

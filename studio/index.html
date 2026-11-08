@@ -44,7 +44,16 @@
   <main class="stack" id="stack">
     <div class="stack-head">
       <p class="eyebrow">数据集配置</p>
-      <p class="lede">一次只展开一个箱子；合上后，标题栏仍显示当前取值。</p>
+      <p class="lede">按 ①→⑥ 配置，右侧会实时提示下一步</p>
+      <div class="flow" id="flowBar">
+        <button type="button" class="flow-step" id="flow-scene" data-box="scene"><span class="flow-num">①</span><span class="flow-name">场景</span><span class="flow-flag" id="flag-scene"></span></button>
+        <button type="button" class="flow-step" id="flow-target" data-box="target"><span class="flow-num">②</span><span class="flow-name">目标</span><span class="flow-flag" id="flag-target"></span></button>
+        <button type="button" class="flow-step" id="flow-ecm" data-box="ecm"><span class="flow-num">③</span><span class="flow-name">干扰</span><span class="flow-flag" id="flag-ecm"></span></button>
+        <button type="button" class="flow-step" id="flow-view" data-box="view"><span class="flow-num">④</span><span class="flow-name">视角</span><span class="flow-flag" id="flag-view"></span></button>
+        <button type="button" class="flow-step" id="flow-capture" data-box="capture"><span class="flow-num">⑤</span><span class="flow-name">采集</span><span class="flow-flag" id="flag-capture"></span></button>
+        <button type="button" class="flow-step" id="flow-output" data-box="output"><span class="flow-num">⑥</span><span class="flow-name">输出</span><span class="flow-flag" id="flag-output"></span></button>
+        <span id="flowProgress">0/6 就绪</span>
+      </div>
     </div>
 
     <!-- ① 场景 -->
@@ -52,6 +61,7 @@
       <header class="box-head" role="button" tabindex="0" aria-expanded="true" aria-controls="body-scene">
         <span class="num">①</span><span class="title">场景</span>
         <span class="summary" id="sum-scene">天空 · 晴 · 无背景</span>
+        <span class="box-flag" id="boxflag-scene"></span>
         <span class="chev" aria-hidden="true"></span>
       </header>
       <div class="box-body" id="body-scene"><div class="box-inner">
@@ -129,6 +139,7 @@
       <header class="box-head" role="button" tabindex="0" aria-expanded="false" aria-controls="body-target">
         <span class="num">②</span><span class="title">目标</span>
         <span class="summary" id="sum-target">双发战斗机 ×1</span>
+        <span class="box-flag" id="boxflag-target"></span>
         <span class="chev" aria-hidden="true"></span>
       </header>
       <div class="box-body" id="body-target"><div class="box-inner">
@@ -184,6 +195,7 @@
       <header class="box-head" role="button" tabindex="0" aria-expanded="false" aria-controls="body-ecm">
         <span class="num">③</span><span class="title">干扰</span>
         <span class="summary" id="sum-ecm">无干扰</span>
+        <span class="box-flag" id="boxflag-ecm"></span>
         <span class="chev" aria-hidden="true"></span>
       </header>
       <div class="box-body" id="body-ecm"><div class="box-inner">
@@ -212,6 +224,7 @@
       <header class="box-head" role="button" tabindex="0" aria-expanded="false" aria-controls="body-view">
         <span class="num">④</span><span class="title">视角</span>
         <span class="summary" id="sum-view">8 km · 迎头</span>
+        <span class="box-flag" id="boxflag-view"></span>
         <span class="chev" aria-hidden="true"></span>
       </header>
       <div class="box-body" id="body-view"><div class="box-inner">
@@ -284,6 +297,31 @@
                 <span class="prov">双视场 = 2.2° 导引 + 18° 搜索，同帧两路渲染。</span>
               </div>
             </div>
+            <div class="row2">
+              <label class="field">
+                <span class="label">窄视场 宽（px）</span>
+                <input type="number" id="narrowWidth" min="64" max="4096" step="1" value="960">
+                <span class="prov">导引/跟踪画幅；也是 IFOV、GSD 与目标占比的计算基准。</span>
+              </label>
+              <label class="field">
+                <span class="label">窄视场 高（px）</span>
+                <input type="number" id="narrowHeight" min="64" max="4096" step="1" value="720">
+                <span class="prov">与宽一起决定画幅宽高比。</span>
+              </label>
+            </div>
+            <div class="row2">
+              <label class="field">
+                <span class="label">宽视场 宽（px）</span>
+                <input type="number" id="wideWidth" min="64" max="4096" step="1" value="1280">
+                <span class="prov">搜索画幅；仅「双视场」模式生效。</span>
+              </label>
+              <label class="field">
+                <span class="label">宽视场 高（px）</span>
+                <input type="number" id="wideHeight" min="64" max="4096" step="1" value="960">
+                <span class="prov">与宽一起决定搜索画幅宽高比。</span>
+              </label>
+            </div>
+            <div class="plan-out" id="opticsReadout"></div>
             <div class="plan-box">
               <button type="button" class="btn small quiet" id="planBtn">预览轨迹事实</button>
               <span class="prov">只算轨迹与像素，不渲染，约 0.1 秒。</span>
@@ -299,6 +337,7 @@
       <header class="box-head" role="button" tabindex="0" aria-expanded="false" aria-controls="body-capture">
         <span class="num">⑤</span><span class="title">采集</span>
         <span class="summary" id="sum-capture">可见光+红外+雷达 · 20 帧</span>
+        <span class="box-flag" id="boxflag-capture"></span>
         <span class="chev" aria-hidden="true"></span>
       </header>
       <div class="box-body" id="body-capture"><div class="box-inner">
@@ -329,6 +368,7 @@
       <header class="box-head" role="button" tabindex="0" aria-expanded="false" aria-controls="body-output">
         <span class="num">⑥</span><span class="title">输出</span>
         <span class="summary" id="sum-output">拼接图 + COCO + YOLO + 文档</span>
+        <span class="box-flag" id="boxflag-output"></span>
         <span class="chev" aria-hidden="true"></span>
       </header>
       <div class="box-body" id="body-output"><div class="box-inner">
@@ -368,6 +408,7 @@
       </div>
       <div class="pf-body" id="pfBody">
         <p class="pf-idle">正在读取选项…</p>
+        <div class="pf-checks" id="pfChecks"></div>
       </div>
     </div>
 
@@ -380,12 +421,14 @@
       <div class="est-meta" id="estMeta"></div>
     </div>
 
-    <div class="rail-card">
+    <div class="rail-card actions" id="actionCard">
+      <div class="next-hint" id="nextHint"><span id="nextHintText">正在读取配置…</span><button type="button" class="link-btn" id="nextActionBtn" hidden>立即执行</button></div>
       <button type="button" class="btn primary block" id="genBtn" disabled>生成数据集</button>
       <div class="rail-row two">
         <button type="button" class="btn quiet" id="stillBtn">预览一张</button>
         <button type="button" class="btn quiet" id="prevBtn">预览 8 帧</button>
       </div>
+      <button type="button" class="btn quiet block" id="autoBtn">一键准备（预检 → 预览）</button>
       <button type="button" class="btn danger block" id="cancelBtn" hidden>取消任务</button>
       <p class="rail-hint" id="genHint">等待预检结果…</p>
       <div class="job" id="job" hidden>
@@ -399,12 +442,13 @@
           <code id="jobOut"></code>
         </div>
         <div class="job-log" id="jobLog"></div>
+        <button type="button" class="btn small quiet" id="retryBtn" hidden>重试</button>
         <a class="link" id="jobLink" href="#" target="_blank" rel="noopener" hidden>查看产物 →</a>
       </div>
       <div class="still" id="stillBox" hidden>
         <img id="stillImg" alt="第 1 帧预览" hidden>
         <div class="still-msg" id="stillMsg"></div>
-        <p class="still-note">这是第 1 帧的预览，正式生成会产出全部帧</p>
+        <p class="still-note" id="stillNote">预览与正式帧分辨率见「视角」箱；正式生成会产出全部帧。</p>
       </div>
     </div>
   </aside>

@@ -1,0 +1,216 @@
+{
+ "purpose": "W1 v2 realism & scale probe (A=no-HDR / B=HDR electron chain)",
+ "target_px": [
+  18,
+  22
+ ],
+ "aim_px": 20.0,
+ "resolution": [
+  768,
+  576
+ ],
+ "scenes": {
+  "air_plane": {
+   "seed": 7,
+   "fov_deg": 8.0,
+   "backdrop": "../assets/backdrops/sky/17_Cloudscapes_from_6E-6325_DEL-IXR_1_jpg.jpg",
+   "backdrop_span_m": 398.5828,
+   "range_m": [
+    2300,
+    3400
+   ],
+   "frame0_range_m": 2937.29,
+   "nominal_target_px": 19.4,
+   "box_px_before": 19.403,
+   "box_px_after": 19.403,
+   "box_px_after_visible": 19.403,
+   "in_band": true,
+   "scale_start": 0.51063479,
+   "scale_calibrated": 0.51056136,
+   "target_m_start": 10.3798,
+   "target_m_calibrated": 10.3767,
+   "A_no_hdr": {
+    "p99_minus_p1": 176.0,
+    "unique_grey_levels": 207,
+    "rg_corr": 0.971877,
+    "flattest_tile_std": 11.1425,
+    "mean_luma": 147.264
+   },
+   "B_hdr": {
+    "p99_minus_p1": 67.0,
+    "unique_grey_levels": 101,
+    "rg_corr": 0.971402,
+    "flattest_tile_std": 2.2855,
+    "mean_luma": 163.249
+   },
+   "decision": {
+    "hdr_wins": 0,
+    "hdr_better": false,
+    "metrics": {
+     "contrast": false,
+     "levels": false,
+     "texture": false
+    }
+   },
+   "final_sensor_enabled": false,
+   "ir_preview_std": 78.568,
+   "paths": {
+    "ground.backdrop": {
+     "path": "../assets/backdrops/sky/17_Cloudscapes_from_6E-6325_DEL-IXR_1_jpg.jpg",
+     "resolved": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\sky\\17_Cloudscapes_from_6E-6325_DEL-IXR_1_jpg.jpg",
+     "exists": true
+    },
+    "optical.sky_image": {
+     "path": "../assets/backdrops/sky/17_Cloudscapes_from_6E-6325_DEL-IXR_1_jpg.jpg",
+     "resolved": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\sky\\17_Cloudscapes_from_6E-6325_DEL-IXR_1_jpg.jpg",
+     "exists": true
+    },
+    "ir.background_image": {
+     "path": "../assets/backdrops/sky/17_Cloudscapes_from_6E-6325_DEL-IXR_1_jpg.jpg",
+     "resolved": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\sky\\17_Cloudscapes_from_6E-6325_DEL-IXR_1_jpg.jpg",
+     "exists": true
+    },
+    "all_same": true,
+    "all_exist": true
+   }
+  },
+  "ground_vehicle": {
+   "seed": 17,
+   "fov_deg": 10.0,
+   "backdrop": "../assets/backdrops/rural/11_AERIAL_PHOTOGRAPH_OF_FARMLAND_WITHIN_A_15-MILE_RADIUS_OF.jpg",
+   "backdrop_span_m": 200.349,
+   "range_m": [
+    920,
+    1370
+   ],
+   "frame0_range_m": 1211.13,
+   "nominal_target_px": 18.9,
+   "box_px_before": 18.902,
+   "box_px_after": 18.901,
+   "box_px_after_visible": 18.901,
+   "in_band": true,
+   "scale_start": 0.91655734,
+   "scale_calibrated": 0.91646844,
+   "target_m_start": 5.2174,
+   "target_m_calibrated": 5.2152,
+   "A_no_hdr": {
+    "p99_minus_p1": 148.0,
+    "unique_grey_levels": 187,
+    "rg_corr": 0.95521,
+    "flattest_tile_std": 11.0639,
+    "mean_luma": 130.791
+   },
+   "B_hdr": {
+    "p99_minus_p1": 108.0,
+    "unique_grey_levels": 135,
+    "rg_corr": 0.964274,
+    "flattest_tile_std": 9.2725,
+    "mean_luma": 140.248
+   },
+   "decision": {
+    "hdr_wins": 0,
+    "hdr_better": false,
+    "metrics": {
+     "contrast": false,
+     "levels": false,
+     "texture": false
+    }
+   },
+   "final_sensor_enabled": false,
+   "ir_preview_std": 45.365,
+   "paths": {
+    "ground.backdrop": {
+     "path": "../assets/backdrops/rural/11_AERIAL_PHOTOGRAPH_OF_FARMLAND_WITHIN_A_15-MILE_RADIUS_OF.jpg",
+     "resolved": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\rural\\11_AERIAL_PHOTOGRAPH_OF_FARMLAND_WITHIN_A_15-MILE_RADIUS_OF.jpg",
+     "exists": true
+    },
+    "optical.sky_image": {
+     "path": "../assets/backdrops/rural/11_AERIAL_PHOTOGRAPH_OF_FARMLAND_WITHIN_A_15-MILE_RADIUS_OF.jpg",
+     "resolved": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\rural\\11_AERIAL_PHOTOGRAPH_OF_FARMLAND_WITHIN_A_15-MILE_RADIUS_OF.jpg",
+     "exists": true
+    },
+    "ir.background_image": {
+     "path": "../assets/backdrops/rural/11_AERIAL_PHOTOGRAPH_OF_FARMLAND_WITHIN_A_15-MILE_RADIUS_OF.jpg",
+     "resolved": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\rural\\11_AERIAL_PHOTOGRAPH_OF_FARMLAND_WITHIN_A_15-MILE_RADIUS_OF.jpg",
+     "exists": true
+    },
+    "all_same": true,
+    "all_exist": true
+   }
+  },
+  "sea_ship": {
+   "seed": 27,
+   "fov_deg": 12.0,
+   "backdrop": "../assets/backdrops/open/03_Sea_wave_abstract_texture_Unsplash.jpg",
+   "backdrop_span_m": 481.3774,
+   "range_m": [
+    1850,
+    2730
+   ],
+   "frame0_range_m": 2376.73,
+   "nominal_target_px": 19.3,
+   "box_px_before": 19.295,
+   "box_px_after": 19.297,
+   "box_px_after_visible": 19.297,
+   "in_band": true,
+   "scale_start": 0.75982952,
+   "scale_calibrated": 0.76003305,
+   "target_m_start": 12.5359,
+   "target_m_calibrated": 12.5553,
+   "A_no_hdr": {
+    "p99_minus_p1": 99.0,
+    "unique_grey_levels": 152,
+    "rg_corr": 0.948236,
+    "flattest_tile_std": 16.0193,
+    "mean_luma": 104.522
+   },
+   "B_hdr": {
+    "p99_minus_p1": 61.0,
+    "unique_grey_levels": 89,
+    "rg_corr": 0.97672,
+    "flattest_tile_std": 8.8068,
+    "mean_luma": 127.246
+   },
+   "decision": {
+    "hdr_wins": 0,
+    "hdr_better": false,
+    "metrics": {
+     "contrast": false,
+     "levels": false,
+     "texture": false
+    }
+   },
+   "final_sensor_enabled": false,
+   "ir_preview_std": 38.373,
+   "paths": {
+    "ground.backdrop": {
+     "path": "../assets/backdrops/open/03_Sea_wave_abstract_texture_Unsplash.jpg",
+     "resolved": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\open\\03_Sea_wave_abstract_texture_Unsplash.jpg",
+     "exists": true
+    },
+    "optical.sky_image": {
+     "path": "../assets/backdrops/open/03_Sea_wave_abstract_texture_Unsplash.jpg",
+     "resolved": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\open\\03_Sea_wave_abstract_texture_Unsplash.jpg",
+     "exists": true
+    },
+    "ir.background_image": {
+     "path": "../assets/backdrops/open/03_Sea_wave_abstract_texture_Unsplash.jpg",
+     "resolved": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\open\\03_Sea_wave_abstract_texture_Unsplash.jpg",
+     "exists": true
+    },
+    "all_same": true,
+    "all_exist": true
+   }
+  }
+ },
+ "ab_method": "same calibrated config, only optical.sensor.enabled differs",
+ "notes": [
+  "calibration: scale *= nominal_target_px / measured geometry box",
+  "target_m derived from measured frame-0 range + nominal px (real projected width)",
+  "A/B: only optical.sensor.enabled differs; CAMERA_SKIP drops sensor+diffraction in the camera post chain when the HDR chain is on",
+  "if HDR chain scores worse, final config keeps sensor.enabled=false (do not force it on)",
+  "optical.camera.jpeg needs Pillow in Blender; simkit/camera.py catches the missing codec and keeps the lossless frame",
+  "sky_backdrop_card() calls bpy.data.images.load() with the plain relative path; Blender does NOT resolve ../assets/... against _base_dir or CWD (measured No such file or directory, air optical frame fell to a flat gradient, grey std 4.7). run_gen() hands the renderer a sidecar config with sky_image absolutised from scenes/, so the authored three relative pointers stay untouched and the real plate shows (std 39.3 vs 40.1 on source)",
+  "IR preview: background-plate compositing emits RuntimeWarning invalid value in cast (ir.py:1039-1040) on dark plate pixels; kernel-owned, target still visible (ir_preview_std 38-79)"
+ ]
+}

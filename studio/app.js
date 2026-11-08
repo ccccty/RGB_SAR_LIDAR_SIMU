@@ -121,7 +121,18 @@
 
   var planData = null;
   var planBusy = false;
+  var planPending = false;   // doPlan 在途又有新请求：回调结束后补发一次
+  var PLAN_SEQ = 0;          // 只接受最新一次 /api/plan 的结果
+  var planTimer = null;      // touch() 的 500ms 计划刷新 debounce
   var toastTimer = null;
+
+  var CANCEL_BUSY = false;   // cancelJob 连点保护
+  /* 「本轮」交互状态：只影响提示文案，不参与 buildPayload。 */
+  var PREVIEWED = false;     // 当前配置下是否已成功预览过一张
+  var JUST_DONE = false;     // 最近一次生成是否刚完成
+  var AUTO_PREVIEW_PENDING = false; // autoPrepare 等待预览完成
+  var autoSeq = 0;
+  var autoTimer = null;
 
   var S = defaultState();
 
@@ -160,7 +171,8 @@
         alt_m: 2500, speed_mps: 250, closed: false,
         stats: null, warnings: [], error: "", optimizing: false
       },
-      view: { range_km: 8.0, aspect: "head_on", fov_deg: 2.2, views: "single" },
+      view: { range_km: 8.0, aspect: "head_on", fov_deg: 2.2, views: "single",
+              width: 960, height: 720, wide_width: 1280, wide_height: 960 },
       capture: {
         sensors: ["optical", "ir", "radar"], frames: 20, fps: 10.0, seed: 7
       },
@@ -353,6 +365,7 @@
   }
   function bgSummary() {
     if (S.bg.mode === "hdri") { return "内置天空"; }
+    if (S.bg.mode === "library") { return "背景库"; }
     if (S.bg.mode === "upload") { return "自定义图"; }
     return "无背景";
   }
@@ -414,26 +427,175 @@
     return text;
   }
 
+  /* ------------------------------------------------------------ 尺寸与光学读数 */
+
+  function viewDefaults() {
+    var n = (OPT.views && OPT.views.narrow) || {};
+    var w = (OPT.views && OPT.views.wide) || {};
+    return {
+      width: intval(n.width, 960), height: intval(n.height, 720),
+      wide_width: intval(w.width, 1280), wide_height: intval(w.height, 960),
+      wide_fov: num(w.fov_deg, 18.0)
+    };
+  }
+
+  /* /api/presets.limits.dim 下发 [64, 4096]；兼容对象/单值形态。 */
+  function dimLimit() {
+    var d = (OPT.limits && OPT.limits.dim) || [64, 4096];
+    var lo = 64, hi = 4096;
+    if (isArray(d) && d.length >= 2) {
+      lo = num(d[0], 64); hi = num(d[1], 4096);
+    } else if (d && typeof d === "object") {
+      lo = num(d.min !== undefined ? d.min : d.lo, 64);
+      hi = num(d.max !== undefined ? d.max : d.hi, 4096);
+    } else {
+      hi = num(d, 4096);
+    }
+    if (!(hi > lo)) { lo = 64; hi = 4096; }
+    return [lo, hi];
+  }
+
+  function applyDimLimits() {
+    var lim = dimLimit();
+    each(["narrowWidth", "narrowHeight", "wideWidth", "wideHeight"], function (id) {
+      var el = $(id);
+      if (el) { el.min = String(lim[0]); el.max = String(lim[1]); }
+    });
+  }
+
+  /* IFOV_mrad = 1000 * fov_rad / width  (后端 /api/plan 同口径，勿用度数)
+     GSD_m_per_px = 2 * R * tan(fov_rad/2) / width，R = range_km * 1000 */
+  function opticsFor(width, fov_deg, range_km) {
+    var w = num(width, 960), f = num(fov_deg, 2.2), r = num(range_km, 8) * 1000;
+    var rad = f * Math.PI / 180;
+    var t = Math.tan(rad / 2);
+    return {
+      ifov: w > 0 ? 1000 * rad / w : 0,
+      gsd: (w > 0 && r > 0) ? 2 * r * t / w : 0
+    };
+  }
+
+  function predictedPixelArray(asset) {
+    if (!asset) { return null; }
+    var dims = asset.size_m || [];
+    var size = 0;
+    each(dims, function (v) { size = Math.max(size, num(v, 0)); });
+    size = size * num(S.obj.scale, 1);
+    var lim = dimLimit();
+    var width = clamp(intval(S.view.width, 960), lim[0], lim[1]);
+    var fov = num(S.view.fov_deg, 2.2);
+    var km = num(S.view.range_km, 8);
+    if (!(size > 0) || !(km > 0) || !(fov > 0) || !(width > 0)) { return null; }
+    var focal = width / (2 * Math.tan(fov * Math.PI / 360));
+    var near = size * focal / (km * 1000 * 0.85);
+    var far = size * focal / (km * 1000 * 1.15);
+    return [Math.max(1, Math.round(far)), Math.max(1, Math.round(near))];
+  }
+
+  function estimatedPixels() {
+    return predictedPixelArray(findAsset(S.obj.asset));
+  }
+
+  function formalFrameText() {
+    var n = S.view.width + "×" + S.view.height;
+    if (S.view.views === "dual") {
+      return "窄 " + n + " · 宽 " + S.view.wide_width + "×" + S.view.wide_height;
+    }
+    return n;
+  }
+
+  function stillNoteText() {
+    return "预览分辨率 " + S.view.width + "×" + S.view.height +
+      "（第 1 帧）；正式帧 " + formalFrameText() + "，共 " + S.capture.frames + " 帧。";
+  }
+
+  function placeNoteText(pv) {
+    return "预览分辨率 " + num(pv[0], 320) + "×" + num(pv[1], 240) +
+      " / 正式帧 " + formalFrameText();
+  }
+
+  /* 预览按比例缩到最长边 ≤960，避免按正式分辨率做快速预览。 */
+  function previewSize() {
+    var lim = dimLimit();
+    var w = clamp(intval(S.view.width, 960), lim[0], lim[1]);
+    var h = clamp(intval(S.view.height, 720), lim[0], lim[1]);
+    var maxSide = 960;
+    if (w > maxSide || h > maxSide) {
+      var s = Math.min(maxSide / w, maxSide / h);
+      w = Math.max(lim[0], Math.round(w * s));
+      h = Math.max(lim[0], Math.round(h * s));
+    }
+    return [w, h];
+  }
+
+  function renderOptics(host) {
+    if (!host) { return; }
+    clear(host);
+    var def = viewDefaults();
+    var lim = dimLimit();
+    var w = clamp(intval(S.view.width, def.width), lim[0], lim[1]);
+    var h = clamp(intval(S.view.height, def.height), lim[0], lim[1]);
+    var ww = clamp(intval(S.view.wide_width, def.wide_width), lim[0], lim[1]);
+    var wh = clamp(intval(S.view.wide_height, def.wide_height), lim[0], lim[1]);
+    var fov = num(S.view.fov_deg, 2.2);
+    var km = num(S.view.range_km, 8);
+    var n = opticsFor(w, fov, km);
+    var wide = opticsFor(ww, def.wide_fov, km);
+    var px = estimatedPixels();
+    var ratio = (px && w > 0) ? [100 * px[0] / w, 100 * px[1] / w] : null;
+    host.appendChild(ce("p", "plan-summary",
+      "窄视场 " + w + "×" + h + " · IFOV " + n.ifov.toFixed(3) + " mrad · GSD " +
+      n.gsd.toFixed(3) + " m/px · 目标占比 " +
+      (ratio ? ratio[0].toFixed(2) + "–" + ratio[1].toFixed(2) + "%" : "—")));
+    if (S.view.views === "dual") {
+      host.appendChild(ce("p", "plan-summary",
+        "宽视场 " + ww + "×" + wh + " · IFOV " + wide.ifov.toFixed(3) + " mrad · GSD " +
+        wide.gsd.toFixed(3) + " m/px"));
+    }
+    host.appendChild(ce("p", "prov",
+      "IFOV = 1000×视场角(弧度)/宽；GSD = 2×距离×tan(视场角/2)/宽；目标占比 = 目标 px/宽。"));
+    if (px) {
+      if (px[1] < 6) {
+        host.appendChild(ce("p", "plan-error",
+          "目标约 " + px[0] + "–" + px[1] + " px，低于 6 px 无法标注：增大窄视场宽、收窄视场角或缩短距离。"));
+      } else if (px[0] > 40) {
+        var wp = ce("p", "plan-summary",
+          "目标约 " + px[0] + "–" + px[1] + " px，超过 40 px 占比偏高：放宽视场角、降低窄视场宽或拉远距离。");
+        wp.style.color = "var(--warn)";
+        host.appendChild(wp);
+      }
+    }
+  }
+
   function renderSummaries() {
     setText("sum-scene", envLabel(S.env.kind) + " · " + weatherLabel(S.env.weather) +
       " · " + bgSummary());
 
-    var target = assetName(S.obj.asset) + " ×" + S.obj.count;
+    var target = assetName(S.obj.asset) + " ×" + S.obj.count +
+      " · " + (trim(S.obj.cls) || "未设类别");
     if (Math.abs(S.obj.scale - 1) > 1e-9) {
       target += " · " + (Math.round(S.obj.scale * 100) / 100) + "×";
     }
     setText("sum-target", target);
 
     setText("sum-ecm", ecmSummary());
-    setText("sum-view", trajSummary());
+    /* trajSummary 在双视场时已带「双视场」，去重后再补 fov 与视场模式。 */
+    var trajTxt = trajSummary().replace(" · 双视场", "");
+    var fovTxt = Math.round(num(S.view.fov_deg, 2.2) * 10) / 10;
+    setText("sum-view", trajTxt + " · " + S.view.width + "×" + S.view.height +
+      " · " + fovTxt + "° · " + (S.view.views === "dual" ? "双视场" : "单视场"));
 
     var sensors = [];
     each(S.capture.sensors, function (k) { sensors.push(sensorLabel(k)); });
     setText("sum-capture", (sensors.length ? sensors.join("+") : "未选模态") +
-      " · " + S.capture.frames + " 帧");
+      " · " + S.capture.frames + " 帧 · " + S.capture.fps + " fps");
 
     var parts = outParts();
-    setText("sum-output", parts.length ? parts.join(" + ") : "无产物");
+    var outTxt = parts.length ? parts.join(" + ") : "无产物";
+    outTxt += " · 输出：" + (trim(S.outputDir) ? trim(S.outputDir) : defaultOutLabel());
+    setText("sum-output", outTxt);
+    renderOptics($("opticsReadout"));
+    setText("stillNote", stillNoteText());
   }
 
   /* ------------------------------------------------------------ 配方与提交体 */
@@ -528,6 +690,11 @@
         aspect: S.view.aspect,
         fov_deg: num(S.view.fov_deg, 2.2),
         views: S.view.views,
+        /* 与 W3 约定的 recipe.view 新增键；旧配方缺这些键时 applyRecipe 回退默认值。 */
+        width: intval(S.view.width, viewDefaults().width),
+        height: intval(S.view.height, viewDefaults().height),
+        wide_width: intval(S.view.wide_width, viewDefaults().wide_width),
+        wide_height: intval(S.view.wide_height, viewDefaults().wide_height),
         trajectory: trajectoryPayload()
       },
       capture: {
@@ -603,6 +770,7 @@
         recipe.objects = _objs;
       }
     }
+    var vd = viewDefaults();
     var payload = {
       name: S.name,
       recipe: recipe,
@@ -614,7 +782,15 @@
       /* recipe 里已经带了 effects，这里再平铺一份：走「预设场景」路径时后端不读
          recipe，_compose 只能靠这两个顶层字段把开关落进 ir.engine_heat。 */
       plume: !!S.effects.plume,
-      supersample: clamp(intval(S.effects.supersample, 0), 0, 4)
+      supersample: clamp(intval(S.effects.supersample, 0), 0, 4),
+      /* 与 W3 约定的请求 flat 字段；缺省回退 /api/presets.views.narrow/wide。 */
+      narrow_width: intval(S.view.width, vd.width),
+      narrow_height: intval(S.view.height, vd.height),
+      wide_width: intval(S.view.wide_width, vd.wide_width),
+      wide_height: intval(S.view.wide_height, vd.wide_height),
+      /* 后端 _parse 读的是顶层 FOV，补上后 FOV 输入才能真正联动 plan/预检/生成。 */
+      narrow_fov: num(S.view.fov_deg, 2.2),
+      wide_fov: num(vd.wide_fov, 18.0)
     };
     /* studio._parse 用顶层 sar_enabled 决定是否保留 sar；不传就会被静默移除。 */
     if (indexOf(recipe.capture.sensors, "sar") >= 0) {
@@ -631,24 +807,87 @@
   }
 
   function localErrors() {
+    /* 错误对象化：box = data-box 的 key，field = 控件 id。
+       err    = 硬错误：后端会 400，必须阻断生成与预览；
+       advice = 建议：几何/占比不理想但后端能跑，只提示不阻断。
+       两者在同一数组里用 level 区分，renderPreflight 分流渲染。 */
     var errors = [];
-    if (!trim(S.obj.asset)) { errors.push("还没有选择目标模型：在「目标」箱里选一个，或在高级里填模型路径。"); }
-    if (!S.capture.sensors.length) { errors.push("至少选一个模态：在「采集」箱里打开一个传感器开关。"); }
+    function err(message, box, field) {
+      errors.push({ message: message, box: box, field: field || "", level: "error" });
+    }
+    function advice(message, box, field) {
+      errors.push({ message: message, box: box, field: field || "", level: "warn" });
+    }
+    if (!trim(S.obj.asset)) {
+      err("还没有选择目标模型：在「目标」箱里选一个，或在高级里填模型路径。", "target", "assetSel");
+    }
+    if (!S.capture.sensors.length) {
+      err("至少选一个模态：在「采集」箱里打开一个传感器开关。", "capture", "sensorCards");
+    }
     if (S.bg.mode === "upload" && !trim(S.bg.path)) {
-      errors.push("背景图选了「本地图片」：请填写服务器能读到的绝对路径（浏览器选的文件不会上传）。");
+      err("背景图选了「本地图片」：请填写服务器能读到的绝对路径（浏览器选的文件不会上传）。",
+        "scene", "bgPath");
     }
     if (S.traj.mode === "preset" && !(num(S.view.range_km, 8) > 0)) {
-      errors.push("拍摄距离必须大于 0 km。");
+      err("拍摄距离必须大于 0 km。", "view", "rangeNum");
     }
     if (S.traj.mode === "drawn") {
       if (S.traj.points.length < 2) {
-        errors.push("手绘轨迹至少需要两个点：在画布上左键加点。");
+        err("手绘轨迹至少需要两个点：在画布上左键加点。", "view", "trajCanvas");
       } else if (!S.traj.smoothed) {
-        errors.push("手绘轨迹还没有优化：点「优化轨迹」后再生成。");
+        err("手绘轨迹还没有优化：点「优化轨迹」后再生成。", "view", "trajOptimize");
       }
     }
     if (trim(S.outputDir) && OUT.localBad) {
-      errors.push(OUT.localText || "输出目录不可写。");
+      err(OUT.localText || "输出目录不可写。", "output", "outputDir");
+    }
+
+    /* 尺寸与光学预检：把后端会 400 的情况提前说清楚，并给出可执行的改法。 */
+    var lim = dimLimit();
+    var vd = viewDefaults();
+    var dims = [
+      { key: "width", label: "窄视场宽", field: "narrowWidth" },
+      { key: "height", label: "窄视场高", field: "narrowHeight" },
+      { key: "wide_width", label: "宽视场宽", field: "wideWidth" },
+      { key: "wide_height", label: "宽视场高", field: "wideHeight" }
+    ];
+    each(dims, function (d) {
+      var v = num(S.view[d.key], NaN);
+      if (!isFinite(v) || v <= 0 || Math.floor(v) !== v) {
+        err(d.label + "必须是 " + lim[0] + "–" + lim[1] +
+          " 的整数：在「视角 → 高级」里填有效的像素值。", "view", d.field);
+      } else if (v < lim[0] || v > lim[1]) {
+        err(d.label + " " + v + " 超出后端允许范围 " + lim[0] + "–" + lim[1] +
+          " px：把该值改到区间内。", "view", d.field);
+      }
+    });
+    var nw = num(S.view.width, 0), nh = num(S.view.height, 0);
+    if (nw > 0 && nh > 0) {
+      var ar = nw / nh;
+      if (ar < 0.5 || ar > 2.5) {
+        advice("窄视场宽高比 " + ar.toFixed(2) +
+          " 异常（建议 0.5–2.5，常见 4:3≈1.33）：调整宽或高，避免画面拉伸。",
+          "view", "narrowWidth");
+      }
+    }
+    if (S.view.views === "dual") {
+      var nf = num(S.view.fov_deg, 2.2), wf = num(vd.wide_fov, 18.0);
+      if (!(nf > 0) || nf >= wf) {
+        err("双视场要求窄视场角小于宽视场角（当前 " + nf + "° 对 " + wf +
+          "°）：把视场角调小，或改用单视场。", "view", "fovDeg");
+      }
+    }
+    var px = estimatedPixels();
+    if (px) {
+      if (px[1] < 6) {
+        advice("当前尺寸/视场/距离下目标约 " + px[0] + "–" + px[1] +
+          " px，低于 6 px 难以标注（建议）：增大窄视场宽、收窄视场角或缩短距离。",
+          "view", "narrowWidth");
+      } else if (px[0] > 40) {
+        advice("当前尺寸/视场/距离下目标约 " + px[0] + "–" + px[1] +
+          " px，超过 40 px 占比偏高（建议）：放宽视场角、降低窄视场宽或拉远距离。",
+          "view", "narrowWidth");
+      }
     }
     return errors;
   }
@@ -703,6 +942,7 @@
       if (!OPT.default_out) { OPT.default_out = DEFAULT_OPT.default_out; }
       if (!OPT.project_root) { OPT.project_root = DEFAULT_OPT.project_root; }
       RECIPES = OPT.recipes || [];
+      applyDimLimits();
 
       /* 状态里若留着已不存在的选项，回落到第一项。 */
       if (!labelIn(OPT.env_kinds, S.env.kind, "")) { S.env.kind = OPT.env_kinds[0].key; }
@@ -1334,29 +1574,40 @@
 
   function placePreview() {
     if (S.place.busy) { return; }
+    /* 任务运行中不做放置预览，避免与生成抢后端、破坏 S.place 状态。 */
+    if (currentJob && (currentJob.state === "queued" || currentJob.state === "running")) {
+      toast("任务进行中，暂不做放置预览。");
+      return;
+    }
     var u = S.place.points.length ? S.place.points[0][0] : S.place.u;
     var v = S.place.points.length ? S.place.points[0][1] : S.place.v;
     var st = $("placeStatus");
     S.place.busy = true;
     renderPlace();
     /* 发送与「生成」完全相同的表单：预览必须走同一条 compose 路径，
-       否则目标数、轨迹、环境类型都可能和实际生成不一致。 */
+       否则目标数、轨迹、环境类型都可能和实际生成不一致。
+       只把分辨率缩到快速预览尺寸，并在文案里说明与正式帧不同。 */
     var payload = buildPayload();
-    payload.width = 320;
+    var pv = previewSize();
+    payload.preview_width = pv[0];
+    payload.preview_height = pv[1];
+    payload.width = pv[0];   /* 兼容只读 width 的旧后端，避免预览变回 320 */
     payload.samples = 12;
     ajax("POST", API + "/place", payload, function (err, d) {
       S.place.busy = false;
       if (err) {
-        if (st) { st.textContent = "预览失败：" + (err.error || err.message || "未知错误"); }
         renderPlace();
+        if (st) { st.textContent = "预览失败：" + (err.error || err.message || "未知错误"); }
         return;
       }
       S.place.url = d.url + "?t=" + Date.now();
+      renderPlace();
+      /* renderPlace 会清空 status，所以放在它之后写；明确预览/正式帧分辨率。 */
       if (st) {
         st.textContent = (d.targets || 1) + " 个目标 · " + d.sensor
-          + " · " + (d.size || []).join("×") + " · " + d.seconds + " 秒";
+          + " · " + (d.size || []).join("×") + " · " + d.seconds + " 秒 · "
+          + placeNoteText(d.size && d.size.length >= 2 ? d.size : pv);
       }
-      renderPlace();
     });
   }
 
@@ -1374,20 +1625,8 @@
   }
 
   function predictedPixels(asset) {
-    if (!asset) { return ""; }
-    var dims = asset.size_m || [];
-    var size = 0;
-    each(dims, function (v) { size = Math.max(size, num(v, 0)); });
-    size = size * num(S.obj.scale, 1);
-    var width = (OPT.views && OPT.views.narrow && OPT.views.narrow.width) || 960;
-    var fov = num(S.view.fov_deg, 2.2);
-    var km = num(S.view.range_km, 8);
-    if (!(size > 0) || !(km > 0) || !(fov > 0)) { return ""; }
-    var focal = width / (2 * Math.tan(fov * Math.PI / 360));
-    var near = size * focal / (km * 1000 * 0.85);
-    var far = size * focal / (km * 1000 * 1.15);
-    function round(v) { return Math.max(1, Math.round(v)); }
-    return round(far) + "–" + round(near);
+    var px = predictedPixelArray(asset);
+    return px ? px[0] + "–" + px[1] : "";
   }
 
   function renderSizeSeg() {
@@ -1721,7 +1960,8 @@
       sel.onchange = function () {
         S.interferenceMode = sel.value;
         hint.textContent = AUGMENT_HINT[sel.value] || "";
-        renderSummary();
+        renderSummaries();
+        touch();
       };
     }
     hint.textContent = AUGMENT_HINT[sel.value] || "";
@@ -2132,6 +2372,7 @@
         }
         renderView();
         renderSummaries();
+        doPlan();
         touch();
       };
       fovSeg.appendChild(btn);
@@ -2146,6 +2387,7 @@
         S.view.views = item.key;
         renderView();
         renderSummaries();
+        doPlan();
         touch();
       };
       views.appendChild(btn);
@@ -2157,6 +2399,12 @@
     if (slider && document.activeElement !== slider) { slider.value = clamp(num(S.view.range_km, 8), 0.1, 100); }
     if (number && document.activeElement !== number) { number.value = S.view.range_km; }
     if (fov && document.activeElement !== fov) { fov.value = S.view.fov_deg; }
+    var dimInputs = [["narrowWidth", "width"], ["narrowHeight", "height"],
+                     ["wideWidth", "wide_width"], ["wideHeight", "wide_height"]];
+    each(dimInputs, function (d) {
+      var el = $(d[0]);
+      if (el && document.activeElement !== el) { el.value = S.view[d[1]]; }
+    });
     renderTrajState();
     renderPlan();
   }
@@ -2284,6 +2532,7 @@
     if (outInput && document.activeElement !== outInput) { outInput.value = S.outputDir; }
     renderOutStatus();
     updateGenEnabled();
+    renderFlow();
   }
 
   /* ------------------------------------------------------------ 输出目录 */
@@ -2398,8 +2647,12 @@
 
   function firstOutputMessage(list, extra) {
     var all = [];
-    if (list) { each(list, function (m) { all.push(String(m)); }); }
-    if (extra) { each(extra, function (m) { all.push(String(m)); }); }
+    /* PF_LOCAL 现在是 {message,box,field,level} 对象；旧的字符串也照收。 */
+    function text(m) {
+      return typeof m === "string" ? m : (m && m.message ? String(m.message) : String(m));
+    }
+    if (list) { each(list, function (m) { all.push(text(m)); }); }
+    if (extra) { each(extra, function (m) { all.push(text(m)); }); }
     for (var i = 0; i < all.length; i++) {
       if (all[i].indexOf("输出目录") >= 0) { return all[i]; }
     }
@@ -2520,55 +2773,134 @@
     return line;
   }
 
+  /* 预检错误同时存在两种形态：历史/后端给的是字符串，localErrors 给的是对象。 */
+  function normError(e) {
+    if (typeof e === "string") { return { message: e }; }
+    if (e && typeof e === "object") {
+      return { message: e.message || String(e), box: e.box || "",
+               field: e.field || "", level: e.level || "error" };
+    }
+    return { message: String(e || "") };
+  }
+
+  /* 前端与后端常对同一件事给出长短两种文案（例如「至少选一个模态」与
+     「至少选一个模态：在「采集」箱里打开一个传感器开关。」）。去标点后
+     互为前缀即视为同一问题，避免重复行与计数虚高。 */
+  function issueKey(s) {
+    return String(s || "").replace(/[\s：:，,。.、；;（）()「」【】]/g, "").slice(0, 20);
+  }
+  function sameIssue(a, b) {
+    var x = issueKey(a), y = issueKey(b);
+    if (!x || !y) { return false; }
+    return x === y || x.indexOf(y) === 0 || y.indexOf(x) === 0;
+  }
+  function dedupe(list) {
+    var out = [];
+    each(list, function (o) {
+      var dup = false;
+      each(out, function (p) { if (sameIssue(p.message, o.message)) { dup = true; } });
+      if (!dup) { out.push(o); }
+    });
+    return out;
+  }
+
+  /* 硬错误（去重、剔除建议）：阻断生成与预览。 */
+  function allErrors() {
+    var list = [];
+    function push(raw) {
+      var o = normError(raw);
+      if (o.level !== "warn") { list.push(o); }
+    }
+    each(PF_LOCAL, push);
+    if (PF && PF.errors) { each(PF.errors, push); }
+    return dedupe(list);
+  }
+
+  /* 建议 + 后端 warnings（同样去重）：提示但不阻断生成。 */
+  function localWarnings() {
+    var out = [];
+    each(PF_LOCAL, function (raw) {
+      var o = normError(raw);
+      if (o.level === "warn") { out.push(o); }
+    });
+    if (PF && PF.warnings) {
+      each(PF.warnings, function (m) { out.push(normError(m)); });
+    }
+    return dedupe(out);
+  }
+
+  /* 错误与建议共用一行：带 box 的可点击，展开对应箱子并聚焦到字段。 */
+  function errorLine(o, kind) {
+    if (!o.box) { return pfLine(kind, o.message); }
+    var line = ce("div", "pf-line " + kind + " clickable");
+    line.appendChild(ce("span", "dot"));
+    line.appendChild(ce("span", "", o.message));
+    line.setAttribute("data-box", o.box);
+    line.setAttribute("data-field", o.field || "");
+    line.title = "点击定位到该配置项";
+    line.onclick = (function (b, f) {
+      return function () {
+        openBox(b, { noScroll: true });
+        if (f) { focusField(f); }
+      };
+    })(o.box, o.field);
+    return line;
+  }
+
   function renderPreflight() {
     var body = $("pfBody");
     var dot = $("pfDot");
     if (!body || !dot) { return; }
-    clear(body);
-    body.className = "pf-body";
+    try {
+      clear(body);
+      body.className = "pf-body";
 
-    if (PF_STATE === "checking") {
-      dot.className = "state-dot checking";
-      body.appendChild(ce("p", "pf-idle", "正在校验配置…"));
-      return;
-    }
-    if (PF_STATE === "offline") {
-      dot.className = "state-dot bad";
-      body.appendChild(pfLine("error", "无法连接本地服务。确认后端已启动后再试。"));
-      var retry = ce("button", "link-btn", "重试预检");
-      retry.type = "button";
-      retry.onclick = function () { runPreflight(); };
-      var wrap = ce("p", "pf-note");
-      wrap.appendChild(retry);
-      body.appendChild(wrap);
-      return;
-    }
+      if (PF_STATE === "checking") {
+        dot.className = "state-dot checking";
+        body.appendChild(ce("p", "pf-idle", "正在校验配置…"));
+        return;
+      }
+      if (PF_STATE === "offline") {
+        dot.className = "state-dot bad";
+        body.appendChild(pfLine("error", "无法连接本地服务。确认后端已启动后再试。"));
+        var retry = ce("button", "link-btn", "重试预检");
+        retry.type = "button";
+        retry.onclick = function () { runPreflight(); };
+        var wrap = ce("p", "pf-note");
+        wrap.appendChild(retry);
+        body.appendChild(wrap);
+        return;
+      }
 
-    var errors = PF_LOCAL.slice(0);
-    var warns = [];
-    if (PF && PF.errors) { each(PF.errors, function (m) { errors.push(m); }); }
-    if (PF && PF.warnings) { each(PF.warnings, function (m) { warns.push(m); }); }
+      var errors = allErrors();     /* 硬错误，已去重、已剔除建议 */
+      var warns = localWarnings();  /* 建议 + 后端 warnings，不阻断 */
 
-    if (!errors.length && !warns.length) {
-      dot.className = "state-dot ok";
-      body.appendChild(pfLine("ok", "未发现问题，可以生成。"));
-      body.appendChild(ce("p", "pf-note", "预检只做几何与成本检查，不渲染；改动会自动重新校验。"));
-      return;
-    }
+      if (!errors.length && !warns.length) {
+        dot.className = "state-dot ok";
+        body.appendChild(pfLine("ok", "未发现问题，可以生成。"));
+        body.appendChild(ce("p", "pf-note", "预检只做几何与成本检查，不渲染；改动会自动重新校验。"));
+        return;
+      }
 
-    dot.className = errors.length ? "state-dot bad" : "state-dot warn";
-    each(errors, function (message) { body.appendChild(pfLine("error", message)); });
-    each(warns, function (message) { body.appendChild(pfLine("warn", message)); });
-    if (!errors.length) {
-      body.appendChild(ce("p", "pf-note", "有提示，但可以生成；确认后继续。"));
-    } else {
-      body.appendChild(ce("p", "pf-note", "修正后会自动重新校验；错误清空后生成按钮解锁。"));
+      dot.className = errors.length ? "state-dot bad" : "state-dot warn";
+      each(errors, function (o) { body.appendChild(errorLine(normError(o), "error")); });
+      each(warns, function (o) { body.appendChild(errorLine(normError(o), "warn")); });
+      if (!errors.length) {
+        body.appendChild(ce("p", "pf-note", "有提示，但可以生成；确认后继续。"));
+      } else {
+        body.appendChild(ce("p", "pf-note", "点击问题行可直接跳到对应字段；改动后会自动重新校验。"));
+      }
+    } finally {
+      /* 所有分支都要刷新结构化 checks、动线与下一步提示；这些函数只读状态、
+         不改状态，不会反向触发 renderPreflight，因此没有递归。 */
+      renderChecks();
+      renderFlow();
+      renderNextAction();
     }
   }
 
   function currentErrorCount() {
-    var n = PF_LOCAL.length;
-    if (PF && PF.errors) { n += PF.errors.length; }
+    var n = allErrors().length;   /* 只数硬错误；建议不计入，不锁按钮 */
     if (PF_STATE === "offline" && !n) { n = 1; }
     return n;
   }
@@ -2583,20 +2915,24 @@
     var running = !!(currentJob && (currentJob.state === "queued" || currentJob.state === "running"));
     var busy = SUBMITTING || running;
     var errors = currentErrorCount();
+    /* genBtn 的最终文案与可用性由 renderNextAction 统一决定；这里只做兜底。
+       stillBtn/prevBtn 改用 fatalError()：非致命问题放行，便于边修边预览。 */
     var disabled = busy || PF_STATE === "checking" || PF_STATE === "offline" ||
-      PF_STATE === "idle" || errors > 0;
+      PF_STATE === "idle";
     gen.disabled = disabled;
-    if (prev) { prev.disabled = disabled; }
-    if (still) { still.disabled = disabled; }
+    if (prev) { prev.disabled = fatalError(); }
+    if (still) { still.disabled = fatalError(); }
     if (cancel) { cancel.hidden = !running; }
     if (hint) {
       if (busy) { hint.textContent = "任务进行中；完成前不能重复提交。"; }
       else if (PF_STATE === "checking") { hint.textContent = "正在校验配置…"; }
       else if (PF_STATE === "offline") { hint.textContent = "后端未连接，无法校验。"; }
-      else if (errors > 0) { hint.textContent = "先修正预检错误；改完会自动重新校验。"; }
+      else if (errors > 0) { hint.textContent = "点生成会先带你定位出错字段；改完自动重新校验。"; }
       else if (PF && PF.ok) { hint.textContent = "预检通过，可以生成。"; }
       else { hint.textContent = "等待预检结果…"; }
     }
+    renderFlow();
+    renderNextAction();
   }
 
   function schedulePreflight(immediate) {
@@ -2614,16 +2950,10 @@
   function runPreflight() {
     if (pfTimer) { clearTimeout(pfTimer); pfTimer = null; }
     var seq = ++PF_SEQ;
-    PF_LOCAL = localErrors();
-    if (PF_LOCAL.length) {
-      PF = null;
-      PF_STATE = "error";
-      renderPreflight();
-      renderEstimate(localEstimate(), true);
-      renderOutStatus();
-      updateGenEnabled();
-      return;
-    }
+    /* 本地错误不再提前 return：无论有没有 PF_LOCAL 都照常发 /api/preflight，
+       这样后端的结构化 errors/warnings/checks/estimate 始终能拿回来。 */
+    var local = localErrors();
+    PF_LOCAL = local;
     PF_STATE = "checking";
     renderPreflight();
     updateGenEnabled();
@@ -2631,18 +2961,34 @@
       if (seq !== PF_SEQ) { return; }
       if (err) {
         PF = null;
-        PF_LOCAL = [err.error || "预检失败"];
+        /* ajax 把 4xx 的 JSON body 原样作为 err 传回：若里面带了结构化预检
+           结论就保留下来给 checks 渲染。PF_LOCAL 仍是发出请求时的本地错误，
+           不再把 err.error 塞进 PF_LOCAL 造成与 PF.errors 重复计数。 */
+        if (err && (err.checks || err.errors || err.warnings || err.estimate)) {
+          PF = err;
+          if (!PF.errors) { PF.errors = []; }
+          if (!PF.errors.length && err.error) { PF.errors.push(String(err.error)); }
+        } else {
+          PF_LOCAL = local.concat([{
+            message: err.error || "预检失败", box: "", field: "", level: "error"
+          }]);
+        }
         PF_STATE = err.offline ? "offline" : "error";
         if (err.offline) { conn(false); }
         renderPreflight();
-        renderEstimate(localEstimate(), true);
+        renderEstimate((PF && PF.estimate) || localEstimate(), !(PF && PF.estimate));
         renderOutStatus();
         updateGenEnabled();
         return;
       }
       PF = data || {};
-      PF_LOCAL = [];
-      PF_STATE = PF.level === "error" ? "error" : (PF.level === "warn" ? "warn" : "ok");
+      PF_LOCAL = local;
+      /* PF_STATE 只由「硬错误」决定：建议（level=warn）算 warn 不算 error，
+         否则「一键准备」会把只有建议的正常配置误判成预检失败而不去预览。 */
+      var hard = allErrors().length;
+      var soft = localWarnings().length;
+      PF_STATE = hard > 0 ? "error"
+        : ((soft > 0 || PF.level === "warn") ? "warn" : "ok");
       renderPreflight();
       renderEstimate(PF.estimate || localEstimate(), !PF.estimate);
       renderOutStatus();
@@ -2650,12 +2996,26 @@
     });
   }
 
+  /* 配置一变，正在等待的「一键准备」串行流程必须作废：否则旧定时器会用
+     被改过的新配置继续提交预览。配方载入也要显式调用（它绕过了 touch）。 */
+  function cancelAuto() {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    autoSeq++;
+  }
+
   function touch() {
     var still = $("stillBox");
     if (still) { still.hidden = true; }
+    /* 改了任意参数：本轮的「已预览 / 刚完成」作废，动线与下一步回到当前配置。 */
+    PREVIEWED = false;
+    JUST_DONE = false;
+    AUTO_PREVIEW_PENDING = false;
+    cancelAuto();
     renderSummaries();
     updateNameHint();
     schedulePreflight(false);
+    schedulePlan();   /* 500ms debounce 刷新 planOut，避免计划陈旧 */
+    renderFlow();
   }
 
   /* ------------------------------------------------------------ 提交与轮询 */
@@ -2678,6 +3038,7 @@
     setText("jobLog", String(message));
     var link = $("jobLink");
     if (link) { link.hidden = true; }
+    renderNextAction();
   }
 
   function renderJob() {
@@ -2749,6 +3110,7 @@
       }
     }
     updateGenEnabled();
+    renderNextAction();
   }
 
   function pollJob() {
@@ -2756,6 +3118,9 @@
     if (!activeJobId) { return; }
     var id = activeJobId;
     ajax("GET", API + "/job/" + encodeURIComponent(id), null, function (err, data) {
+      /* 取消后立即再生成时 activeJobId 会变：旧 XHR 的回调一律丢弃，
+         否则它会把新任务的状态覆盖掉。 */
+      if (id !== activeJobId) { return; }
       if (err) {
         /* 取消会杀掉子进程，紧接着的那一次轮询偶尔会拿到 501/连接重置；
            已取消的任务不该被一次瞬时错误改写成“失败”。 */
@@ -2768,10 +3133,20 @@
           pollTimer = setTimeout(pollJob, 1500);
           return;
         }
+        /* 连续 4 次网络错误：必须把 state 置 failed，否则 updateGenEnabled
+           永远认为任务在跑，生成按钮永久禁用。 */
+        if (currentJob) { currentJob.state = "failed"; }
+        else { currentJob = { id: id, state: "failed" }; }
+        if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
         showJobError(err.error || "无法读取任务状态", "任务异常");
+        renderJob();
+        finishJob();
+        updateGenEnabled();
         return;
       }
       pollFails = 0;
+      /* 响应里带 id 时再校验一次，防止后端串了别的任务。 */
+      if (data && data.id && data.id !== id) { return; }
       currentJob = data || {};
       renderJob();
       var state = currentJob.state || "";
@@ -2827,8 +3202,7 @@
     img.src = url;
     img.alt = "第 1 帧预览";
     body.appendChild(img);
-    body.appendChild(ce("p", "dataset-note",
-      "这是第 1 帧的预览，正式生成会产出全部帧。"));
+    body.appendChild(ce("p", "dataset-note", stillNoteText()));
     var links = ce("div", "dataset-links");
     var raw = ce("a", "link", "打开原图");
     raw.href = url;
@@ -2852,7 +3226,7 @@
   function finishJob() {
     updateGenEnabled();
     loadRuns();
-    if (!currentJob) { return; }
+    if (!currentJob) { renderNextAction(); return; }
     var wasKind = activeKind;
     if (wasKind === "still") {
       if (currentJob.state === "done") {
@@ -2869,20 +3243,49 @@
     }
     if (currentJob.state === "done") {
       if (wasKind === "still") {
+        PREVIEWED = true;
         toast("第 1 帧预览已生成");
       } else {
+        JUST_DONE = true;
         toast("生成完成" + (currentJob.out ? "：" + currentJob.out : ""));
+      }
+      /* 完成更醒目：自动展开运行历史 drawer，并确保产物链接可见。 */
+      var drawer = $("drawer");
+      var bar = $("drawerBar");
+      if (drawer && drawer.className.indexOf("open") < 0) {
+        drawer.className = "drawer open";
+      }
+      if (bar) { bar.setAttribute("aria-expanded", "true"); }
+      var link = $("jobLink");
+      if (link) {
+        link.hidden = false;
+        if (currentJob.id) {
+          link.href = API + "/dataset/" + encodeURIComponent(currentJob.id);
+        }
       }
     } else if (currentJob.state === "failed") {
       toast(wasKind === "still" ? "预览失败，右栏有日志。" : "生成失败，右栏有日志。");
     } else if (currentJob.state === "cancelled") {
       toast("任务已取消。");
     }
+    /* autoPrepare 的串行第二步：预览成功后给出「可以生成」的明确提示。 */
+    if (AUTO_PREVIEW_PENDING && wasKind === "still") {
+      AUTO_PREVIEW_PENDING = false;
+      if (currentJob.state === "done") { toast("预览就绪，可以生成了"); }
+    }
+    renderNextAction();
   }
 
   function submit(kind) {
     if (SUBMITTING) { return; }
     if (currentJob && (currentJob.state === "queued" || currentJob.state === "running")) { return; }
+    /* 复核硬错误：DOM disabled 不能是唯一防线。建议（level=warn）不计数，
+       因此不会拦住生成或预览；硬错误三种 kind 一律先定位，不发注定 400 的请求。 */
+    if (currentErrorCount() > 0) {
+      focusFirstError();
+      return;
+    }
+    JUST_DONE = false;
     SUBMITTING = true;
     activeKind = kind;
     if (kind === "still") { showStillPending(); } else { hideStillBox(); }
@@ -2915,10 +3318,15 @@
   }
 
   function cancelJob() {
-    if (!activeJobId) { return; }
-    ajax("POST", API + "/job/" + encodeURIComponent(activeJobId) + "/cancel", {},
+    if (!activeJobId || CANCEL_BUSY) { return; }
+    CANCEL_BUSY = true;
+    var id = activeJobId;
+    ajax("POST", API + "/job/" + encodeURIComponent(id) + "/cancel", {},
       function (err, data) {
+        CANCEL_BUSY = false;
         if (err) { toast(err.error || "取消失败"); return; }
+        /* 取消后又开了新任务：旧的 cancel 响应不能覆盖新任务状态。 */
+        if (id !== activeJobId) { return; }
         currentJob = data || {};
         pollFails = 0;
         renderJob();
@@ -2994,9 +3402,24 @@
     }
     host.appendChild(ce("p", "plan-summary", parts.join(" · ")));
 
+    var def = viewDefaults();
+    var lim = dimLimit();
+    var w = clamp(intval(S.view.width, def.width), lim[0], lim[1]);
+    var h = clamp(intval(S.view.height, def.height), lim[0], lim[1]);
+    var km = num(S.view.range_km, 8);
+    var local = opticsFor(w, num(S.view.fov_deg, 2.2), km);
+    /* W3 可选下发 optics[]；给了就用，没给就按同一公式前端自算，缺字段不报错。 */
+    var byName = {};
+    each(planData.optics || [], function (o) {
+      if (o && o.name) { byName[o.name] = o; }
+    });
+    var op = byName.seeker || {};
+    var ifov = num(op.ifov_mrad, local.ifov);
+    var gsd = num(op.gsd_m_per_px, local.gsd);
+
     var table = ce("table", "plan-table");
     var head = ce("tr", "");
-    each(["段", "模式", "天气", "距离 km", "目标 px"], function (label) {
+    each(["段", "模式", "天气", "距离 km", "宽×高", "IFOV mrad", "GSD m/px", "目标 px", "占比 %"], function (label) {
       head.appendChild(ce("th", "", label));
     });
     table.appendChild(head);
@@ -3004,38 +3427,85 @@
       var row = ce("tr", "");
       var range = clip.range_m || [0, 0];
       var px = (clip.view_px && clip.view_px.seeker) || clip.target_px || ["—", "—"];
+      var ratio = (clip.ratio && clip.ratio.seeker) || null;
+      var ratioTxt;
+      if (ratio && isArray(ratio) && ratio.length >= 2) {
+        ratioTxt = ratio[0] + "–" + ratio[1];
+      } else if (isArray(px) && isFinite(num(px[0], NaN)) &&
+                 isFinite(num(px[1], NaN)) && w > 0) {
+        ratioTxt = (100 * num(px[0], 0) / w).toFixed(2) + "–" +
+          (100 * num(px[1], 0) / w).toFixed(2);
+      } else {
+        ratioTxt = "—";
+      }
       row.appendChild(ce("td", "", clip.clip));
       row.appendChild(ce("td", "", clip.mode || "—"));
       row.appendChild(ce("td", "", weatherLabel(clip.weather)));
       row.appendChild(ce("td", "", (num(range[0], 0) / 1000).toFixed(1) + "–" +
         (num(range[1], 0) / 1000).toFixed(1)));
+      row.appendChild(ce("td", "", w + "×" + h));
+      row.appendChild(ce("td", "", ifov.toFixed(3)));
+      row.appendChild(ce("td", "", gsd.toFixed(3)));
       row.appendChild(ce("td", "", px[0] + "–" + px[1]));
+      row.appendChild(ce("td", "", ratioTxt));
       table.appendChild(row);
     });
     host.appendChild(table);
+
+    /* 目标像素 <6 无法标注、>40 占比偏高：沿用现有 error/warn 醒目样式。 */
+    var abs = (planData.summary && planData.summary.px_abs) || null;
+    var lo = abs ? num(abs[0], NaN) : NaN;
+    var hi = abs ? num(abs[1], NaN) : NaN;
+    if (!isFinite(lo) || !isFinite(hi)) {
+      lo = Infinity; hi = 0;
+      each(clips, function (c) {
+        var p = (c.view_px && c.view_px.seeker) || c.target_px;
+        if (isArray(p)) {
+          lo = Math.min(lo, num(p[0], lo));
+          hi = Math.max(hi, num(p[1], hi));
+        }
+      });
+    }
+    if (isFinite(lo) && isFinite(hi)) {
+      if (hi < 6) {
+        host.appendChild(ce("p", "plan-error",
+          "目标像素 " + lo + "–" + hi + " px < 6 px：无法标注，请增大分辨率/收窄视场角/缩短距离。"));
+      } else if (lo > 40) {
+        var wp = ce("p", "plan-summary",
+          "目标像素 " + lo + "–" + hi + " px > 40 px：占比偏高，建议放宽视场或降低分辨率。");
+        wp.style.color = "var(--warn)";
+        host.appendChild(wp);
+      }
+    }
   }
 
   function doPlan() {
-    if (planBusy) { return; }
+    /* 在途时不能直接 return，否则新参数对应的 planOut 会永久陈旧。 */
+    if (planBusy) { planPending = true; return; }
     if (S.traj.mode === "drawn" && !S.traj.smoothed) {
       planData = { error: "先点「优化轨迹」；生成和计划都只使用平滑后的手绘曲线。" };
       renderPlan();
       return;
     }
     planBusy = true;
+    var seq = ++PLAN_SEQ;
     var btn = $("planBtn");
     if (btn) { btn.disabled = true; btn.textContent = "计算中…"; }
     ajax("POST", API + "/plan", buildPayload(), function (err, data) {
       planBusy = false;
       if (btn) { btn.disabled = false; btn.textContent = "预览轨迹事实"; }
-      if (err) {
-        planData = { error: err.error || "轨迹计算失败" };
-      } else if (data && data.error) {
-        planData = { error: data.error };
-      } else {
-        planData = data || {};
+      /* 只接受最新一次请求的结果，过期响应直接丢弃。 */
+      if (seq === PLAN_SEQ) {
+        if (err) {
+          planData = { error: err.error || "轨迹计算失败" };
+        } else if (data && data.error) {
+          planData = { error: data.error };
+        } else {
+          planData = data || {};
+        }
+        renderPlan();
       }
-      renderPlan();
+      if (planPending) { planPending = false; doPlan(); }
     });
   }
 
@@ -3427,8 +3897,11 @@
     var bg = env.background || {};
     if (bg.mode === "hdri") { S.bg.mode = "hdri"; }
     else if (bg.mode === "upload") { S.bg.mode = "upload"; }
+    else if (bg.mode === "library") { S.bg.mode = "library"; }
     else { S.bg.mode = "none"; }
     S.bg.path = bg.path || "";
+    S.bg.category = bg.category || S.bg.category;
+    S.bg.file = bg.file || "";
     S.bg.dataUrl = "";
 
     var objects = recipe.objects || [];
@@ -3466,6 +3939,13 @@
         view.aspect === "look_down") { S.view.aspect = view.aspect; }
     if (num(view.fov_deg, 0) > 0) { S.view.fov_deg = num(view.fov_deg, 2.2); }
     S.view.views = view.views === "dual" ? "dual" : "single";
+    /* recipe.view 的尺寸键；旧配方没有这些键时 intval(undefined, 默认) 回退到
+       /api/presets.views 的缺省值，载入旧配方不会破坏尺寸状态。 */
+    var vd = viewDefaults();
+    S.view.width = intval(view.width, vd.width);
+    S.view.height = intval(view.height, vd.height);
+    S.view.wide_width = intval(view.wide_width, vd.wide_width);
+    S.view.wide_height = intval(view.wide_height, vd.wide_height);
 
     S.traj.mode = "preset";
     S.traj.points = [];
@@ -3518,6 +3998,10 @@
     if (has(output, "coco")) { S.output.coco = !!output.coco; }
     if (has(output, "yolo")) { S.output.yolo = !!output.yolo; }
     if (has(output, "readme")) { S.output.readme = !!output.readme; }
+    /* W3 的配方可能带 output.dir：恢复输出目录，否则载入后右栏仍显示默认目录。 */
+    if (output.dir !== undefined && output.dir !== null && String(output.dir)) {
+      S.outputDir = String(output.dir);
+    }
 
     /* 老配方没有 effects 块：保持默认（不生成尾焰、默认采样），不要把它读成 false
      * 之外的任何东西，否则载入旧配方会悄悄改变画面。 */
@@ -3527,8 +4011,334 @@
       S.effects.supersample = clamp(intval(fx.supersample, 0), 0, 4);
     }
 
+    PREVIEWED = false;
+    JUST_DONE = false;
+    AUTO_PREVIEW_PENDING = false;
+    cancelAuto();   /* 载入配方会绕过 touch，显式作废进行中的一键准备 */
     renderAll();
     renderOutStatus();
+    doPlan();   /* 载入配方后立即刷新轨迹事实，planOut 不再陈旧 */
+  }
+
+  /* ------------------------------------------------------------ 智能交互 */
+
+  /* 改任意参数后 500ms 防抖刷新 planOut；并发由 doPlan 的 PLAN_SEQ /
+     planPending 兜住，不引入 Promise。 */
+  function schedulePlan() {
+    if (planTimer) { clearTimeout(planTimer); }
+    planTimer = setTimeout(function () {
+      planTimer = null;
+      doPlan();
+    }, 500);
+  }
+
+  /* 致命错误的保守规则（供 stillBtn / prevBtn / submit 复核用）：
+     1) 正在提交或任务在跑；2) 后端离线、或还没给出可信结论（idle/checking）；
+     3) 任一硬错误（前端 PF_LOCAL 的 level=error 或后端 errors，已去重）。
+     只有「建议」（目标像素偏小/偏大、宽高比等 level=warn）与后端 warnings
+     视为非致命：不锁生成，也不锁预览。既不发出注定被 400 拒绝的请求，
+     也不因一条建议把入口完全锁死。 */
+  function fatalError() {
+    if (SUBMITTING) { return true; }
+    if (currentJob && (currentJob.state === "queued" || currentJob.state === "running")) {
+      return true;
+    }
+    if (PF_STATE === "offline" || PF_STATE === "idle" || PF_STATE === "checking") {
+      return true;
+    }
+    if (allErrors().length) { return true; }
+    return false;
+  }
+
+  /* 6 个箱子的就绪状态：done | warn | error；ecm 恒 done（可选）。 */
+  function boxStatus() {
+    var st = { scene: "done", target: "done", ecm: "done",
+               view: "done", capture: "done", output: "done" };
+    if (S.bg.mode === "upload" && !trim(S.bg.path)) { st.scene = "error"; }
+    if (!trim(S.obj.asset)) { st.target = "error"; }
+    if (!S.capture.sensors.length) { st.capture = "error"; }
+    if (OUT.localBad) { st.output = "error"; }
+    each(allErrors(), function (raw) {
+      var e = normError(raw);
+      if (e.box && has(st, e.box) && e.level === "error") { st[e.box] = "error"; }
+    });
+    /* 后端 warn（抖动 / 距离窗等）没有明确 box，归到 view，且不覆盖 error。 */
+    if ((PF_STATE === "warn" || (PF && PF.warnings && PF.warnings.length)) &&
+        st.view !== "error") {
+      st.view = "warn";
+    }
+    return st;
+  }
+
+  /* 消费后端结构化 checks：sensors / size / jitter / radar_window。 */
+  function renderChecks() {
+    var host = $("pfChecks");
+    if (!host) {
+      /* W1 的 HTML 可能尚未提供 #pfChecks：动态创建一个，不依赖额外 id。 */
+      var anchor = $("pfBody");
+      if (!anchor) { return; }
+      host = ce("div", "pf-checks");
+      host.id = "pfChecks";
+      anchor.appendChild(host);  /* 挂回 pf-body 内，保持 grid 布局 */
+    }
+    clear(host);
+    if (PF_STATE === "checking") { return; }
+    var checks = PF && PF.checks;
+    if (!checks || typeof checks !== "object") { return; }
+    var labels = { sensors: "模态", size: "尺寸", jitter: "抖动", radar_window: "雷达距离窗" };
+    var order = ["sensors", "size", "jitter", "radar_window"];
+    var keys = [];
+    each(order, function (k) { if (has(checks, k)) { keys.push(k); } });
+    for (var k in checks) {
+      if (has(checks, k) && indexOf(keys, k) < 0) { keys.push(k); }
+    }
+    each(keys, function (key) {
+      var c = checks[key] || {};
+      var ok = !!c.ok;
+      var level = c.level || (ok ? "ok" : "error");
+      /* W1 的 .check-row 用 ::before 画 ✓/✗/!，这里只给状态 class 和一行文案，
+         与 grid-template-columns 的两列结构对齐。 */
+      var cls = "check-row " + (ok ? "ok" : (level === "warn" ? "warn" : "bad"));
+      var row = ce("div", cls, "");
+      row.appendChild(ce("span", "",
+        (labels[key] || key) + (c.message ? " · " + c.message : "")));
+      host.appendChild(row);
+    });
+  }
+
+  /* 保留元素原有 class，只把旧的 done/warn/error 换成新的。 */
+  function addStatusClass(el, status) {
+    var base = String(el.className || "")
+      .replace(/\s*\b(done|warn|error|active)\b/g, "")
+      .replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+    return base + (base ? " " : "") + status;
+  }
+
+  /* 6 步动线：步骤条 / 旗标 / 箱子状态 / N/6 就绪。只读状态，不触发回环。 */
+  function renderFlow() {
+    var st = boxStatus();
+    var keys = ["scene", "target", "ecm", "view", "capture", "output"];
+    var activeKey = "";
+    var openEl = document.querySelector ? document.querySelector(".box.open") : null;
+    if (openEl) { activeKey = openEl.getAttribute("data-box") || ""; }
+    var ready = 0;
+    each(keys, function (key) {
+      var status = st[key] || "done";
+      if (status === "done") { ready++; }
+      var symbol = status === "done" ? "✓" : (status === "warn" ? "!" : "✗");
+      var step = $("flow-" + key);
+      if (step) {
+        step.className = "flow-step " + status + (activeKey === key ? " active" : "");
+        if (!step.getAttribute("data-bound")) {
+          step.setAttribute("data-bound", "1");
+          step.onclick = (function (k) {
+            return function () { openBox(k); };
+          })(key);
+        }
+      }
+      /* 只追加状态 class，保留 W1 原有的 flow-flag / box-flag 基础 class。 */
+      var flag = $("flag-" + key);
+      if (flag) { flag.textContent = symbol; flag.className = addStatusClass(flag, status); }
+      var bflag = $("boxflag-" + key);
+      if (bflag) { bflag.textContent = symbol; bflag.className = addStatusClass(bflag, status); }
+      var box = $("box-" + key);
+      if (box) {
+        var boxCls = addStatusClass(box, status);
+        if (activeKey === key) { boxCls += " active"; }
+        box.className = boxCls;
+      }
+    });
+    var prog = $("flowProgress");
+    if (prog) { prog.textContent = ready + "/6 就绪"; }
+  }
+
+  /* 打开指定箱子，始终至少保留一个展开；同步 aria-expanded 与动线高亮。 */
+  function openBox(key, opts) {
+    opts = opts || {};
+    var boxes = document.querySelectorAll(".box");
+    if (!boxes || !boxes.length) { renderFlow(); return null; }
+    var target = null;
+    each(boxes, function (b) {
+      if (b.getAttribute("data-box") === key) { target = b; }
+    });
+    if (!target) {
+      each(boxes, function (b) {
+        if (!target && b.className.indexOf("open") >= 0) { target = b; }
+      });
+      if (!target) { target = boxes[0]; }
+    }
+    each(boxes, function (b) {
+      var isOpen = (b === target);
+      b.className = "box" + (isOpen ? " open" : "");
+      var h = b.querySelector(".box-head");
+      if (h) { h.setAttribute("aria-expanded", isOpen ? "true" : "false"); }
+    });
+    renderFlow();
+    if (!opts.noScroll && target && target.scrollIntoView) {
+      try { target.scrollIntoView({ block: "center", behavior: "smooth" }); }
+      catch (e) { target.scrollIntoView(true); }
+    }
+    return target;
+  }
+
+  /* 一键定位：展开所在 <details class="adv">，滚动、聚焦、闪烁 1.8s。 */
+  function focusField(id) {
+    if (!id) { return; }
+    var el = $(id);
+    if (!el) { return; }
+    var node = el.parentNode;
+    while (node && node !== document.body) {
+      if (node.tagName === "DETAILS" && String(node.className || "").indexOf("adv") >= 0) {
+        node.open = true;
+      }
+      node = node.parentNode;
+    }
+    if (el.scrollIntoView) {
+      try { el.scrollIntoView({ block: "center", behavior: "smooth" }); }
+      catch (e) { el.scrollIntoView(true); }
+    }
+    if (el.focus) {
+      try { el.focus({ preventScroll: true }); }
+      catch (e) { el.focus(); }
+    }
+    if (String(el.className || "").indexOf("field-flash") < 0) {
+      el.className = String(el.className || "") + " field-flash";
+    }
+    setTimeout(function () {
+      el.className = String(el.className || "").replace(/\s*field-flash\b/g, "");
+    }, 1800);
+  }
+
+  /* 定位第一个错误：优先第一个带 box/field 的错误对象，退化到第一个错误。 */
+  function focusFirstError() {
+    var list = allErrors();
+    var picked = null;
+    for (var i = 0; i < list.length; i++) {
+      var e = normError(list[i]);
+      if (e.box || e.field) { picked = e; break; }
+    }
+    if (!picked && list.length) { picked = normError(list[0]); }
+    if (!picked) { return; }
+    if (picked.box) { openBox(picked.box, { noScroll: true }); }
+    if (picked.field) { focusField(picked.field); }
+  }
+
+  /* 主按钮 + 下一步提示：只读状态、写 DOM，不反向调用 updateGenEnabled。 */
+  function renderNextAction() {
+    var hintText = $("nextHintText");
+    var hintBox = $("nextHint");
+    var gen = $("genBtn");
+    var nextBtn = $("nextActionBtn");
+    var autoBtn = $("autoBtn");
+    var retryBtn = $("retryBtn");
+    var running = !!(currentJob && (currentJob.state === "queued" || currentJob.state === "running"));
+    var errors = currentErrorCount();
+    var pct = 0;
+    if (currentJob && currentJob.total > 0) {
+      pct = Math.min(100, Math.round((currentJob.done || 0) * 100 / currentJob.total));
+    } else if (currentJob && currentJob.state === "done") { pct = 100; }
+
+    var text = "配置已就绪，可以生成";
+    var genText = "生成 20 帧数据集";
+    var genDisabled = PF_STATE === "idle" || PF_STATE === "offline";
+    var nextLabel = "";
+    var nextOnclick = null;
+    var showRetry = false;
+    var hintCls = "ok";   /* 对齐 W1 的 .next-hint.ok/.warn/.bad/.checking */
+
+    if (PF_STATE === "checking" && !running) {
+      text = "正在校验配置…";
+      genText = "校验中…";
+      genDisabled = true;
+      hintCls = "checking";
+    } else if (running) {
+      text = "正在生成… " + pct + "%";
+      genText = "正在生成… " + pct + "%";
+      genDisabled = true;
+      hintCls = "checking";
+    } else if (errors > 0) {
+      text = "还有 " + errors + " 项需要修正，点这里直接跳到出错的字段";
+      genText = "定位并修复 " + errors + " 项";
+      genDisabled = PF_STATE === "offline";
+      nextLabel = "定位问题";
+      nextOnclick = focusFirstError;
+      hintCls = "bad";
+    } else if (currentJob && currentJob.state === "done" && JUST_DONE) {
+      text = "数据集已生成，可在下方查看产物";
+      genText = "再生成一次";
+      hintCls = "ok";
+    } else if (currentJob && (currentJob.state === "failed" || currentJob.state === "cancelled")) {
+      text = currentJob.state === "cancelled" ? "上次任务已取消，可重试" : "上次生成失败，可重试";
+      genText = "重试生成";
+      showRetry = true;
+      hintCls = "bad";
+    } else if (!PREVIEWED) {
+      text = "建议先预览一张确认视角，再生成 20 帧";
+      genText = "生成 20 帧数据集";
+      nextLabel = "先预览一张";
+      nextOnclick = function () { submit("still"); };
+      hintCls = "warn";
+    }
+
+    if (hintText) { hintText.textContent = text; }
+    if (hintBox) {
+      hintBox.hidden = false;
+      hintBox.className = "next-hint " + hintCls;
+    }
+    if (gen) { gen.textContent = genText; gen.disabled = genDisabled; }
+    if (nextBtn) {
+      if (nextLabel) {
+        nextBtn.hidden = false;
+        nextBtn.textContent = nextLabel;
+        nextBtn.onclick = nextOnclick;
+      } else {
+        nextBtn.hidden = true;
+        nextBtn.onclick = null;
+      }
+    }
+    if (autoBtn) { autoBtn.disabled = !!running; }
+    if (retryBtn) {
+      retryBtn.hidden = !showRetry;
+      retryBtn.onclick = smartGenerate;
+    }
+  }
+
+  /* genBtn 的唯一入口：有错定位；其它状态一律落到原来的 submit("generate")。 */
+  function smartGenerate() {
+    if (currentErrorCount() > 0) { focusFirstError(); return; }
+    submit("generate");
+  }
+
+  /* 一键准备：串行做法是「回调 + setInterval 轮询 PF_STATE」，沿用 PF_SEQ，
+     不引入 Promise 链。runPreflight 把 PF_STATE 置 checking，轮询等到它落地
+     后再发 submit("still")；预览完成提示由 finishJob 的
+     AUTO_PREVIEW_PENDING 分支补上。 */
+  function autoPrepare() {
+    if (SUBMITTING || (currentJob &&
+        (currentJob.state === "queued" || currentJob.state === "running"))) {
+      toast("任务进行中，请稍候再一键准备。");
+      return;
+    }
+    if (currentErrorCount() > 0) { focusFirstError(); return; }
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    var seq = ++autoSeq;
+    var tries = 0;
+    runPreflight();
+    autoTimer = setInterval(function () {
+      if (seq !== autoSeq) { clearInterval(autoTimer); autoTimer = null; return; }
+      tries++;
+      if (PF_STATE === "checking" && tries < 80) { return; }
+      clearInterval(autoTimer);
+      autoTimer = null;
+      if (currentErrorCount() > 0) { focusFirstError(); return; }
+      if (PF_STATE === "offline" || PF_STATE === "error" ||
+          PF_STATE === "idle" || PF_STATE === "checking") {
+        toast("预检未完成，暂不预览。");
+        return;
+      }
+      AUTO_PREVIEW_PENDING = true;
+      submit("still");
+    }, 200);
   }
 
   /* ------------------------------------------------------------ 静态绑定 */
@@ -3539,12 +4349,9 @@
       var head = box.querySelector(".box-head");
       if (!head) { return; }
       head.onclick = function () {
-        var open = box.className.indexOf("open") >= 0;
-        each(document.querySelectorAll(".box"), function (other) {
-          other.className = other === box && !open ? "box open" : "box";
-          var h = other.querySelector(".box-head");
-          if (h) { h.setAttribute("aria-expanded", other.className.indexOf("open") >= 0 ? "true" : "false"); }
-        });
+        /* 统一走 openBox：点已展开的箱子仍保持它展开，始终至少保留一个展开，
+           不再把包括自己在内的 6 个箱子全部收起。 */
+        openBox(box.getAttribute("data-box") || "");
       };
       head.onkeydown = function (ev) {
         if (ev.key === "Enter" || ev.key === " ") {
@@ -3674,6 +4481,7 @@
       $("rangeNum").value = S.view.range_km;
       refreshAssetMeta();
       renderSummaries();
+      doPlan();
       touch();
     };
 
@@ -3684,6 +4492,7 @@
       slider.value = S.view.range_km;
       refreshAssetMeta();
       renderSummaries();
+      doPlan();
       touch();
     };
     rangeNum.onchange = function () { rangeNum.value = S.view.range_km; };
@@ -3695,9 +4504,28 @@
       renderView();
       renderSummaries();
       refreshAssetMeta();
+      doPlan();
       touch();
     };
     fovDeg.onchange = function () { fovDeg.value = S.view.fov_deg; };
+
+    function bindDim(id, key) {
+      var el = $(id);
+      if (!el) { return; }
+      el.oninput = function () {
+        /* 不在这里 clamp 到 limits：让非法值留在 state，交 localErrors 报出具体原因。 */
+        S.view[key] = num(el.value, S.view[key]);
+        refreshAssetMeta();
+        renderSummaries();
+        doPlan();
+        touch();
+      };
+      el.onchange = function () { el.value = S.view[key]; };
+    }
+    bindDim("narrowWidth", "width");
+    bindDim("narrowHeight", "height");
+    bindDim("wideWidth", "wide_width");
+    bindDim("wideHeight", "wide_height");
 
     var outputDir = $("outputDir");
     outputDir.oninput = function () {
@@ -3740,11 +4568,24 @@
       touch();
     };
 
-    $("genBtn").onclick = function () { submit("generate"); };
+    $("genBtn").onclick = smartGenerate;   /* 分发：定位 / 重试 / 生成 */
     $("prevBtn").onclick = function () { submit("preview"); };
     $("stillBtn").onclick = function () { submit("still"); };
     $("cancelBtn").onclick = cancelJob;
-    $("planBtn").onclick = doPlan;
+    $("planBtn").onclick = function () {
+      /* 任务在跑时不重算轨迹，避免与轮询/提交抢后端（轻处理）。 */
+      if (currentJob && (currentJob.state === "queued" || currentJob.state === "running")) {
+        toast("任务进行中，暂不重算轨迹。");
+        return;
+      }
+      doPlan();
+    };
+
+    /* 新增交互按钮：W1 的 HTML 可能尚未提供，逐个判空，缺失不影响 IIFE。 */
+    var autoBtn = $("autoBtn");
+    if (autoBtn) { autoBtn.onclick = function () { autoPrepare(); }; }
+    var retryBtn = $("retryBtn");
+    if (retryBtn) { retryBtn.onclick = function () { smartGenerate(); }; }
 
     var trajCanvas = $("trajCanvas");
     trajCanvas.onclick = addTrajPointFromEvent;
@@ -3809,6 +4650,8 @@
     renderPreflight();
     renderEstimate(null, false);
     renderOutStatus();
+    renderFlow();          /* 初始化 6 步动线，缺失新 id 时静默跳过 */
+    renderNextAction();    /* 初始化下一步提示，且不抛异常 */
     loadPresets();
     loadAssets();
     loadBackdrops();
