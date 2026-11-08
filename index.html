@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>simkit · 空域多模态精选：同一帧的可见光 / 红外 / 雷达</title>
-<meta name="description" content="同一帧、同一相机位姿、同一目标的空域多模态仿真精选：可见光、中波/长波红外与毫米波雷达距离-多普勒图，配原理讲解、场景精选与已知局限。纯静态页面。">
+<title>simkit · 空域与海域多模态精选：同一帧的可见光 / 红外 / 雷达</title>
+<meta name="description" content="同一帧、同一相机位姿、同一目标的多模态仿真精选：空域战机与海域舰船，可见光、中波/长波红外与毫米波雷达距离-多普勒图，配原理讲解、场景精选与已知局限。纯静态页面。">
 <meta name="theme-color" content="#070a0f">
 <meta name="color-scheme" content="dark">
 <meta property="og:type" content="website">
 <meta property="og:title" content="simkit · 同一帧，三种传感器各看到什么">
-<meta property="og:description" content="空域多模态仿真的精选对照：可见光、红外、雷达 RD 同帧同位姿，附带成像原理与局限说明。">
+<meta property="og:description" content="空域战机与海域舰船的多模态仿真精选对照：可见光、红外、雷达 RD 同帧同位姿，附带成像原理与局限说明。">
 <meta property="og:image" content="data/demo_air_headon/optical/000004.webp">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='10' fill='none' stroke='%2338bdf8' stroke-width='3'/><circle cx='16' cy='16' r='3.6' fill='%2338bdf8'/><path d='M16 1v5M16 26v5M1 16h5M26 16h5' stroke='%2338bdf8' stroke-width='2'/></svg>">
 <link rel="stylesheet" href="site.css">
@@ -22,7 +22,7 @@
   <a class="brand" href="#hero" aria-label="回到顶部">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".5"/><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     <span class="brand-name">simkit</span>
-    <em>空域多模态</em>
+    <em>空域 / 海域</em>
   </a>
   <nav class="nav" aria-label="页面导航">
     <a href="#hero">演示</a>
@@ -39,7 +39,7 @@
 <!-- ================= 01 主视觉 ================= -->
 <section id="hero" class="sect hero">
   <div class="hero-copy">
-    <p class="eyebrow"><span class="pulse"></span>离线多模态仿真 · 空域精选</p>
+    <p class="eyebrow"><span class="pulse"></span>离线多模态仿真 · 空域 / 海域精选</p>
     <h1>同一帧，<br>三种传感器各看到什么</h1>
     <p class="lede">同一帧、同一相机位姿、同一目标：可见光、中波 / 长波红外与毫米波雷达各按自己的物理成像。下面每一组对照都来自同一次仿真落盘的同一帧，不是拼贴素材。</p>
 
@@ -139,8 +139,8 @@
 <section id="scenes" class="sect">
   <header class="sect-h">
     <span class="num">03</span>
-    <h2>空域场景精选</h2>
-    <p>只保留空域场景。每个场景给几帧精选，点大图放大，点缩略条换帧。</p>
+    <h2>空域 / 海域场景精选</h2>
+    <p>空域场景之外新增一处海域精选：开阔海面上的中小型舰船目标。每个场景给几帧精选，点大图放大，点缩略条换帧。</p>
   </header>
 
   <div class="scenes-grid" id="sceneGrid">
@@ -226,7 +226,8 @@
         <li><b>无距离走动</b>：单帧快照，不补偿距离走动与多普勒走动，长积累时间下目标不会跨距离门。</li>
         <li><b>散斑单一</b>：背景只加一个复高斯噪声场，是单通道指数统计，不是多视平均。</li>
         <li><b>红外相关</b>：两个波段预览高度相关（r≈0.995），差异主要在 16-bit 原始计数里。</li>
-        <li><b>范围</b>：本页只做空域三模态，SAR 与激光雷达不在本页展示，站内其它入口保留完整管线。</li>
+        <li><b>范围</b>：本页以空域三模态为主，另加一处海域精选；SAR 不在本页展示，站内其它入口保留完整管线。</li>
+        <li><b>海域为俯视板面</b>：舰船按设计尺寸缩放，背景是实拍开阔海面；俯视几何下径向速度≈0，红外预览里船体呈冷色剪影。</li>
       </ul>
     </div>
   </div>

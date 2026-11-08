@@ -318,8 +318,20 @@ def add_ground_backdrop(m, path, span_m=300.0, aligned=False, offset=(0.0, 0.0),
 
     Object coordinates, not UV: add_mesh_object builds meshes with from_pydata,
     which creates no UV layer, so a UV-mapped image samples a single texel.
+
+    Relative paths resolve against the scene file's directory, the same rule
+    optical.sky_image and ir.background_image already follow. Without it a
+    committed scene config using ../assets/... silently loses its plate:
+    os.path.isfile() is checked against Blender's cwd, the load is skipped,
+    and the render comes back as a flat procedural surface.
     """
-    if not path or not os.path.isfile(path):
+    if not path:
+        return m
+    path = str(path)
+    if not os.path.isabs(path):
+        base = cfg.get("_base_dir") or os.path.dirname(os.path.abspath(CFG_PATH))
+        path = os.path.normpath(os.path.join(base, path))
+    if not os.path.isfile(path):
         return m
     try:
         img = bpy.data.images.load(path, check_existing=True)

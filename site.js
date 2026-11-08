@@ -32,8 +32,14 @@
     radar: [1280, 720], radar_ra: [1280, 800],
     lidar_range: [256, 192], lidar_intensity: [256, 192], sar: [1024, 1024]
   };
-  // The showcase is air only; manifest still carries ground/sea scenes.
+  // The showcase was air only. One curated maritime scene is explicitly opted
+  // in; everything else matching NON_AIR stays out, including
+  // demo_three_ships_plate (an AIR run whose id merely mentions ships).
+  // Keeping the opt-in exact means the published air cards do not change when
+  // a sea scene is added.
   var NON_AIR = /(ground|surface|sea|ship|boat|vehicle|terrain|city)/i;
+  var SEA_ALLOW = /^demo_sea_surface$/;
+  function isNonAir(id) { return NON_AIR.test(id) && !SEA_ALLOW.test(id); }
 
   // frame: -1 means "no choice yet" so the scene's curated hero frame wins.
   var state = { mod: '', frame: -1, split: 52 };
@@ -141,7 +147,7 @@
   function normalizeScene(raw, manifestScene) {
     if (!raw || typeof raw !== 'object') { return null; }
     var id = typeof raw.id === 'string' ? raw.id.trim() : '';
-    if (!id || NON_AIR.test(id)) { return null; }
+    if (!id || isNonAir(id)) { return null; }
     var ms = manifestScene && manifestScene.id === id ? manifestScene : null;
     var mods = normalizeMods(raw.mods, ms);
     var frames = normalizeFrames(raw.frames, ms);
@@ -175,7 +181,7 @@
     var out = [];
     manifest.scenes.forEach(function (ms) {
       if (!ms || typeof ms !== 'object' || typeof ms.id !== 'string') { return; }
-      if (NON_AIR.test(ms.id)) { return; }
+      if (isNonAir(ms.id)) { return; }
       var scene = normalizeScene({ id: ms.id, title: ms.title, cls: ms.cls, band: ms.band }, ms);
       if (scene) { out.push(scene); }
     });

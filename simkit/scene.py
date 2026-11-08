@@ -265,7 +265,13 @@ def build_world(cfg, t=0.0, jitter=None):
 def load_config(path):
     with open(path, "r", encoding="utf-8") as fh:
         cfg = json.load(fh)
-    cfg["_base_dir"] = os.path.dirname(os.path.abspath(path))
+    # dataset._render_config stamps the ORIGINAL scene directory into the
+    # side-car config before writing it to out/<run>/. Keep it: overwriting it
+    # with this file's own directory makes "../assets/..." resolve to
+    # out/<run>/../assets, so relative background plates silently vanish on the
+    # Blender side while absolute paths keep working.
+    if not cfg.get("_base_dir"):
+        cfg["_base_dir"] = os.path.dirname(os.path.abspath(path))
     return cfg
 
 

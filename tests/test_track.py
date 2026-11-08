@@ -703,8 +703,9 @@ class CompatibilityTests(unittest.TestCase):
         paths = sorted(glob.glob(os.path.join(root, "*.json")))
         # Counted on purpose: a scene file that silently disappears from
         # scenes/ (or a stray one that lands there) has to fail a test, not
-        # quietly change what the regression corpus means.
-        self.assertEqual(len(paths), 34)
+        # quietly change what the regression corpus means. 35 = 34 shipped
+        # scenes + demo_sea_surface (the maritime showcase added 2026-11-08).
+        self.assertEqual(len(paths), 35)
         for path in paths:
             with self.subTest(scene=os.path.basename(path)):
                 cfg = scene.load_config(path)

@@ -1,6 +1,6 @@
 {
- "generated": "2026-11-07T11:42:15+08:00",
- "domain": "air",
+ "generated": "2026-11-08T10:30:48+08:00",
+ "domain": "air + sea",
  "scenes": [
   {
    "id": "demo_air_headon",
@@ -142,6 +142,34 @@
    },
    "note": "3 帧 · 雷达 4.3 km · 远离 2 m/s · 3 个目标",
    "caption": "俯视云海上的三架飞机同框，间距均匀，便于看编队几何。"
+  },
+  {
+   "id": "demo_sea_surface",
+   "title": "开阔海面 · 中小型舰船",
+   "cls": "ship",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "mwir",
+    "lwir",
+    "radar",
+    "radar_ra",
+    "lidar_range",
+    "lidar_intensity"
+   ],
+   "frames": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "hero": {
+    "mod": "optical",
+    "frame": 1
+   },
+   "note": "4 帧 · 雷达 1.86 km · 舰船 243x112 px（占宽 19%、面积 2.2%）· 海面俯视",
+   "caption": "开阔蓝色海面上的一艘中小型舰船，俯视轮廓能看清舰体与上层建筑，目标只占画面一小部分。"
   }
  ]
 }

@@ -1,0 +1,372 @@
+{
+ "name": "demo_sea_surface",
+ "seed": 7,
+ "ground": {
+  "enabled": true,
+  "type": "sea",
+  "mat": "seawater",
+  "size": 650.0,
+  "z": 0.0,
+  "wind_ms": 6.0,
+  "nx": 48,
+  "ny": 48,
+  "seed": 7,
+  "backdrop": "../assets/backdrops/open/01_Blue_ocean_surface_Unsplash.jpg",
+  "backdrop_span_m": 260.0,
+  "backdrop_aligned": true,
+  "backdrop_offset": [
+   0.5,
+   0.5
+  ],
+  "backdrop_span_y_m": 195.0
+ },
+ "weather": {
+  "mode": "fixed",
+  "preset": "clear"
+ },
+ "sun": {
+  "elev_deg": 55.0,
+  "az_deg": 120.0,
+  "irradiance": 900.0,
+  "on": true
+ },
+ "air": {
+  "temp_c": 12.0,
+  "rh": 0.75,
+  "wind_mps": 6.0
+ },
+ "ir": {
+  "bands": [
+   "mwir",
+   "lwir"
+  ],
+  "netd_mk": 28.0,
+  "psf_px": 1.3,
+  "engine_heat": true,
+  "preview_span_c": null,
+  "nuc": {
+   "enabled": true,
+   "prnu": 0.008,
+   "dsnu_counts": 25,
+   "column_fpn_counts": 6,
+   "dead_px": 0.0002,
+   "seed": 12345
+  },
+  "background_image": "../assets/backdrops/open/01_Blue_ocean_surface_Unsplash.jpg"
+ },
+ "optical": {
+  "samples": 16,
+  "exposure": -0.6,
+  "export_geometry": true,
+  "skin": true,
+  "camera": {
+   "diffraction": {
+    "f_number": 2.8
+   }
+  },
+  "sky_zenith_rgb": [
+   0.03,
+   0.075,
+   0.22
+  ],
+  "sky_horizon_rgb": [
+   0.52,
+   0.6,
+   0.72
+  ],
+  "sky_strength": 1.0,
+  "sky_weather": "clear",
+  "sky_image": "../assets/backdrops/open/01_Blue_ocean_surface_Unsplash.jpg"
+ },
+ "frames": {
+  "n": 4,
+  "dt": 0.1
+ },
+ "objects": [
+  {
+   "name": "ship_01",
+   "cls": "ship",
+   "shape": "obj",
+   "model": "../assets/models/军舰/战列舰.obj",
+   "pos": [
+    -13.0,
+    -3.9,
+    0.0
+   ],
+   "vel": [
+    11.494,
+    3.448,
+    0.0
+   ],
+   "rot": 16.698,
+   "yaw_mode": "velocity",
+   "scale": 0.22,
+   "mat": "paint_warship",
+   "temp_c": null,
+   "temp_c_hint": 24.0,
+   "rcs_db": 25.0,
+   "attitude_mode": "coordinated",
+   "kinematics": {
+    "min_speed_mps": 0.0,
+    "max_speed_mps": 20.0,
+    "max_accel_mps2": 2.0,
+    "max_climb_mps": 1.0,
+    "min_altitude_m": 0.0,
+    "max_bank_deg": 8.0
+   },
+   "visible": true,
+   "label": true,
+   "z_offset_m": 0.0
+  }
+ ],
+ "sensors": {
+  "optical": {
+   "pos": [
+    0.0,
+    0.0,
+    1859.087
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "fov_deg": 8.0,
+   "width": 1280,
+   "height": 960,
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ]
+  },
+  "ir_camera": {
+   "pos": [
+    0.0,
+    0.0,
+    1859.087
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "fov_deg": 8.0,
+   "width": 1280,
+   "height": 960,
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ]
+  },
+  "radar": {
+   "band": "Ku",
+   "az_span_deg": 2.0,
+   "el_span_deg": 1.6,
+   "n_az": 40,
+   "n_el": 20,
+   "bandwidth_mhz": 50.0,
+   "n_samples": 2048,
+   "chirp_us": 8.192,
+   "pri_us": 16.384,
+   "v_nyq_mps": 295.13,
+   "unambiguous": true,
+   "range_res_m": 3.0,
+   "r_max_m": 3069.9,
+   "beamwidth_el_deg": 6.0,
+   "n_chirps": 64,
+   "tx_power_dbm": 43.0,
+   "noise_figure_db": 8.0,
+   "clutter_density": 0.0,
+   "mti_min_vr_mps": 0.0,
+   "pfa": 1e-06,
+   "swerling": "I",
+   "clutter_db": -12.0,
+   "ground_clutter_db": -35.0,
+   "pos": [
+    0.0,
+    0.0,
+    1859.087
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ]
+  },
+  "lidar": {
+   "pos": [
+    0.0,
+    0.0,
+    1859.087
+   ],
+   "look_at": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "fov_deg": 8.0,
+   "width": 1280,
+   "height": 960,
+   "n_az": 256,
+   "n_el": 192,
+   "max_range_m": 2974.5,
+   "range_spec_m": 2045.0,
+   "pulse_energy_nj": 4000.0,
+   "aperture_mm": 50.0,
+   "up": [
+    0.0,
+    1.0,
+    0.0
+   ]
+  },
+  "sar": {
+   "band": "X",
+   "fc_ghz": 9.6,
+   "bandwidth_mhz": 300.0,
+   "prf_hz": 1200.0,
+   "n_pulses": 512,
+   "n_samples": 512,
+   "n_cross": 512,
+   "altitude_m": 1859.1,
+   "speed_mps": 120.0,
+   "heading_deg": 90.0,
+   "squint_deg": 90.0,
+   "side": "right",
+   "swath_center_m": 557.7,
+   "swath_width_m": 120.0,
+   "az_extent_m": 120.0,
+   "polarization": "VV",
+   "tx_power_w": 40.0,
+   "noise_figure_db": 4.0,
+   "loss_db": 3.0,
+   "antenna_len_m": 1.2,
+   "antenna_h_m": 0.35,
+   "resolution_scale": 1.0,
+   "looks": 2,
+   "oversample": 2,
+   "anchor": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  }
+ },
+ "clip": {
+  "frames_per_clip": 4,
+  "camera": "ir_camera",
+  "views": [
+   {
+    "name": "seeker",
+    "tag": "",
+    "fov_deg": 8.0,
+    "width": 1280,
+    "height": 960
+   }
+  ],
+  "rig": {
+   "lag_s": 0.02
+  }
+ },
+ "capture": {
+  "sensors": [
+   "optical",
+   "ir",
+   "radar",
+   "lidar"
+  ],
+  "frames": 4,
+  "fps": 10.0,
+  "seed": 7
+ },
+ "output": {
+  "preview": true,
+  "coco": true,
+  "yolo": true,
+  "readme": true,
+  "jpeg": {
+   "enabled": true,
+   "quality": 97
+  }
+ },
+ "recipe": {
+  "name": "demo_sea_surface",
+  "environment": {
+   "kind": "sea",
+   "weather": "clear",
+   "background": {
+    "mode": "library",
+    "category": "open"
+   }
+  },
+  "objects": [
+   {
+    "asset": "军舰/战列舰.obj",
+    "cls": "ship",
+    "scale": 0.22,
+    "count": 1,
+    "uv": [
+     0.45,
+     0.52
+    ]
+   }
+  ],
+  "ecm": {
+   "mode": "none",
+   "entities": []
+  },
+  "view": {
+   "range_km": 1.2,
+   "aspect": "top_down",
+   "ground_span_m": 260.0,
+   "fov_deg": 8.0,
+   "views": "single",
+   "closing_mps": null,
+   "trajectory": {
+    "mode": "preset"
+   }
+  },
+  "capture": {
+   "sensors": [
+    "optical",
+    "ir",
+    "radar",
+    "lidar"
+   ],
+   "frames": 4,
+   "fps": 10.0,
+   "seed": 7
+  },
+  "output": {
+   "preview": true,
+   "coco": true,
+   "yolo": true,
+   "readme": true
+  },
+  "effects": {
+   "plume": true,
+   "supersample": 0
+  }
+ },
+ "research_baseline": {
+  "purpose": "generated from a recipe by simkit.scenegen",
+  "environment": "sea / clear / library",
+  "aspect": "top_down (in)",
+  "sensor_calibration": "nominal simulation settings, not measured sensor calibration"
+ },
+ "view": {
+  "aspect": "top_down",
+  "ground_span_m": 260.0,
+  "height_ladder_m": [
+   0.0
+  ],
+  "radar_resolvable_targets": null
+ },
+ "notes": "海域精选：开阔海面俯视 + 中小型舰船目标。目标按设计尺寸缩放（scale 0.22，约 38 m 舰长），1280x960 画幅中标注框 243x112 px，占宽 19.0%、面积 2.22%，轮廓清楚但不淹没海面背景。背景板为 assets/backdrops/open/01（Unsplash，CC0）。与空域演示共用同一套 plate 合成方式与多模态生成链。"
+}
