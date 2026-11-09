@@ -164,8 +164,18 @@ def _clip_near_triangle(vertices, near=0.05):
             for index in range(1, len(polygon)-1)]
 
 
-def rasterize(world, cam, face_value, background=0.0, subpixel_mode="legacy"):
-    """Z-buffer flat shading of per-face scalar values."""
+def rasterize(world, cam, face_value, background=0.0, subpixel_mode="legacy",
+              skip_obj_ids=()):
+    """Z-buffer flat shading of per-face scalar values.
+
+    ``skip_obj_ids`` drops whole bodies from the raster. The thermal rasteriser
+    has no alpha, so a body that is optically thin still comes out as an opaque
+    silhouette: a chaff cloud blooms to a 25 m sphere and painted a solid black
+    disc over the target it was released to protect, which both hid the vehicle
+    and made its label vanish. A sparse dipole cloud is not a surface, so it is
+    excluded from the IR image while staying in the geometry the radar ray cast
+    reads.
+    """
     W, H = int(cam["width"]), int(cam["height"])
     p, r, u, f = sensor_basis(cam["pos"], cam["look_at"], cam.get("up", (0, 0, 1)),
                               cam.get("roll_deg", 0.0))
@@ -185,9 +195,13 @@ def rasterize(world, cam, face_value, background=0.0, subpixel_mode="legacy"):
     pid = np.full((H, W), -1, np.int32)
     tri = world.faces
     zt = zc[tri]
+    skip_ids = tuple(int(v) for v in (skip_obj_ids or ()))
+    skip_face = (np.isin(world.face_obj, skip_ids)
+                 if skip_ids else np.zeros(len(world.face_obj), bool))
 
     def projected_triangles():
-        for i in np.where((zt >= 0.05).any(axis=1))[0]:
+        keep = (zt >= 0.05).any(axis=1) & ~skip_face
+        for i in np.where(keep)[0]:
             if (zt[i] >= 0.05).all():
                 yield i, su[tri[i]], sv[tri[i]], zt[i]
             else:
@@ -255,6 +269,8 @@ def rasterize(world, cam, face_value, background=0.0, subpixel_mode="legacy"):
         if subpixel_mode != "legacy":
             break
         if not o.get("label", True) or o["id"] in present:
+            continue
+        if int(o["id"]) in skip_ids:
             continue
         rel = np.asarray(o["corners"], float).mean(axis=0) - p
         z = float(rel @ f)
@@ -951,8 +967,14 @@ def render(world, cfg, temps_k, cam=None):
     if subpixel_mode == "coverage" and samples < 2:
         raise ValueError("ir coverage mode requires samples_per_axis >= 2")
     high_cam = dict(cam, width=int(cam["width"])*samples, height=int(cam["height"])*samples)
+    # The engine's plume pass hands back a NEW world, so the ecm_volumetric_ids
+    # attribute does not survive. Re-derive it from the bodies themselves.
+    from .ecm import VOLUMETRIC as _VOLUMETRIC
+    skip_ids = tuple(int(o["id"]) for o in getattr(world, "objs", [])
+                     if (o.get("ecm") or {}).get("kind") in _VOLUMETRIC)
     img, depth, pid = rasterize(world, high_cam, L, background=0.0,
-                                subpixel_mode=subpixel_mode if samples == 1 else "none")
+                                subpixel_mode=subpixel_mode if samples == 1 else "none",
+                                skip_obj_ids=skip_ids)
     img = _pixel_atmosphere(img, depth, high_cam, cfg, band, bname, tau, L_sky)
     img = gaussian_blur(img, blur*samples)
     instance_coverage = {}
