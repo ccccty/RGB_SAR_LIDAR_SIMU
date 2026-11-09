@@ -36,7 +36,7 @@
    "dead_px": 0.0002,
    "seed": 12345
   },
-  "background_image": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\sky\\08_2016-08_Paris_Montreal_flight_15_jpg.jpg"
+  "background_image": "assets/backdrops/sky/08_2016-08_Paris_Montreal_flight_15_jpg.jpg"
  },
  "optical": {
   "samples": 16,
@@ -60,7 +60,7 @@
   ],
   "sky_strength": 1.0,
   "sky_weather": "clear",
-  "sky_image": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\sky\\08_2016-08_Paris_Montreal_flight_15_jpg.jpg"
+  "sky_image": "assets/backdrops/sky/08_2016-08_Paris_Montreal_flight_15_jpg.jpg"
  },
  "frames": {
   "n": 8,

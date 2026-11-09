@@ -20,6 +20,9 @@ third_party/
 # local notes that must not be published
 docs/_local/
 
+# folder-picker history: contains absolute paths of the operator's disk
+configs/known_outputs*.json
+
 # scratch
 _src/
 _tmpgen_*.py
