@@ -567,7 +567,7 @@ PNG → WebP 并拆缩略图见 `tools/opt_images.py` 与 `tools/export_site_v1.
 - **站点**：`node tools/probe_site_v1.js` 用无头 Chrome 验收当前单页演示：
   0 JS 错误、0 破图、9 张精选卡片全在（`v1_air` / `v1_land` / `v1_sea` 三域齐全）、
   首屏 768×576 正常加载。（旧 `tools/probe_web.js` 对应已下线的 11 页签看板。）
-- **回归**：`python -m unittest discover -s tests` **573 项 OK**、
+- **回归**：`python -m unittest discover -s tests` **614 项 OK**、
   `python -m simkit selftest` ALL PASS、工作台 DOM 冒烟通过、JS / Python 编译通过；
   其中 12 项固化 18 个预设配方的矩阵、ECM 分组、v1 不变量与前端透传链路
 - **跨模态配准**：同一时刻、共用位姿的各模态，框由同一套三维投影导出，
