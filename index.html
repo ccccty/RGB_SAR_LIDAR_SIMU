@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>simkit · 空域与海域多模态精选 · 干扰对照：同一帧的可见光 / 红外 / 雷达</title>
-<meta name="description" content="同一帧、同一相机位姿、同一目标的多模态仿真精选：空域战机与海域舰船，可见光、中波/长波红外与毫米波雷达距离-多普勒图，配原理讲解、场景精选与已知局限。纯静态页面。另设干扰实验室，覆盖有源压制、箔条云、假目标、红外诱饵与地 / 海杂波脊的 clean↔jammed 逐帧对照。">
+<title>simkit · 空 / 陆 / 海三域多模态精选 · 干扰对照：同一帧的可见光 / 红外 / 雷达</title>
+<meta name="description" content="同一帧、同一相机位姿、同一目标的多模态仿真精选：空域战机、陆域车辆与海域舰船，背景为云层 / 城市道路 / 海浪实拍底板，可见光、长波红外与毫米波雷达距离-多普勒图同源配准，配原理讲解、场景精选与已知局限。纯静态页面。另设干扰实验室，覆盖有源压制、箔条云、假目标、红外诱饵与地 / 海杂波脊的 clean↔jammed 逐帧对照。">
 <meta name="theme-color" content="#070a0f">
 <meta name="color-scheme" content="dark">
 <meta property="og:type" content="website">
 <meta property="og:title" content="simkit · 同一帧，三种传感器各看到什么">
-<meta property="og:description" content="空域战机与海域舰船的多模态仿真精选对照：可见光、红外、雷达 RD 同帧同位姿，附带成像原理与局限说明。干扰实验室另给 clean↔jammed 对照与杂波 / 诱饵链路示意。">
+<meta property="og:description" content="空域战机、陆域车辆与海域舰船的多模态仿真精选对照：云层 / 城市道路 / 海浪实拍底板，可见光、红外、雷达 RD 同帧同位姿，附带成像原理与局限说明。干扰实验室另给 clean↔jammed 对照与杂波 / 诱饵链路示意。">
 <meta property="og:image" content="data/v1_air/optical/000000.webp">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='10' fill='none' stroke='%2338bdf8' stroke-width='3'/><circle cx='16' cy='16' r='3.6' fill='%2338bdf8'/><path d='M16 1v5M16 26v5M1 16h5M26 16h5' stroke='%2338bdf8' stroke-width='2'/></svg>">
 <link rel="stylesheet" href="site.css">
@@ -23,7 +23,7 @@
   <a class="brand" href="#hero" aria-label="回到顶部">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".5"/><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     <span class="brand-name">simkit</span>
-    <em>空域 / 海域 / 干扰</em>
+    <em>空 / 陆 / 海 / 干扰</em>
   </a>
   <nav class="nav" aria-label="页面导航">
     <a href="#hero">演示</a>
@@ -41,7 +41,7 @@
 <!-- ================= 01 主视觉 ================= -->
 <section id="hero" class="sect hero">
   <div class="hero-copy">
-    <p class="eyebrow"><span class="pulse"></span>离线多模态仿真 · 空域 / 海域精选</p>
+    <p class="eyebrow"><span class="pulse"></span>离线多模态仿真 · 空 / 陆 / 海三域精选</p>
     <h1>同一帧，<br>三种传感器各看到什么</h1>
     <p class="lede">同一帧、同一相机位姿、同一目标：可见光、中波 / 长波红外与毫米波雷达各按自己的物理成像。下面每一组对照都来自同一次仿真落盘的同一帧，不是拼贴素材。</p>
 
@@ -148,8 +148,10 @@
 <section id="scenes" class="sect">
   <header class="sect-h">
     <span class="num">03</span>
-    <h2>空域 / 海域场景精选 · 含干扰样本</h2>
-    <p>空域场景之外新增一处海域精选：开阔海面上的中小型舰船目标。每个场景给几帧精选，点大图放大，点缩略条换帧。含干扰样本的场景以「干扰」标签标出，可在下方干扰实验室里做 clean↔jammed 逐帧对照。</p>
+    <h2>空 / 陆 / 海场景精选 · 含干扰样本</h2>
+    <p>三域精选均用实拍照片作底板：云层里的战机、城市环岛道路上的车辆、开阔海面上的舰船。
+    每个场景给 5 帧同源的可见光 / 长波红外 / 雷达 RD，点大图放大，点缩略条换帧，点模态按钮切传感器。
+    含干扰样本的场景以「干扰」标签标出，可在下方干扰实验室里做 clean↔jammed 逐帧对照。</p>
   </header>
 
   <div class="scenes-grid" id="sceneGrid">
