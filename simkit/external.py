@@ -20,6 +20,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 
 import numpy as np
 
@@ -165,8 +166,20 @@ def write_manifest(cfg, states, out_dir, part=None):
                         pitch=float(ent.get("pitch", 0.0)),
                         roll=float(ent.get("roll", 0.0)),
                         velocity_mps=[round(float(v), 4) for v in ent["vel"]])
-    except Exception:                      # a broken ECM block must not stop a run
-        pass
+    except Exception as exc:
+        # A broken ECM block must not stop a run, but it must not vanish either.
+        # If the scene asked for ECM and the manifest lost it, the Blender
+        # optical pass renders no decoys while radar/IR/lidar still evaluate
+        # them -- a cross-modal inconsistency that silently invalidates the
+        # sample. Record it, and fail loudly when ECM was actually requested.
+        msg = "ecm manifest: %s: %s" % (type(exc).__name__, exc)
+        try:
+            cfg.setdefault("_warnings", []).append(msg)
+        except Exception:
+            pass
+        sys.stderr.write("[warn] %s\n" % msg)
+        if bool((cfg.get("ecm") or {}).get("enabled")):
+            raise RuntimeError(msg) from exc
 
     # "camera" is per frame because a seeker/gimbal mount moves: without it the
     # optical renderer would shoot every frame from the static config pose while

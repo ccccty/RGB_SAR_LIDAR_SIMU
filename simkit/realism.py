@@ -108,7 +108,10 @@ def apply(cfg):
     #     mean luma 0.48 and erases the plate's contrast. Only applies when the
     #     scene actually carries a plate.
     ground_cfg = cfg.get("ground")
-    if isinstance(ground_cfg, dict) and ground_cfg.get("backdrop"):
+    sky_plate = (cfg.get("optical") or {}).get("sky_image")
+    ir_plate = (cfg.get("ir") or {}).get("background_image")
+    if ((isinstance(ground_cfg, dict) and ground_cfg.get("backdrop"))
+            or sky_plate or ir_plate):
         _default(optical, "auto_exposure", False)
 
     # 6. SAR display stretch anchor (the kernel default is now 1.5 as well;

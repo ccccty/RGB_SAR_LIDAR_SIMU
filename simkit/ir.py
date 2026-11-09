@@ -664,7 +664,10 @@ def _plate_view_ground(gray, cam, cfg, w, h):
         return None
     span_y = float(g.get("backdrop_span_y_m") or span)
     try:
-        off = g.get("backdrop_offset") or (0.5, 0.5)
+        # Same default as blender/render_optical.py:558. The two samplers used
+        # to disagree (0.5 here, 0.0 there), which shifted a plate by half a
+        # tile between the optical and IR bands of the same frame.
+        off = g.get("backdrop_offset") or (0.0, 0.0)
         off_u, off_v = float(off[0]), float(off[1])
         pos = np.asarray(cam.get("pos"), float)
         look = np.asarray(cam.get("look_at", [0.0, 0.0, 0.0]), float)
@@ -697,6 +700,12 @@ def _plate_view_ground(gray, cam, cfg, w, h):
     # wrap by the tile, then bilinear: the plate repeats every span_m
     uu = np.mod(uu, 1.0)
     vv = np.mod(vv, 1.0)
+    # Blender's image texture puts v=0 at the BOTTOM row while PIL row 0 is the
+    # TOP one. Sampling v directly therefore mirrored the plate against the
+    # optical band: at offset_v=0.45 the two modalities showed terrain ~90 m
+    # apart in y. Flip once here; the offset keeps the same meaning on both
+    # sides, so an aligned scene now reads one photograph one way.
+    vv = 1.0 - vv
     x0 = np.floor(uu * (iw - 1)).astype(np.int64)
     y0 = np.floor(vv * (ih - 1)).astype(np.int64)
     x1 = np.clip(x0 + 1, 0, iw - 1)

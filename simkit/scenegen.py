@@ -1142,9 +1142,14 @@ def _complete_entity(ent, site, vel, life, index, parent=None):
         home = [round(tgt[i] + perp[i] * 30.0, 3) for i in range(3)]
     elif kind == 'infrared_flare':
         # A dispensed flare separates from the airframe; putting it on top of the
-        # target made it invisible even once it had a visible radius.
-        home = [round(tgt[i] - unit[i] * 45.0 + perp[i] * 18.0, 3) for i in range(3)]
-        home[2] = round(home[2] - 25.0, 3)
+        # target made it invisible even once it had a visible radius. A six-round
+        # fan also needs a per-round offset: sharing one mount put all six on the
+        # same pixel and rendered the dispense as a single dot.
+        _k = int(index)
+        home = [round(tgt[i] - unit[i] * (45.0 + 6.0 * _k)
+                      + perp[i] * (18.0 + 4.0 * ((_k % 3) - 1)), 3)
+                for i in range(3)]
+        home[2] = round(home[2] - (25.0 + 3.0 * _k), 3)
     else:
         home = list(tgt)
     # Parent the dispensed bodies to the aircraft so they stay in its
@@ -1164,8 +1169,17 @@ def _complete_entity(ent, site, vel, life, index, parent=None):
             # cloud kept pace with the aircraft instead of falling behind.
             ent.setdefault('rel_decay_s', 0.3)
         elif kind == 'infrared_flare':
-            ent.setdefault('rel_pos', _rel(-45.0, 18.0, -25.0))
-            ent.setdefault('rel_vel', _rel(-10.0, 4.0, -2.0))
+            # Several rounds dispensed from ONE airframe must not share a mount:
+            # identical rel_pos put all six on the same pixel and the fan
+            # rendered as a single dot, contradicting the recipe caption. index
+            # is stable for a given recipe, so the fan stays reproducible while
+            # a single round (index 0) keeps the old position byte for byte.
+            _k = int(index)
+            ent.setdefault('rel_pos',
+                           _rel(-45.0 - 6.0 * _k, 4.0 * ((_k % 3) - 1),
+                                -25.0 - 3.0 * _k))
+            ent.setdefault('rel_vel', _rel(-10.0 - 1.5 * _k, 4.0, -2.0))
+            ent.setdefault('release_s', round(0.12 * _k, 3))
             # a burning flare is heavier and slower to decelerate (tau_q 0.25-0.6 s)
             ent.setdefault('rel_decay_s', 1.0)
         elif kind == 'corner_reflector':
@@ -1742,20 +1756,22 @@ def _apply_background(cfg, environment, wanted, notes):
                               background.get('file'),
                               int(cfg.get('seed') or 0),
                               prefer_aerial=_prefer_aerial)
-        # A look-down frame shows the ground, so the plate has to become the
-        # ground material; sky_image alone changes nothing when the camera looks
-        # down at terrain.
-        _g = cfg.setdefault('ground', {})
-        if _g.get('enabled', True):
-            _g['backdrop'] = path
-            _span = float(background.get('span_m')
-                          or (cfg.get('view') or {}).get('ground_span_m') or 300.0)
-            _g['backdrop_span_m'] = _span
-            if background.get('offset'):
-                _g['backdrop_offset'] = [round(float(v), 6)
-                                         for v in background['offset']]
     if not path:
         return
+    # A look-down frame shows the ground, so the plate has to become the ground
+    # material; sky_image alone changes nothing when the camera looks down at
+    # terrain. This block must run for BOTH modes: an uploaded plate used to
+    # reach only optical.sky_image, which a nadir camera never sees, so a
+    # ground/sea recipe with mode="upload" silently rendered with no plate.
+    _g = cfg.setdefault('ground', {})
+    if _g.get('enabled', True):
+        _g['backdrop'] = path
+        _span = float(background.get('span_m')
+                      or (cfg.get('view') or {}).get('ground_span_m') or 300.0)
+        _g['backdrop_span_m'] = _span
+        if background.get('offset'):
+            _g['backdrop_offset'] = [round(float(v), 6)
+                                     for v in background['offset']]
     want = set(wanted or ())
     optical = cfg.get('optical')
     if ('optical' in want and isinstance(optical, dict)
