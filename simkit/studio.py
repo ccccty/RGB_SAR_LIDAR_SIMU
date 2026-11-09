@@ -57,7 +57,11 @@ TMP = os.path.join(ROOT, "_tmp")
 RECIPES = os.path.join(ROOT, "configs", "recipes")
 # Output folders the operator picked outside out/studio_runs. Remembered on disk
 # so the dataset browser still lists them after the server restarts.
-_KNOWN_OUT = os.path.join(ROOT, "configs", "known_outputs.json")
+#: Local-only remember-list for the folder picker. It stores absolute paths of
+#: folders the operator generated into, so it must never be published: it used
+#: to live in configs/ (git-tracked) and leaked the developer's home layout
+#: through GitHub Pages. out/ is already in .gitignore.
+_KNOWN_OUT = os.path.join(ROOT, "out", "known_outputs.local.json")
 _CUSTOM_OUT = set()
 
 # ---------------------------------------------------------------- option tables
@@ -495,6 +499,30 @@ _PROTECTED_OUT = ("simkit", "scenes", "assets", "docs", "tools", "tests",
                   "blender", "studio", "configs", "env", "third_party",
                   "data", "rcs_refs")
 
+#: Output folders outside the project are refused unless this is set. "Write
+#: anywhere" also means "a web page can make me write anywhere"; an UNC path is
+#: worse, because merely creating the directory opens an SMB connection and
+#: leaks the current user's NetNTLM hash.
+ALLOW_OUTSIDE_ROOT = os.environ.get("SIMKIT_ALLOW_OUTSIDE_ROOT") == "1"
+
+
+def _log_internal(exc):
+    """Write a traceback to a local log instead of echoing it to the caller.
+
+    A 500 used to return 1200 characters of stack, which leaked absolute paths
+    and source structure to anyone who could reach the port. The operator still
+    needs the stack, so it goes to _tmp/studio_err.log.
+    """
+    try:
+        os.makedirs(TMP, exist_ok=True)
+        with open(os.path.join(TMP, "studio_err.log"), "a",
+                  encoding="utf-8") as fh:
+            fh.write("%s %s: %s\n%s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"),
+                                          type(exc).__name__, exc,
+                                          traceback.format_exc()))
+    except Exception:
+        pass
+
 
 def _safe_out_dir(raw):
     """Absolute, checked output folder, or None to use the default runs area."""
@@ -506,7 +534,19 @@ def _safe_out_dir(raw):
     if not os.path.isabs(p):
         p = os.path.join(ROOT, p)
     p = os.path.normpath(p)
-    low, root_low = p.lower(), ROOT.lower()
+    if p.startswith("\\\\") or p.startswith("//"):
+        raise BadRequest("不支持 UNC 网络路径：%s" % p)
+    if p.startswith("\\\\?\\"):
+        raise BadRequest("不支持 \\\\?\\ 前缀：%s" % p)
+    low, root_low = p.lower(), os.path.normpath(ROOT).lower()
+    # Anything outside the project used to be accepted, which let a request (or
+    # a web page driving the unauthenticated API) create directories and write
+    # renders anywhere on the machine.
+    if not (low == root_low or low.startswith(root_low + os.sep)):
+        if not ALLOW_OUTSIDE_ROOT:
+            raise BadRequest(
+                "输出目录必须在项目内：%s（如确需项目外目录，设 "
+                "SIMKIT_ALLOW_OUTSIDE_ROOT=1 后重启工作台）" % p)
     if low == root_low:
         raise BadRequest("输出目录不能是项目根目录本身")
     if os.path.dirname(p) == p:
@@ -637,6 +677,17 @@ def _browse_payload(raw):
     if not os.path.isabs(p):
         p = os.path.join(ROOT, p)
     p = os.path.normpath(p)
+    if p.startswith("\\\\") or p.startswith("//"):
+        # Listing a UNC path opens an SMB connection and leaks NetNTLM.
+        raise BadRequest("不支持 UNC 网络路径")
+    if not ALLOW_OUTSIDE_ROOT:
+        root_norm = os.path.normpath(ROOT)
+        # The picker walks up as well as down, so the project's own ancestor
+        # chain stays browsable; unrelated trees (other drives, home dirs) do
+        # not. This is reconnaissance hardening, not a write barrier.
+        if not (p == root_norm or p.startswith(root_norm + os.sep)
+                or root_norm.startswith(p + os.sep)):
+            raise BadRequest("只允许浏览项目及其上级目录")
     if os.path.isdir(p):
         return dict(path=p, requested=p, exists=True, isdir=True,
                     parent=os.path.dirname(p), dirs=_subdirs(p),
@@ -694,10 +745,20 @@ def _load_recipe(name):
         raise BadRequest("配方文件不是合法 JSON：" + str(exc)) from exc
 
 
-def _save_recipe(name, recipe):
+_PRESET_RECIPES = ("ecm_suppression_headon.json", "trilateral_sky_headon.json")
+
+
+def _save_recipe(name, recipe, overwrite=False):
     if not isinstance(recipe, dict):
         raise BadRequest("配方必须是 JSON 对象")
     p = _recipe_path(name)
+    if os.path.isfile(p) and not overwrite:
+        stem = os.path.basename(p)
+        # The curated presets are git-tracked and drive "run this preset"; a
+        # POST must not silently rewrite them. User recipes can still be saved
+        # under the same name, because that is the normal edit loop.
+        if stem.startswith("p_") or stem in _PRESET_RECIPES:
+            raise BadRequest("预置配方 %s 不允许覆盖，请另存为新名字" % stem)
     rec = json.loads(json.dumps(recipe))
     rec["_saved_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
     with open(p, "w", encoding="utf-8") as fh:
@@ -1737,10 +1798,17 @@ def start_job(body, preview=False, still=False):
 def _run_dir(jid):
     if not re.match(r"^[A-Za-z0-9_.-]+$", jid or ""):
         return None
+    # "." and ".." match the regex; joining them walked one level up out of
+    # out/studio_runs and exposed every other run's config and labels.
+    if jid in (".", ".."):
+        return None
     j = _JOBS.get(jid)
     if j:
         return j.out
-    cand = os.path.join(RUNS, jid)
+    cand = os.path.realpath(os.path.join(RUNS, jid))
+    runs = os.path.realpath(RUNS)
+    if cand != runs and not cand.startswith(runs + os.sep):
+        return None
     return cand if os.path.isdir(cand) else None
 
 
@@ -2447,11 +2515,49 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "DENY")
         self.end_headers()
         try:
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    def _refuse_foreign(self):
+        """Pin every request to loopback before a handler can touch disk.
+
+        The workbench has no login: it is a local tool. Without these checks any
+        page the user visits can POST ``text/plain`` to 127.0.0.1 and start a
+        20000-frame render (CSRF), and a DNS-rebinding page can read every local
+        dataset. Pinning Host kills rebinding; requiring a same-origin JSON POST
+        kills CSRF, because a cross-origin JSON request forces a preflight the
+        attacker's page cannot satisfy.
+        """
+        host = (self.headers.get("Host") or "").split(":")[0].strip().lower()
+        if host not in ("127.0.0.1", "localhost", "[::1]", "::1"):
+            self.close_connection = True
+            self._send(421, dict(error="Host 不被允许：%r" % host))
+            return False
+        if self.command != "POST":
+            return True
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0]
+        if ctype.strip().lower() != "application/json":
+            self.close_connection = True
+            self._send(415, dict(error="POST 需要 Content-Type: application/json"))
+            return False
+        origin = (self.headers.get("Origin")
+                  or self.headers.get("Referer") or "").strip().lower()
+        if origin:
+            port = int(getattr(self.server, "server_port", 0) or 0)
+            allowed = ("http://127.0.0.1:%d" % port,
+                       "http://localhost:%d" % port,
+                       "http://[::1]:%d" % port)
+            if not origin.startswith(allowed):
+                self.close_connection = True
+                self._send(403, dict(error="跨源请求被拒绝"))
+                return False
+        return True
 
     def _reset_request_state(self):
         """Drop everything cached for the previous request on this connection."""
@@ -2537,6 +2643,8 @@ class Handler(BaseHTTPRequestHandler):
         # stayed in the buffer, and the request after it was parsed as garbage
         # (measured: 501 Unsupported method '{"frames":7...}GET').
         self._reset_request_state()
+        if not self._refuse_foreign():
+            return
         # GET used to run without a catch: a BadRequest from a helper (a bad
         # output path, a malformed dataset id) escaped to socketserver, the
         # connection closed with NO response, and the browser's ajax.onerror
@@ -2547,8 +2655,9 @@ class Handler(BaseHTTPRequestHandler):
         except BadRequest as exc:
             return self._send(400, dict(error=str(exc)))
         except Exception as exc:
-            return self._send(500, dict(error="%s: %s" % (type(exc).__name__, exc),
-                                        trace=traceback.format_exc()[-1200:]))
+            _log_internal(exc)
+            return self._send(500, dict(error="%s: %s" % (
+                type(exc).__name__, exc)))
 
     def _get(self):
         u = urlparse(self.path)
@@ -2661,6 +2770,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         self._reset_request_state()
+        if not self._refuse_foreign():
+            return
         u = urlparse(self.path)
         # Consume the body before any branch can return early, so a keep-alive
         # connection is never left with unread bytes in its buffer.
@@ -2689,7 +2800,15 @@ class Handler(BaseHTTPRequestHandler):
                 from . import bench as _bench
                 b = self._body()
                 sensor = (b.get("sensor") or "optical").strip()
-                ladder = tuple(int(x) for x in (b.get("workers") or []) if int(x) > 0) or (1, 2, 4)
+                if sensor not in ("optical", "ir", "radar", "lidar", "sar"):
+                    raise BadRequest("未知传感器：%r" % sensor)
+                # A request asking for 5000 workers used to spawn 5000 Popen
+                # children from a single synchronous handler. Clamp to the box.
+                cap = min(16, os.cpu_count() or 1)
+                raw_ladder = [int(x) for x in (b.get("workers") or [])
+                              if int(x) > 0]
+                ladder = tuple(sorted({min(max(1, w), cap)
+                                       for w in raw_ladder}))[:4] or (1, 2, 4)
                 return self._send(200, _bench.recommend(
                     bench=_bench.measure(workers=ladder, sensor=sensor), sensor=sensor))
             if u.path == "/api/recipe/save":
@@ -2707,8 +2826,9 @@ class Handler(BaseHTTPRequestHandler):
         except BadRequest as exc:
             return self._send(400, dict(error=str(exc)))
         except Exception as exc:
-            return self._send(500, dict(error="%s: %s" % (type(exc).__name__, exc),
-                                        trace=traceback.format_exc()[-1200:]))
+            _log_internal(exc)
+            return self._send(500, dict(error="%s: %s" % (
+                type(exc).__name__, exc)))
         if u.path.startswith("/api/job/") and u.path.endswith("/cancel"):
             jid = u.path[len("/api/job/"):-len("/cancel")].strip("/")
             j = _JOBS.get(jid)

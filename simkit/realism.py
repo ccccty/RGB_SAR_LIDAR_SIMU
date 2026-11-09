@@ -85,13 +85,16 @@ def apply(cfg):
     frames = cfg.get("frames") if isinstance(cfg.get("frames"), dict) else {}
     dt = float(frames.get("dt") or 0.05)
     exp_s = min(RGB_EXPOSURE_S, max(dt * 0.5, 1e-4))
-    _default(_sub(cfg, "acquisition"), "rgb_exposure_s", exp_s)
+    acq = _sub(cfg, "acquisition")
+    _default(acq, "rgb_exposure_s", exp_s)
     if sensor.get("enabled") is True and optical.get("motion_blur"):
-        # The electron model divides by reference_exposure_s. Leaving it at the
-        # old 0.001 s while the shutter is 0.004 s multiplies every pixel by 4
-        # and clips the target to white. Shutter time and reference exposure
-        # describe the same integration window, so they must move together.
-        sensor["reference_exposure_s"] = exp_s
+        # The electron model divides by reference_exposure_s, so the two keys
+        # must describe the same integration window -- but they must follow the
+        # shutter that is ACTUALLY in force. A blanket `= exp_s` rewrote the 9
+        # delivered scenes that declare 0.001 s to 0.004 s, and the target then
+        # rendered four times darker than its photographed plate. An explicit
+        # pair is a contract and is never touched.
+        _default(sensor, "reference_exposure_s", float(acq["rgb_exposure_s"]))
 
     # 4. IR 8-bit preview window: without a cap it stretches to the 1/99.5
     #    percentiles (~232 mK per code), which makes a 30 mK NETD invisible.
@@ -105,7 +108,10 @@ def apply(cfg):
     #     mean luma 0.48 and erases the plate's contrast. Only applies when the
     #     scene actually carries a plate.
     ground_cfg = cfg.get("ground")
-    if isinstance(ground_cfg, dict) and ground_cfg.get("backdrop"):
+    sky_plate = (cfg.get("optical") or {}).get("sky_image")
+    ir_plate = (cfg.get("ir") or {}).get("background_image")
+    if ((isinstance(ground_cfg, dict) and ground_cfg.get("backdrop"))
+            or sky_plate or ir_plate):
         _default(optical, "auto_exposure", False)
 
     # 6. SAR display stretch anchor (the kernel default is now 1.5 as well;

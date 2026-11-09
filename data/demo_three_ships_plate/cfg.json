@@ -45,7 +45,7 @@
    "dead_px": 0.0002,
    "seed": 12345
   },
-  "background_image": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\sky\\15_2022-09-11_19_05_39_Cloud_layers_viewed_from_an_aircraft.jpg"
+  "background_image": "assets/backdrops/sky/15_2022-09-11_19_05_39_Cloud_layers_viewed_from_an_aircraft.jpg"
  },
  "optical": {
   "samples": 16,
@@ -69,7 +69,7 @@
   ],
   "sky_strength": 0.88,
   "sky_weather": "cloudy",
-  "sky_image": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\sky\\15_2022-09-11_19_05_39_Cloud_layers_viewed_from_an_aircraft.jpg"
+  "sky_image": "assets/backdrops/sky/15_2022-09-11_19_05_39_Cloud_layers_viewed_from_an_aircraft.jpg"
  },
  "frames": {
   "n": 14,

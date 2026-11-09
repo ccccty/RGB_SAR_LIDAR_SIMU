@@ -306,7 +306,17 @@ def _skin_plate(cfg, out_dir):
         from PIL import Image as _Image
         _Image.fromarray((rgb * 255.0 + 0.5).astype(np.uint8), mode="RGB").save(path)
         return path
-    except Exception:
+    except Exception as exc:
+        # A failed bake is not fatal, but it used to vanish: the frame then
+        # rendered a flat albedo and nobody could tell why the target looked
+        # synthetic. Record it; optical.skin_strict promotes it to an error.
+        msg = "skin plate: %s: %s" % (type(exc).__name__, exc)
+        try:
+            cfg.setdefault("_warnings", []).append(msg)
+        except Exception:
+            pass
+        if opt.get("skin_strict"):
+            raise
         return None
 
 
@@ -1671,7 +1681,8 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
         try:
             from . import sheet as s_sheet
             if want_prev:
-                made = s_sheet.triptych(out_dir, modalities=_preview_modalities(sensors))
+                made = s_sheet.triptych(
+                    out_dir, modalities=_preview_modalities(sensors, out_dir))
                 post["preview_frames"] = len(made)
                 post["contact_sheet"] = os.path.basename(s_sheet.contact_sheet(out_dir))
             if want_doc:
@@ -1704,11 +1715,27 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
     return meta
 
 
-def _preview_modalities(sensors):
-    """Map requested sensors onto the directory names sheet.triptych expects."""
+def _preview_modalities(sensors, out_dir=None):
+    """Map requested sensors onto the directory names sheet.triptych expects.
+
+    A scene that declares no ir.bands writes images/ir_preview_* only; the old
+    hard-coded "ir_mwir" then dropped the IR column from the contact sheet with
+    no warning. Probe the run directory first, fall back to the legacy name.
+    """
     names = {"optical": "optical", "ir": "ir_mwir", "radar": "radar",
              "sar": "sar", "lidar": "lidar_range"}
-    return [names[s] for s in sensors if s in names]
+    out = []
+    images = os.path.join(out_dir, "images") if out_dir else None
+    for sensor in sensors:
+        if sensor == "ir" and images and os.path.isdir(images):
+            found = sorted(d for d in os.listdir(images)
+                           if d.startswith("ir_preview"))
+            if found:
+                out.append(found[0])
+                continue
+        if sensor in names:
+            out.append(names[sensor])
+    return out
 
 
 MOD_SUFFIX = ("optical", "lidar", "ir", "ir_mwir", "ir_lwir", "ir_swir", "ir_lwir_only")

@@ -241,6 +241,12 @@ def build_cfg(dom, scene_dir):
     # Realism switches (PLAN.md §5 item 0) are injected by scene.load_config;
     # opt into the main-process JPEG product explicitly.
     cfg["realism"] = dict(enabled=True, jpeg=True)
+    # A real plate already contains its own sun and lamp highlights. Re-running
+    # the synthetic glare stage on top turned a dispensed flare fan and a white
+    # van roof into white blobs -- which is fatal for a detection sample. The
+    # curated presets opt out; this dataset must too.
+    cfg.setdefault("optical", {}).setdefault("camera", {}).setdefault(
+        "flare", {})["enabled"] = False
     cfg["name"] = "ds1109v1_" + dom["key"]
 
     # All model / plate references become absolute so the scene file can live

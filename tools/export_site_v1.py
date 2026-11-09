@@ -93,14 +93,17 @@ def _as_rgb(path):
     im = Image.open(path)
     if im.mode == "RGB":
         return im.copy()
-    if im.mode in ("L", "I;16", "I", "P"):
-        # 16-bit LWIR must be windowed to 8-bit before WebP encoding.
-        if im.mode == "I;16":
-            import numpy as np
-            a = np.asarray(im, dtype=np.float32)
-            lo, hi = float(a.min()), float(a.max())
+    # 16-bit LWIR must be windowed to 8-bit before WebP encoding. Both "I;16"
+    # and plain "I" carry counts far above 255; convert("L") clips them and the
+    # whole frame turns white, so rescale by the actual range instead.
+    if im.mode in ("I;16", "I"):
+        import numpy as np
+        a = np.asarray(im, dtype=np.float32)
+        lo, hi = float(a.min()), float(a.max())
+        if hi > 255.0:
             a = (a - lo) / max(hi - lo, 1.0) * 255.0
-            return Image.fromarray(a.astype("uint8"), "L").convert("RGB")
+        return Image.fromarray(a.astype("uint8"), "L").convert("RGB")
+    if im.mode in ("L", "P"):
         return im.convert("L").convert("RGB")
     return im.convert("RGB")
 
