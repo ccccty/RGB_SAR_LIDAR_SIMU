@@ -1,0 +1,109 @@
+{
+ "name": "p_sea_island_active",
+ "title": "海 · 近岸岛礁 · 有源干扰 ｜ 5帧 × 三模态",
+ "note": "v1 海域基线：2.2 km / 12° 斜俯视、480 m 平铺；海面纹理均匀，不写天空卡避免盖住底板。 干扰组：噪声压制 + DRFM 假目标 + 域专属欺骗",
+ "tags": [
+  "sea",
+  "island",
+  "active",
+  "v1-baseline"
+ ],
+ "environment": {
+  "kind": "sea",
+  "weather": "clear",
+  "background": {
+   "mode": "library",
+   "category": "island",
+   "file": "03_Phi_Phi_From_Above_Unsplash.jpg",
+   "span_m": 480.0,
+   "sky_card": false,
+   "offset": [
+    0.5,
+    0.5
+   ]
+  }
+ },
+ "objects": [
+  {
+   "asset": "军舰/导弹艇.obj",
+   "cls": "ship",
+   "scale": 1.42,
+   "count": 1,
+   "rcs_db": 20.0
+  }
+ ],
+ "ecm": {
+  "mode": "active",
+  "entities": [
+   {
+    "id": "jammer_01",
+    "kind": "noise_jammer",
+    "erp_w": 200.0,
+    "jam_bandwidth_mhz": 200.0,
+    "mode": "barrage",
+    "band": "Ku",
+    "look_at_sensor": true,
+    "sidelobe_db": -25.0,
+    "off_band_factor": 0.05,
+    "rcs_m2": 0.2,
+    "visible": true,
+    "note": "支援干扰机：宽带噪声压制，抬高雷达噪声底"
+   },
+   {
+    "id": "drfm_01",
+    "kind": "false_target",
+    "count": 4,
+    "range_offset_m": 150.0,
+    "range_step_m": 210.0,
+    "power_ratio": 1.6,
+    "band": "Ku",
+    "visible": true,
+    "note": "DRFM 转发式距离假目标：4 个假距离门"
+   },
+   {
+    "id": "vgpo_01",
+    "kind": "velocity_gate_pull_off",
+    "count": 1,
+    "rate_mps": 8.0,
+    "max_offset_mps": 60.0,
+    "power_ratio": 1.2,
+    "band": "Ku",
+    "visible": true,
+    "note": "速度波门拖引：针对反舰雷达的多普勒跟踪"
+   }
+  ]
+ },
+ "view": {
+  "range_km": 2.2,
+  "aspect": "look_down",
+  "fov_deg": 12.0,
+  "views": "single",
+  "width": 768,
+  "height": 576,
+  "wide_width": 768,
+  "wide_height": 576,
+  "closing_mps": 12.0
+ },
+ "capture": {
+  "sensors": [
+   "optical",
+   "ir",
+   "radar"
+  ],
+  "frames": 5,
+  "fps": 10.0,
+  "seed": 1220
+ },
+ "effects": {
+  "plume": true,
+  "supersample": 2,
+  "flare": false
+ },
+ "output": {
+  "preview": true,
+  "coco": true,
+  "yolo": true,
+  "readme": true
+ },
+ "_saved_at": "preset"
+}

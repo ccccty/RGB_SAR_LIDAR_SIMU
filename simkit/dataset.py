@@ -70,6 +70,73 @@ def plan_frames(cfg, n_frames, base_seed, dt, frame_offset=0, total_frames=None)
         yield s
 
 
+#: Renderers cannot allocate a 0-sized or unbounded frame; reject those here
+#: instead of letting them fail with an opaque numpy/Blender traceback.
+_MAX_DIM = 4096
+
+
+def _check_dims(w, h, where):
+    """Raise ValueError for a width/height that is invalid or out of range."""
+    for label, val in (("width", w), ("height", h)):
+        if val is None:            # not declared: _view_pose falls back to 480/360
+            continue
+        try:
+            n = int(val)
+        except (TypeError, ValueError):
+            raise ValueError("%s 的 %s 不是有效整数：%r" % (where, label, val))
+        if n <= 0 or n > _MAX_DIM:
+            raise ValueError("%s 的 %s=%s 非法（须为 1..%d）；请修正场景里的 width/height。"
+                             % (where, label, n, _MAX_DIM))
+
+
+#: Sensor blocks that carry a camera image size. Deliberately NOT sar/radar/
+#: lidar: those blocks describe physics grids, not a requested W/H.
+_SIZE_CAMERAS = ("optical", "eo_camera", "ir_camera", "camera")
+
+
+def _size_override_present(cfg, width, height):
+    """True when the scene asks for a W/H that non-optical modes cannot honour.
+
+    The workbench size feature writes the recipe dims into the scene JSON
+    (``clip.views[]`` for dual/seeker views and the camera blocks on the legacy
+    path); neither CLI nor studio passes width/height to run(), so the cfg
+    checks below are the path that actually fires in production. The explicit
+    kwargs are kept only as a compatible fallback.
+    """
+    if width is not None or height is not None:
+        return True
+    if cfg.get("width") is not None or cfg.get("height") is not None:
+        return True
+    for v in ((cfg.get("clip") or {}).get("views") or []):
+        if isinstance(v, dict) and (v.get("width") is not None
+                                    or v.get("height") is not None):
+            return True
+    sensors = cfg.get("sensors") or {}
+    for name in _SIZE_CAMERAS:
+        cam = sensors.get(name)
+        if isinstance(cam, dict) and (cam.get("width") is not None
+                                      or cam.get("height") is not None):
+            return True
+    rv = ((cfg.get("recipe") or {}).get("view") or {})
+    if isinstance(rv, dict) and (rv.get("width") is not None
+                                 or rv.get("height") is not None):
+        return True
+    return False
+
+
+def _gsd_m_per_px(range_m, fov_deg, width):
+    """Ground sample distance at the target: 2*range*tan(fov/2)/W."""
+    if range_m is None or fov_deg is None or not width:
+        return None
+    try:
+        r, f, w = float(range_m), float(fov_deg), float(width)
+    except (TypeError, ValueError):
+        return None
+    if r <= 0 or f <= 0 or f >= 180 or w <= 0:
+        return None
+    return round(2.0 * r * np.tan(np.deg2rad(f) / 2.0) / w, 6)
+
+
 def _views_of(states, cfg):
     """Union of the field-of-view definitions used anywhere in the run.
 
@@ -92,6 +159,10 @@ def _views_of(states, cfg):
                or (cfg.get("sensors") or {}).get("ir_camera") or {})
         out = [dict(name="optical", tag="", fov_deg=cam.get("fov_deg"),
                     width=cam.get("width"), height=cam.get("height"))]
+    # One strict gate for every declared dimension, on both the clip.views and
+    # the legacy path, before any renderer can see a 0 or a huge allocation.
+    for v in out:
+        _check_dims(v.get("width"), v.get("height"), "view %r" % v["name"])
     out[0]["tag"] = ""        # the primary view owns the legacy paths
     return out
 
@@ -100,16 +171,28 @@ def _view_pose(state, view, cfg):
     """Per-frame camera dict for one view (falls back to the sensor config)."""
     v = (state.get("views") or {}).get(view["name"])
     if v:
+        # Only a missing/None value falls back; an explicit 0 must reach
+        # _check_dims and be rejected instead of silently becoming 480/360.
+        w, h = v.get("width"), v.get("height")
+        w = view["width"] if w is None else w
+        h = view["height"] if h is None else h
+        w = 480 if w is None else w
+        h = 360 if h is None else h
+        width, height = int(w), int(h)
+        _check_dims(width, height, "view %r (frame)" % view["name"])
         return dict(pos=[float(x) for x in v["pos"]],
                     look_at=[float(x) for x in v.get("look_at", [0, 0, 0])],
                     fov_deg=float(v.get("fov_deg") or view["fov_deg"]),
-                    width=int(v.get("width") or view["width"] or 480),
-                    height=int(v.get("height") or view["height"] or 360),
+                    width=width, height=height,
                     roll_deg=float(v.get("roll_deg", 0.0) or 0.0))
     cam = ((state.get("cfg") or {}).get("sensors") or {}).get("ir_camera", {})
+    _cw, _ch = cam.get("width"), cam.get("height")
+    width = int(480 if _cw is None else _cw)
+    height = int(360 if _ch is None else _ch)
+    _check_dims(width, height, "view %r (ir_camera)" % view["name"])
     return dict(pos=cam.get("pos", [0, 0, 0]), look_at=cam.get("look_at", [0, 0, 1]),
                 fov_deg=float(cam.get("fov_deg", 30.0)),
-                width=int(cam.get("width", 480)), height=int(cam.get("height", 360)),
+                width=width, height=height,
                 roll_deg=0.0)
 
 
@@ -601,7 +684,7 @@ def radar_target_rows(world, radar_cfg, detections):
 
 
 def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, quiet=False,
-        frame_offset=0, part=None, total_frames=None):
+        frame_offset=0, part=None, total_frames=None, width=None, height=None):
     cfg = scene.load_config(cfg_path)
     jpeg_settings = _jpeg_settings(cfg)
     disturbances = interference.validate(cfg.get("interference"))
@@ -610,6 +693,17 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
     sensors = tuple(sensors)
     if "all" in sensors:
         sensors = ("optical", "ir", "radar", "lidar", "sar")
+    # SAR has no engine-default fallback: without sensors.sar the old gate
+    # (have_sar) skipped the whole branch and the run exited 0 with an empty
+    # product. Fail loudly instead. ir/radar/lidar keep their intentional
+    # "undeclared -> engine defaults" behaviour; do not touch that.
+    if "sar" in sensors and not (cfg.get("sensors") or {}).get("sar"):
+        raise ValueError(
+            "请求了 sar，但场景缺少 sensors.sar 配置，SAR 不会产出任何图像。"
+            "请在场景 JSON 的 sensors 下补一个 sar 块，最小可用配置："
+            '"sensors": {"sar": {"band": "X", "n_cross": 256, "n_samples": 512, '
+            '"swath_center_m": 2500, "swath_width_m": 280}}。'
+            "SAR 图幅由 n_cross × n_samples 决定，不能用 width/height 覆盖。")
     if jpeg_settings is not None and "optical" in sensors:
         # Fail before a multi-hour render: the JPEG pass runs here, in the
         # project interpreter, and needs the one dependency Blender lacks.
@@ -632,6 +726,18 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
     states = list(plan_frames(cfg, n_frames, base_seed, dt, frame_offset=frame_offset,
                               total_frames=total_frames))
     views = _views_of(states, cfg)
+    # Legacy scenes declare sizes in sensors.* only. _views_of keeps its
+    # optical-first priority, so an ir_camera with different dimensions is
+    # silently ignored; say so instead of shipping a size nobody asked for.
+    _sm = cfg.get("sensors") or {}
+    _opt, _irc = _sm.get("optical"), _sm.get("ir_camera")
+    if _opt and _irc and ((_opt.get("width"), _opt.get("height"))
+                          != (_irc.get("width"), _irc.get("height"))):
+        print("  [警告] 场景同时在 sensors.optical 与 sensors.ir_camera 声明了尺寸，"
+              "但两者不一致（optical=%sx%s，ir_camera=%sx%s）；legacy 路径按既有优先级"
+              "取 optical 并忽略 ir_camera 的尺寸。请统一两者或改用 clip.views 明确指定。"
+              % (_opt.get("width"), _opt.get("height"),
+                 _irc.get("width"), _irc.get("height")), file=sys.stderr)
 
     # Only the sensors this run actually produces get directories: an empty
     # images/sar in an IR-only run makes the exporter and the site think the
@@ -709,6 +815,20 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
             print("  [提示] 场景未声明 %s 传感器，使用引擎默认参数生成。"
                   "如需精确复现，请在场景里补 sensors.%s。"
                   % (_s, "ir_camera" if _s == "ir" else _s), file=sys.stderr)
+
+    # Non-optical image sizes come from physics, not from a W/H request. When a
+    # caller supplies a size override, say which parameters actually set the
+    # grid instead of silently ignoring the request. stdout only, quiet skips it.
+    _phys = [m for m in ("sar", "radar", "lidar") if m in sensors]
+    if _phys and _size_override_present(cfg, width, height) and not quiet:
+        print("  [提示] %s 的图幅由物理参数决定，不受 width/height 覆盖影响。"
+              "要达到目标 W×H，请改这些配置：" % "/".join(_phys))
+        if "sar" in sensors:
+            print("    SAR    = sensors.sar.n_cross × sensors.sar.n_samples")
+        if "radar" in sensors:
+            print("    雷达RD = (sensors.radar.n_samples // 2) × sensors.radar.n_chirps")
+        if "lidar" in sensors:
+            print("    LiDAR  = sensors.lidar.n_el × sensors.lidar.n_az")
 
     if "optical" in sensors:
         # A scene may legitimately have no optical camera at all (demo_ir only
@@ -884,10 +1004,21 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
                                             radiance=out["radiance"].astype(np.float32),
                                             **{"coverage_%d" % oid: coverage.astype(np.float32)
                                                for oid, coverage in (out.get("instance_coverage") or {}).items()})
+                    # Built only from this run's deterministic data: the view
+                    # pose, the declared range and the rendered shape.
+                    _ir_meta = dict(
+                        modality="ir",
+                        fov_deg=round(float(vp["fov_deg"]), 4),
+                        radiometric_calibration=(
+                            "16-bit counts: linear encoding of band radiance; "
+                            "8-bit: display preview only, not calibrated radiance"))
+                    _gsd = _gsd_m_per_px(s.get("range_m"), vp["fov_deg"], W)
+                    if _gsd is not None:
+                        _ir_meta["gsd_m_per_px"] = _gsd
                     png.write_gray16(os.path.join(out_dir, dirs["ir" + bt + vt], name),
-                                     out["counts_u16"])
+                                     out["counts_u16"], meta=_ir_meta)
                     png.write_gray8(os.path.join(out_dir, dirs["ir_preview" + bt + vt], name),
-                                    out["preview"])
+                                    out["preview"], meta=_ir_meta)
                     boxes = _boxes_for(w, out["obj_id"], vp, W, H)
                     img, anns = labels.to_coco(boxes, w, fid, name, W, H)
                     coco_irs[(bnm, vt)]["images"].append(img)
@@ -962,12 +1093,22 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
             # peak still saturates, which is what a real STC curve gives.
             rd_fig = radar_scope.render_rd(out["rd_map"], r_ax, d_ax,
                                            targets=rows, meta=_meta, dyn_db=40.0)
-            png.write_rgb8(os.path.join(out_dir, dirs["radar"], name), rd_fig["rgb"])
+            # The figure is a display product; the physical grid is the RD map
+            # behind it: (n_samples//2) range bins x n_chirps doppler bins.
+            _rad_cal = ("dB colour scale; display figure (axes/target table), "
+                        "not a calibrated radiance product")
+            _ns, _nc = int(_rc.get("n_samples") or 0), int(_rc.get("n_chirps") or 0)
+            _rd_grid = "%dx%d" % (_ns // 2 if _ns else int(r_ax.size),
+                                  _nc if _nc else int(d_ax.size))
+            _rd_meta = dict(modality="radar_rd", grid=_rd_grid,
+                            radiometric_calibration=_rad_cal)
+            png.write_rgb8(os.path.join(out_dir, dirs["radar"], name),
+                           rd_fig["rgb"], meta=_rd_meta)
             rd_clean = radar_scope.render_rd(out["rd_map"], r_ax, d_ax,
                                              targets=rows, meta=_meta, dyn_db=40.0,
                                              annotate=False)
             png.write_rgb8(os.path.join(out_dir, dirs["radar_clean"], name),
-                           rd_clean["rgb"])
+                           rd_clean["rgb"], meta=_rd_meta)
             rd_h, rd_w = int(rd_fig["rgb"].shape[0]), int(rd_fig["rgb"].shape[1])
             # A detection is one range/Doppler cell, i.e. a fraction of a pixel
             # in the figure, so its box is padded to the echo's few-cell extent
@@ -1033,12 +1174,16 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
             np.maximum.at(ra_az, _inv, ra)
             ra_fig = radar_scope.render_ra(ra_az, r_ax, _uniq_az, targets=rows,
                                            meta=dict(_meta, ra_layout="beams_range"))
-            png.write_rgb8(os.path.join(out_dir, dirs["radar_ra"], name), ra_fig["rgb"])
+            _ra_meta = dict(modality="radar_ra",
+                            grid="%dx%d" % (int(ra_az.shape[1]), int(ra_az.shape[0])),
+                            radiometric_calibration=_rad_cal)
+            png.write_rgb8(os.path.join(out_dir, dirs["radar_ra"], name),
+                           ra_fig["rgb"], meta=_ra_meta)
             ra_clean = radar_scope.render_ra(ra_az, r_ax, _uniq_az, targets=rows,
                                              meta=dict(_meta, ra_layout="beams_range"),
                                              annotate=False)
             png.write_rgb8(os.path.join(out_dir, dirs["radar_ra_clean"], name),
-                           ra_clean["rgb"])
+                           ra_clean["rgb"], meta=_ra_meta)
             rlab = labels.radar_labels(w, out["detections"], fid)
             # Where the brightest echo sits in that picture, in figure pixels and
             # in physical units: the map is mostly noise floor and one 1-cell
@@ -1166,10 +1311,15 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
             rg[far] = out["max_range_m"]
             vis = np.clip(1.0 - rg / out["max_range_m"], 0.0, 1.0) ** 0.55
             vis[far] = 0.0
+            # Both products share the (n_el, n_az) beam raster: H = n_el, W = n_az.
+            _lid_meta = dict(modality="lidar_range",
+                             grid="%dx%d" % (int(H), int(W)),
+                             range_m=round(float(out["max_range_m"]), 4))
             png.write_gray8(os.path.join(out_dir, dirs["lidar_range"], name),
-                            np.round(vis * 255).astype(np.uint8))
+                            np.round(vis * 255).astype(np.uint8), meta=_lid_meta)
             png.write_gray8(os.path.join(out_dir, dirs["lidar_intensity"], name),
-                            np.round(np.clip(out["intensity"], 0, 1) * 255).astype(np.uint8))
+                            np.round(np.clip(out["intensity"], 0, 1) * 255).astype(np.uint8),
+                            meta=dict(_lid_meta, modality="lidar_intensity"))
             lidar.write_ply(os.path.join(out_dir, dirs["lidar_points"], "%06d.ply" % f), out["cloud"], out["origin"])
             boxes = _boxes_for(w, out["obj_id"], None, W, H)
             img, anns = labels.to_coco(boxes, w, fid, name, W, H)
@@ -1207,7 +1357,21 @@ def run(cfg_path, out_dir, n_frames=None, sensors=("ir", "radar"), seed=None, qu
             name = "%06d.png" % f
             img8 = sout["image_u8"]
             H, W = img8.shape
-            png.write_gray8(os.path.join(out_dir, dirs["sar"], name), img8)
+            _sc = sout.get("cfg") or {}
+            # SAR is a calibrated gamma0 product; the 8-bit PNG is a display
+            # stretch of it. grid = n_cross x n_samples (the focused image).
+            _sar_meta = dict(
+                modality="sar",
+                grid="%dx%d" % (int(_sc.get("n_cross") or H),
+                                int(_sc.get("n_samples") or W)),
+                radiometric_calibration=("calibrated gamma0 product; "
+                                         "8-bit display stretch, not raw DN"))
+            _sar_swath = sout.get("swath") or {}
+            if _sar_swath.get("ground_sampling_m"):
+                _sar_meta["gsd_m_per_px"] = round(
+                    float(_sar_swath["ground_sampling_m"]), 6)
+            png.write_gray8(os.path.join(out_dir, dirs["sar"], name), img8,
+                            meta=_sar_meta)
             boxes = {}
             if sout.get("obj_map") is not None:
                 boxes = labels.boxes_from_mask(sout["obj_map"], w, min_px=2)

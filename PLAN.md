@@ -134,8 +134,8 @@ python tools\export_yolo.py
 
 ### P2-5 站点与构建素材分离发布
 
-**问题**：站点是仓库根目录直接发布的，所以 276.7 MB 的构建输入
-（`assets/backdrops`、`assets/models`、`assets/hdri`、`assets/refs`）跟着一起上了
+**问题**：站点是仓库根目录直接发布的，所以 254.3 MB 的构建输入
+（`assets/backdrops`、`assets/models`、`assets/refs`）跟着一起上了
 Pages，而浏览器只会取 28.8 MB（`data/` + `assets/hero` + `assets/figures`）。
 这与 README §6 自述的体积纪律相矛盾。
 

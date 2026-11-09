@@ -32,13 +32,15 @@
     radar: [1280, 720], radar_ra: [1280, 800],
     lidar_range: [256, 192], lidar_intensity: [256, 192], sar: [1024, 1024]
   };
-  // The showcase was air only. One curated maritime scene is explicitly opted
-  // in; everything else matching NON_AIR stays out, including
-  // demo_three_ships_plate (an AIR run whose id merely mentions ships).
-  // Keeping the opt-in exact means the published air cards do not change when
-  // a sea scene is added.
+  // The showcase was air only, and NON_AIR kept maritime/ground runs out of
+  // the air cards. The 2026-11-09 curated set is explicitly tri-domain, so the
+  // v1_* scenes (air / land / sea) plus the historical maritime demo are opted
+  // in by exact id pattern. Everything else matching NON_AIR stays out,
+  // including demo_three_ships_plate (an AIR run whose id merely mentions
+  // ships). Keeping the allow-list exact means adding a sea/land scene never
+  // silently changes which older cards are still published.
   var NON_AIR = /(ground|surface|sea|ship|boat|vehicle|terrain|city)/i;
-  var SEA_ALLOW = /^demo_sea_surface$/;
+  var SEA_ALLOW = /^(demo_sea_surface|v1_.*)$/;
   function isNonAir(id) { return NON_AIR.test(id) && !SEA_ALLOW.test(id); }
 
   // frame: -1 means "no choice yet" so the scene's curated hero frame wins.

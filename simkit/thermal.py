@@ -9,6 +9,7 @@ documented in README as an approximation.
 import numpy as np
 
 from . import materials as matlib
+from . import weather as weatherlib
 
 SIGMA = 5.670374419e-8
 
@@ -20,8 +21,14 @@ def sun_vector(elev_deg, az_deg):
 
 
 def sky_temp(T_air, rh=0.5):
-    """Swinbank clear-sky temperature with a humidity correction."""
-    return 0.0552 * T_air ** 1.5 * (1.0 - 0.25 * np.clip(rh, 0.0, 1.0))
+    """Grey-equivalent sky temperature for the no-derived-weather fallback.
+
+    The old implementation was Swinbank * (1 - 0.25*RH), which has the humidity
+    sign backwards and reads 25-35 K too cold. The main loop uses the derived
+    ``_weather.t_sky_k``; this helper only runs for bare API calls and unit
+    tests, and must still return the same Clark-Allen/EnergyPlus physics.
+    """
+    return weatherlib.sky_temperature_k(float(T_air) - 273.15, rh)
 
 
 def face_normals(world):

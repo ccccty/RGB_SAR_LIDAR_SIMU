@@ -1,0 +1,103 @@
+{
+ "name": "p_air_skyclear_active",
+ "title": "空 · 高空晴空 · 有源干扰 ｜ 5帧 × 三模态",
+ "note": "v1 空域基线：2.8 km / 8° 窄视场 pursuit，目标 28–34 px。 干扰组：噪声压制 + DRFM 假目标 + 域专属欺骗",
+ "tags": [
+  "air",
+  "sky",
+  "active",
+  "v1-baseline"
+ ],
+ "environment": {
+  "kind": "sky",
+  "weather": "clear",
+  "background": {
+   "mode": "library",
+   "category": "sky",
+   "file": "02_10000_Ft_jpg.jpg"
+  }
+ },
+ "objects": [
+  {
+   "asset": "军用飞机/双发战斗机.obj",
+   "cls": "fighter",
+   "scale": 0.84,
+   "count": 1,
+   "rcs_db": 5.0
+  }
+ ],
+ "ecm": {
+  "mode": "active",
+  "entities": [
+   {
+    "id": "jammer_01",
+    "kind": "noise_jammer",
+    "erp_w": 200.0,
+    "jam_bandwidth_mhz": 200.0,
+    "mode": "barrage",
+    "band": "Ku",
+    "look_at_sensor": true,
+    "sidelobe_db": -25.0,
+    "off_band_factor": 0.05,
+    "rcs_m2": 0.2,
+    "visible": true,
+    "note": "支援干扰机：宽带噪声压制，抬高雷达噪声底"
+   },
+   {
+    "id": "drfm_01",
+    "kind": "false_target",
+    "count": 4,
+    "range_offset_m": 150.0,
+    "range_step_m": 210.0,
+    "power_ratio": 1.6,
+    "band": "Ku",
+    "visible": true,
+    "note": "DRFM 转发式距离假目标：4 个假距离门"
+   },
+   {
+    "id": "rgpo_01",
+    "kind": "range_gate_pull_off",
+    "count": 1,
+    "rate_mps": 80.0,
+    "max_offset_m": 300.0,
+    "power_ratio": 1.2,
+    "band": "Ku",
+    "visible": true,
+    "note": "距离波门拖引：把跟踪门从真目标上拖开"
+   }
+  ]
+ },
+ "view": {
+  "range_km": 2.8,
+  "aspect": "pursuit",
+  "fov_deg": 8.0,
+  "views": "single",
+  "width": 768,
+  "height": 576,
+  "wide_width": 768,
+  "wide_height": 576,
+  "closing_mps": 48.0
+ },
+ "capture": {
+  "sensors": [
+   "optical",
+   "ir",
+   "radar"
+  ],
+  "frames": 5,
+  "fps": 10.0,
+  "seed": 1000
+ },
+ "effects": {
+  "plume": true,
+  "supersample": 2,
+  "flare": false
+ },
+ "output": {
+  "preview": true,
+  "coco": true,
+  "yolo": true,
+  "readme": true
+ },
+ "_saved_at": "preset"
+}

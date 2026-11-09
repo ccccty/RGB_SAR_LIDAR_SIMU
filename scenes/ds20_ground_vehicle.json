@@ -293,7 +293,8 @@
    "kind": "ground",
    "weather": "clear",
    "background": {
-    "mode": "none"
+    "mode": "library",
+    "category": "rural"
    }
   },
   "objects": [

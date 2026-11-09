@@ -1,0 +1,187 @@
+{
+ "name": "p_air_skyclear_passive",
+ "title": "空 · 高空晴空 · 无源干扰 ｜ 5帧 × 三模态",
+ "note": "v1 空域基线：2.8 km / 8° 窄视场 pursuit，目标 28–34 px。 干扰组：箔条云 + 角反射器 + 拖曳诱饵 + 红外诱饵弹",
+ "tags": [
+  "air",
+  "sky",
+  "passive",
+  "v1-baseline"
+ ],
+ "environment": {
+  "kind": "sky",
+  "weather": "clear",
+  "background": {
+   "mode": "library",
+   "category": "sky",
+   "file": "02_10000_Ft_jpg.jpg"
+  }
+ },
+ "objects": [
+  {
+   "asset": "军用飞机/双发战斗机.obj",
+   "cls": "fighter",
+   "scale": 0.84,
+   "count": 1,
+   "rcs_db": 5.0
+  }
+ ],
+ "ecm": {
+  "mode": "passive",
+  "entities": [
+   {
+    "id": "chaff_01",
+    "kind": "chaff_cloud",
+    "radius_m": 2.0,
+    "growth_mps": 4.0,
+    "rcs_m2": 100.0,
+    "decay_s": 6.0,
+    "dilution_exponent": 2.0,
+    "fall_mps": 1.5,
+    "wind": [
+     6.0,
+     0.0,
+     0.0
+    ],
+    "aspect": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "band": "Ku",
+    "visible": true,
+    "note": "箔条云：体散射无源干扰，不遮挡目标"
+   },
+   {
+    "id": "corner_01",
+    "kind": "corner_reflector",
+    "size_m": 0.3,
+    "rcs_m2": null,
+    "band": "Ku",
+    "visible": true,
+    "note": "0.3 m 三面角反射器：Ku 波段约 28.8 dBsm 的强点假目标"
+   },
+   {
+    "id": "decoy_01",
+    "kind": "decoy",
+    "size_m": 0.3,
+    "rcs_m2": 0.5,
+    "tether_m": 80.0,
+    "band": "Ku",
+    "visible": true,
+    "note": "拖曳式无源诱饵，随目标滞后运动"
+   },
+   {
+    "id": "flare_01",
+    "kind": "infrared_flare",
+    "radius_m": 0.18,
+    "trail_m": 2.4,
+    "temp_c": 2000.0,
+    "decay_s": 3.0,
+    "rcs_m2": 0.02,
+    "mat": "flare_pellet",
+    "band": "Ku",
+    "visible": true,
+    "note": "抛射式红外诱饵：手-sized 发光弹 + 短尾迹，远小于载机"
+   },
+   {
+    "id": "flare_02",
+    "kind": "infrared_flare",
+    "radius_m": 0.2,
+    "trail_m": 2.7,
+    "temp_c": 2000.0,
+    "decay_s": 3.0,
+    "rcs_m2": 0.02,
+    "mat": "flare_pellet",
+    "band": "Ku",
+    "visible": true,
+    "note": "抛射式红外诱饵：手-sized 发光弹 + 短尾迹，远小于载机"
+   },
+   {
+    "id": "flare_03",
+    "kind": "infrared_flare",
+    "radius_m": 0.22,
+    "trail_m": 3.0,
+    "temp_c": 2000.0,
+    "decay_s": 3.0,
+    "rcs_m2": 0.02,
+    "mat": "flare_pellet",
+    "band": "Ku",
+    "visible": true,
+    "note": "抛射式红外诱饵：手-sized 发光弹 + 短尾迹，远小于载机"
+   },
+   {
+    "id": "flare_04",
+    "kind": "infrared_flare",
+    "radius_m": 0.24,
+    "trail_m": 3.3,
+    "temp_c": 2000.0,
+    "decay_s": 3.0,
+    "rcs_m2": 0.02,
+    "mat": "flare_pellet",
+    "band": "Ku",
+    "visible": true,
+    "note": "抛射式红外诱饵：手-sized 发光弹 + 短尾迹，远小于载机"
+   },
+   {
+    "id": "flare_05",
+    "kind": "infrared_flare",
+    "radius_m": 0.18,
+    "trail_m": 2.4,
+    "temp_c": 2000.0,
+    "decay_s": 3.0,
+    "rcs_m2": 0.02,
+    "mat": "flare_pellet",
+    "band": "Ku",
+    "visible": true,
+    "note": "抛射式红外诱饵：手-sized 发光弹 + 短尾迹，远小于载机"
+   },
+   {
+    "id": "flare_06",
+    "kind": "infrared_flare",
+    "radius_m": 0.2,
+    "trail_m": 2.7,
+    "temp_c": 2000.0,
+    "decay_s": 3.0,
+    "rcs_m2": 0.02,
+    "mat": "flare_pellet",
+    "band": "Ku",
+    "visible": true,
+    "note": "抛射式红外诱饵：手-sized 发光弹 + 短尾迹，远小于载机"
+   }
+  ]
+ },
+ "view": {
+  "range_km": 2.8,
+  "aspect": "pursuit",
+  "fov_deg": 8.0,
+  "views": "single",
+  "width": 768,
+  "height": 576,
+  "wide_width": 768,
+  "wide_height": 576,
+  "closing_mps": 48.0
+ },
+ "capture": {
+  "sensors": [
+   "optical",
+   "ir",
+   "radar"
+  ],
+  "frames": 5,
+  "fps": 10.0,
+  "seed": 1001
+ },
+ "effects": {
+  "plume": true,
+  "supersample": 2,
+  "flare": false
+ },
+ "output": {
+  "preview": true,
+  "coco": true,
+  "yolo": true,
+  "readme": true
+ },
+ "_saved_at": "preset"
+}

@@ -1,0 +1,513 @@
+{
+  "name": "ds1109_sea_ship",
+  "seed": 27,
+  "ground": {
+    "enabled": true,
+    "type": "sea",
+    "mat": "seawater",
+    "size": 5093.4,
+    "z": 0.0,
+    "wind_ms": 15,
+    "nx": 48,
+    "ny": 48,
+    "seed": 7,
+    "backdrop": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\open\\03_Sea_wave_abstract_texture_Unsplash.jpg",
+    "backdrop_span_m": 481.3774,
+    "backdrop_span_y_m": 361.033,
+    "backdrop_aligned": true,
+    "backdrop_offset": [
+      0.5,
+      0.5
+    ]
+  },
+  "weather": {
+    "mode": "fixed",
+    "preset": "clear"
+  },
+  "sun": {
+    "elev_deg": 38.0,
+    "az_deg": 120.0,
+    "irradiance": 900.0,
+    "on": true
+  },
+  "air": {
+    "temp_c": 12.0,
+    "rh": 0.75,
+    "wind_mps": 6.0
+  },
+  "ir": {
+    "bands": [
+      "lwir"
+    ],
+    "netd_mk": 28.0,
+    "psf_px": 0.8,
+    "nuc": {
+      "enabled": true,
+      "prnu": 0.008,
+      "dsnu_counts": 25,
+      "column_fpn_counts": 6,
+      "dead_px": 0.0002,
+      "seed": 27
+    },
+    "background_image": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\open\\03_Sea_wave_abstract_texture_Unsplash.jpg",
+    "preview_span_c": 20
+  },
+  "optical": {
+    "samples": 16,
+    "exposure": 0.0,
+    "export_geometry": true,
+    "skin": true,
+    "camera": {
+      "diffraction": {
+        "enabled": true,
+        "f_number": 2.8
+      },
+      "sensor": {
+        "enabled": true
+      },
+      "vignetting": {
+        "enabled": true,
+        "fov_deg": 12.0,
+        "strength": 0.55,
+        "f_number": 2.8
+      },
+      "chromatic_aberration": {
+        "enabled": true,
+        "lateral_px": 0.6
+      },
+      "flare": {
+        "enabled": true,
+        "threshold": 0.94,
+        "strength": 0.22,
+        "count": 3
+      }
+    },
+    "sky_zenith_rgb": [
+      0.03,
+      0.075,
+      0.22
+    ],
+    "sky_horizon_rgb": [
+      0.52,
+      0.6,
+      0.72
+    ],
+    "sky_strength": 1.0,
+    "sky_weather": "clear",
+    "sky_image": "D:\\work\\多模态数据集生成\\RGB_SAR_LIDAR_SIMU\\assets\\backdrops\\open\\03_Sea_wave_abstract_texture_Unsplash.jpg",
+    "sensor": {
+      "enabled": true,
+      "airlight_linear_rgb": [
+        0.35,
+        0.45,
+        0.6
+      ],
+      "psf_sigma_px": 0.6,
+      "reference_exposure_s": 0.001,
+      "full_well_e": 30000.0,
+      "white_level_linear": 1.0,
+      "read_noise_e": 3.0,
+      "prnu": 0.001,
+      "bits": 12,
+      "seed": 27,
+      "shot_noise": true
+    },
+    "auto_exposure": false
+  },
+  "frames": {
+    "n": 3,
+    "dt": 0.1
+  },
+  "objects": [
+    {
+      "name": "ship_01",
+      "cls": "ship",
+      "shape": "obj",
+      "model": "../assets/models/军舰/导弹艇.obj",
+      "pos": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "vel": [
+        -4.461,
+        -9.147,
+        6.359
+      ],
+      "rot": -115.999,
+      "yaw_mode": "velocity",
+      "scale": 1.41821469,
+      "mat": "paint_warship",
+      "temp_c_hint": 24.0,
+      "rcs_db": 20.0,
+      "attitude_mode": "coordinated",
+      "kinematics": {
+        "min_speed_mps": 0.0,
+        "max_speed_mps": 20.0,
+        "max_accel_mps2": 2.0,
+        "max_climb_mps": 1.0,
+        "min_altitude_m": 0.0,
+        "max_bank_deg": 8.0
+      },
+      "visible": true,
+      "label": true,
+      "z_offset_m": 0.0
+    }
+  ],
+  "sensors": {
+    "optical": {
+      "pos": [
+        -1014.904,
+        -2080.862,
+        1446.68
+      ],
+      "look_at": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "fov_deg": 12.0,
+      "width": 768,
+      "height": 576
+    },
+    "ir_camera": {
+      "pos": [
+        -1014.904,
+        -2080.862,
+        1446.68
+      ],
+      "look_at": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "fov_deg": 12.0,
+      "width": 768,
+      "height": 576
+    },
+    "radar": {
+      "band": "Ku",
+      "az_span_deg": 2.0,
+      "el_span_deg": 1.6,
+      "n_az": 40,
+      "n_el": 20,
+      "bandwidth_mhz": 50.0,
+      "n_samples": 4096,
+      "chirp_us": 16.384,
+      "pri_us": 32.768,
+      "v_nyq_mps": 147.56,
+      "unambiguous": true,
+      "range_res_m": 3.0,
+      "r_max_m": 6139.7,
+      "beamwidth_el_deg": 4.0,
+      "n_chirps": 64,
+      "tx_power_dbm": 43.0,
+      "noise_figure_db": 8.0,
+      "clutter_density": 0.06,
+      "mti_min_vr_mps": 0.0,
+      "pfa": 1e-06,
+      "swerling": "I",
+      "clutter_db": -6.0,
+      "ground_clutter_db": -35.0,
+      "pos": [
+        -1014.904,
+        -2080.862,
+        1446.68
+      ],
+      "look_at": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "up": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "loss_db": 4.0,
+      "beamwidth_az_deg": 1.0,
+      "clutter_ridge": true,
+      "sea_clutter_scale_db": 6,
+      "sea_clutter_db": -15
+    },
+    "lidar": {
+      "pos": [
+        -1014.904,
+        -2080.862,
+        1446.68
+      ],
+      "look_at": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "fov_deg": 12.0,
+      "width": 960,
+      "height": 720,
+      "n_az": 256,
+      "n_el": 192,
+      "max_range_m": 4368.0,
+      "range_spec_m": 3003.0,
+      "pulse_energy_nj": 4000.0,
+      "aperture_mm": 50.0
+    },
+    "sar": {
+      "band": "X",
+      "fc_ghz": 9.6,
+      "bandwidth_mhz": 300.0,
+      "prf_hz": 1200.0,
+      "n_pulses": 512,
+      "n_samples": 512,
+      "n_cross": 512,
+      "altitude_m": 1446.7,
+      "speed_mps": 120.0,
+      "heading_deg": 90.0,
+      "squint_deg": 90.0,
+      "side": "right",
+      "swath_center_m": 819.0,
+      "swath_width_m": 120.0,
+      "az_extent_m": 120.0,
+      "polarization": "VV",
+      "tx_power_w": 40.0,
+      "noise_figure_db": 4.0,
+      "loss_db": 3.0,
+      "antenna_len_m": 1.2,
+      "antenna_h_m": 0.35,
+      "resolution_scale": 1.0,
+      "looks": 2,
+      "oversample": 2,
+      "anchor": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "clip": {
+    "frames_per_clip": 3,
+    "camera": "ir_camera",
+    "views": [
+      {
+        "name": "seeker",
+        "tag": "",
+        "fov_deg": 12.0,
+        "width": 768,
+        "height": 576
+      }
+    ],
+    "seeker": {
+      "mode": "seeker",
+      "range_m": [
+        1850,
+        2730
+      ],
+      "closing": "in",
+      "closing_mps": 12.0,
+      "target_m": 20.1741,
+      "target_px": [
+        28,
+        34
+      ],
+      "az_span_deg": 0.3,
+      "el_span_deg": 0.3,
+      "los_jitter_deg": 0.01,
+      "wander_deg": 0.01,
+      "wander_hz": 0.09,
+      "keep_z": true,
+      "lag_s": 0.02,
+      "profile": "linear",
+      "aspect": "look_down",
+      "depression_deg": 32.0
+    },
+    "rig": {
+      "vibration_m": 0.01,
+      "vibration_deg": 0.0,
+      "lag_s": 0.02
+    }
+  },
+  "capture": {
+    "sensors": [
+      "optical",
+      "ir",
+      "radar"
+    ],
+    "frames": 3,
+    "fps": 10.0,
+    "seed": 27
+  },
+  "output": {
+    "preview": false,
+    "readme": false,
+    "yolo": false,
+    "coco": true
+  },
+  "recipe": {
+    "name": "ds20_v3_sea_ship",
+    "environment": {
+      "kind": "sea",
+      "weather": "clear",
+      "background": {
+        "mode": "library",
+        "category": "open"
+      }
+    },
+    "objects": [
+      {
+        "asset": "军舰/导弹艇.obj",
+        "cls": "ship",
+        "scale": 1.41821469,
+        "count": 1
+      }
+    ],
+    "ecm": {
+      "mode": "none",
+      "entities": []
+    },
+    "view": {
+      "range_km": 2.73,
+      "aspect": "look_down",
+      "ground_span_m": null,
+      "fov_deg": 12.0,
+      "views": "single",
+      "closing_mps": null,
+      "trajectory": {
+        "mode": "preset"
+      },
+      "width": 768,
+      "height": 576,
+      "wide_width": 1280,
+      "wide_height": 960
+    },
+    "capture": {
+      "sensors": [
+        "optical",
+        "ir",
+        "radar"
+      ],
+      "frames": 30,
+      "fps": 10.0,
+      "seed": 27
+    },
+    "output": {
+      "preview": true,
+      "coco": true,
+      "yolo": true,
+      "readme": true
+    },
+    "effects": {
+      "plume": true,
+      "supersample": 0
+    }
+  },
+  "research_baseline": {
+    "purpose": "generated from a recipe by simkit.scenegen",
+    "environment": "sea / clear / none",
+    "aspect": "look_down (in)",
+    "sensor_calibration": "nominal simulation settings, not measured sensor calibration"
+  },
+  "view": {
+    "aspect": "look_down"
+  },
+  "notes": [],
+  "__trimodal_contract": {
+    "view": {
+      "width": 768,
+      "height": 576,
+      "fov_deg": 12.0
+    },
+    "target_px": [
+      28,
+      34
+    ],
+    "aim_px": 31.0,
+    "frames": 3,
+    "modalities": [
+      "optical",
+      "ir_lwir",
+      "radar"
+    ],
+    "train_sources": {
+      "optical": "images/optical",
+      "infrared": "images/ir_preview_lwir",
+      "radar": "raw/radar (float32 power tensor)"
+    }
+  },
+  "acquisition": {
+    "rgb_exposure_s": 0.001
+  },
+  "atmosphere": {
+    "profile": "exponential",
+    "aerosol_scale_height_m": 1200.0,
+    "molecular_scale_height_m": 8000.0,
+    "water_scale_height_m": 2000.0,
+    "rain_scale_height_m": 2000.0
+  },
+  "__v2": {
+    "source": "ds20_sea_ship.json",
+    "backdrop": "../assets/backdrops/open/03_Sea_wave_abstract_texture_Unsplash.jpg",
+    "backdrop_span_m": 481.3774,
+    "scale_start": 0.77758537,
+    "target_m_start": 12.5359,
+    "r_nom_m": 2290.0,
+    "note": "realism switches opt-in; temp_c removed for thermal.solve",
+    "scale_calibrated": 0.76003305,
+    "target_m_calibrated": 12.5553
+  },
+  "__v3": {
+    "source": "ds20_v2_sea_ship.json",
+    "scale_start": 0.76003305,
+    "scale_first_pass": 1.22097386,
+    "scale_calibrated": 1.41821469,
+    "target_m_start": 12.5553,
+    "target_m_calibrated": 20.1741,
+    "r0_m": 2377.63,
+    "box_px_before": 19.297,
+    "box_px_first_pass": 26.689,
+    "box_px_verified": 31.008,
+    "backdrop": "../assets/backdrops/open/03_Sea_wave_abstract_texture_Unsplash.jpg",
+    "background_branch": "three_key",
+    "three_paths_same": true,
+    "three_paths_exist": true,
+    "ecm_load_mid": {},
+    "note": "30 frames; real 28..34 px; physics-layer jamming tier strong; two-pass closed-loop scale calibration"
+  },
+  "__v3_jam_tier": "strong",
+  "__v3_jam_spec": {
+    "layer": "radar_clutter",
+    "current_tier": "strong",
+    "tiers": {
+      "base": {
+        "clutter_ridge": false,
+        "sea_clutter_scale_db": 0,
+        "wind_ms": 6,
+        "sea_clutter_db": -25,
+        "clutter_density": 0.0,
+        "clutter_db": -12.0,
+        "mti": 0.0
+      },
+      "mid": {
+        "clutter_ridge": true,
+        "sea_clutter_scale_db": 3,
+        "wind_ms": 8,
+        "sea_clutter_db": -25,
+        "clutter_density": 0.02,
+        "clutter_db": -12.0,
+        "mti": 0.0
+      },
+      "strong": {
+        "clutter_ridge": true,
+        "sea_clutter_scale_db": 6,
+        "wind_ms": 15,
+        "sea_clutter_db": -15,
+        "clutter_density": 0.06,
+        "clutter_db": -6.0,
+        "mti": 0.0
+      }
+    },
+    "note": "probe tier definitions; final tier fixed by probe verdict (air mid / ground strong / sea strong)"
+  },
+  "realism": {
+    "enabled": true,
+    "jpeg": true
+  }
+}

@@ -9,6 +9,9 @@ const ROOT = path.resolve(__dirname, '..');
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.png': 'image/png',
+  // Every demo frame is WebP; without this the probe serves them as
+  // application/octet-stream and Chrome may refuse to decode them.
+  '.webp': 'image/webp',
   '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon', '.md': 'text/markdown; charset=utf-8'
 };

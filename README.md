@@ -1,5 +1,16 @@
 # RGB / SAR / LiDAR 多模态传感器仿真器
 
+![空 / 陆 / 海三域可见光精选：云层、城市道路、开阔海面实拍底板](assets/figures/fig19_trimodal_v1.webp)
+
+> **2026-11-09 真实感基线更新**：在线演示首屏与精选场景换成**真实航拍/摄影底板**
+> （云层、城市环岛道路、海浪），撤下沙漠灰盒占位物、纯色渐变天空、灰暗云海等明显偏假的旧卡片；
+> 新增 `v1_air` / `v1_land` / `v1_sea` 三组各 **5 帧 × 可见光 + 长波红外 + 雷达 RD** 同源样本，
+> 由 [`tools/export_site_v1.py`](tools/export_site_v1.py) 导出到 `data/v1_*`。
+> 同时给工作台预置 **18 个开箱即用配方**（海/陆/空 × 3 套实拍背景 × 有源/无源干扰），
+> 见 §1.55 工作台预设配方；成像参数沿用
+> [`tools/build_sealandair_1109v1.py`](tools/build_sealandair_1109v1.py) 生成的三域数据集。
+> 在线演示：<https://ccccty.github.io/RGB_SAR_LIDAR_SIMU/>
+
 > **2026-11-08 海域演示场景**：在线展示页新增 `demo_sea_surface`（开阔海面 + 中小型舰船，
 > 目标占画幅宽 19%、面积 2.2%），空域演示的主视觉、原理区与卡片保持原样。
 > 场景配置、复现命令与改动说明见 [海域场景演示改动说明](docs/海域场景演示_改动说明.md)。
@@ -42,8 +53,10 @@ Windows 上解压即用。面向目标检测 / 多模态融合算法的训练与
 | 激光雷达 LiDAR | ✅ 距离图 + 强度图 + PLY 点云 |
 | **跨模态配准** | ✅ 所有模态的框由同一套三维投影导出，导出时逐帧自检 |
 | **YOLO 导出** | ✅ 按模态分套 + 多模态拼接图 + 配对表 |
-| 静态看板 | ✅ 11 个页签，含 SAR、无人机视角、图鉴与实时物理实验室 |
-| 参数化工作台 | ✅ `python -m simkit studio` |
+| 静态演示站 | ✅ 单页六区块（演示 / 原理 / 场景 / 干扰实验室 / 雷达图 / 局限），`site.js` 驱动 |
+| 参数化工作台 | ✅ `python -m simkit studio`，含预览、进度、轨迹事实 |
+| **工作台预设配方** | ✅ 18 个：海/陆/空 × 3 套实拍背景 × 有源/无源 ECM，`configs/recipes/p_*.json`，见 §1.55 |
+| **三域连续片段数据集** | ✅ 空/陆/海各 5 帧 × 可见光 + LWIR + 雷达 RD，附逐帧轨迹真值，见 §5.3 |
 
 > 接下来的工作按"影响 × 成本"排好了序，见 [`PLAN.md`](PLAN.md)。
 
@@ -88,6 +101,34 @@ Windows 上解压即用。面向目标检测 / 多模态融合算法的训练与
 **数据集是连续片段，不是独立帧堆**：一个片段内目标沿一条解析轨迹运动，
 天气在片段内保持一致（或平滑演变），相邻帧只差一个积分步；拆块并行生成再拼接，
 结果与单进程完全一致。
+
+---
+
+## 1.55 工作台预设配方（开箱即用）
+
+启动工作台后在「配方」列表里点「载入」即可。18 个预设按
+`p_<域>_<背景>_<干扰模式>.json` 命名，全部由
+[`tools/gen_recipe_presets.py`](tools/gen_recipe_presets.py) 生成：
+
+| 域 | 3 套实拍背景 | 有源 ECM | 无源 ECM |
+|---|---|---|---|
+| 空 `air` | 高空晴空 / 积云层 / 航拍云顶 | 噪声压制 + DRFM 假目标 + 距离波门拖引 | 箔条云 + 角反射器 + 拖曳诱饵 + 6 枚红外诱饵弹 |
+| 陆 `land` | 城市环岛道路 / 乡村田野公路 / 工业区停车场 | 噪声压制 + DRFM + 角度欺骗 | 箔条云 + 角反射器 + 拖曳诱饵 + 2 枚诱饵弹 |
+| 海 `sea` | 开阔海面 / 集装箱港口 / 近岸岛礁 | 噪声压制 + DRFM + 速度波门拖引 | 箔条云 + 角反射器 + 拖曳诱饵 + 2 枚诱饵弹 |
+
+每个配方都是 **5 帧 × 可见光 + 长波红外 + 雷达 RD**、768×576，沿用 v1 真实感基线：
+真实摄影底板、俯视不挂天空卡、宽平铺消除接缝、关闭对实拍高光的二次眩光、
+浅色民用车辆 + 合理 RCS。配方逐个通过 `scenegen.validate_recipe` 与 `build_scene`，
+前端「载入 → 生成」链路有 12 项回归测试守护。
+
+```powershell
+env\Scripts\python.exe tools\gen_recipe_presets.py --force   # 重新生成 18 个配方
+env\Scripts\python.exe tools\gen_recipe_presets.py --check   # 只校验不写盘
+```
+
+> 配方落在 `configs/recipes/`，工作台 `GET /api/recipes` 自动列出，不需要改前端注册表。
+> 有源/无源按 `simkit/ecm.py` 的实体分组区分（噪声压制 / DRFM 欺骗 vs 箔条 / 角反射器 /
+> 拖曳诱饵 / 红外诱饵弹），不是图像级增广开关。
 
 ---
 
@@ -421,17 +462,63 @@ SAR 逐帧按「快照」生成：每帧的 `anchor` 跟随目标，沿航迹时
 合并后的 COCO：optical / ir_mwir / ir_lwir / lidar 各 18 图 18 框，类别 `uav / vehicle / boat`。
 逐帧点云与雷达点另存 PLY / JSON，可直接喂给需要点云输入的模型。
 
+### 5.3 海 / 陆 / 空三域 v1 数据集
+
+由 [`tools/build_sealandair_1109v1.py`](tools/build_sealandair_1109v1.py) 生成，
+输出到 `dataest/海陆空1109v1`（生成物，不入库）：
+
+| 域 | 主目标 | 干扰与轨迹 | 底板 |
+|---|---|---|---|
+| `air_plane` | 双发战斗机，平滑接近 | 6 枚红外诱饵：沿航向轴线对称、逐帧向下抛射、不继承载机速度 | 实拍云层 |
+| `ground_vehicle` | 6.75 m 浅色厢式货车，贴地匀速 | 3 辆正常车辆各自匀速、3 个路侧障碍严格静止 | 城市环岛道路航拍 |
+| `sea_ship` | 导弹艇，平滑接近 | 1 艘航行小艇 + 1 艘锚泊小艇 + 海杂波脊 | 开阔海面实拍 |
+
+每域 **5 帧 × 可见光 / 长波红外 / 雷达 RD**（另有 JPEG 副本、float32 RD 张量、
+COCO 标注与帧表），三域共 282 文件。每域 `trajectories.json` 逐帧记录主目标与
+**每个**干扰物的位置和速度，并做硬检查：主目标逐帧步长恒定且斜距单调收拢、
+静态干扰零位移、动态干扰匀速、诱饵单调下坠；`generation_report.json` 给出三域
+`passed=True`。成像特征按 VEDAI / DLR3K / VisDrone / DroneVehicle、Det-Fly /
+Anti-UAV、SeaShips 等公开实拍数据集对齐，映射表见同目录 `参考数据集对照.md`。
+在线演示的 `data/v1_*` 就是这份数据的 WebP 导出。
+
+```powershell
+env\Scripts\python.exe tools\build_sealandair_1109v1.py --force
+env\Scripts\python.exe tools\build_sealandair_1109v1.py --skip-gen   # 只重做验收
+```
+
+> 已知局限：LWIR 背景由可见光照片做温度映射而非真实热像；雷达 RCS 为工程估计；
+> 5 帧只是 0.5 s 片段，不能替代长时序跟踪集。
+
 ---
 
 ## 6. 在线看板
 
-仓库根目录就是网站本体（`index.html` + `app.js` + `app.css` + `data/`），
+仓库根目录就是网站本体（`index.html` + `site.js` + `site.css` + `data/`），
 推上 GitHub Pages 之后直接可访问，**零构建、零依赖、零 CDN**，
 断网环境下把整个仓库拷走、起一个静态服务就能用。
 
-十一个页签，每个都是可分享的 URL（`#/sar`、`#/seeker` …），除"关于"外都能动手：
+**当前线上是单页滚动结构**（2026-11-08 起由 `site.js` 驱动），六个锚点区块：
 
-| 页签 | 做什么 |
+| 区块 | 做什么 |
+|---|---|
+| `#hero` 演示 | 同一帧可见光 / 长波红外交叉淡入，可拖动分割线；下方是三模态卡片与原图链接 |
+| `#physics` 原理 | PBR + Cycles、逐面能量平衡 → Planck 积分、PO 散射 → 雷达方程 → RD |
+| `#scenes` 场景 | 精选场景卡片，每张可切模态、切帧、点开看大图；由 `data/curated.json` 驱动 |
+| `#jamlab` 干扰实验室 | clean ↔ jammed 逐帧对照 |
+| `#rd` 雷达图 | 距离-多普勒图读法、零多普勒脊、俯视板面径向速度≈0 的原因 |
+| `#limits` 局限 | 能做到 / 做不到的边界 |
+
+**2026-11-09 精选场景更新**：`v1_air` / `v1_land` / `v1_sea` 是真实摄影底板的三域同源样本
+（各 5 帧 × 可见光 + LWIR + 雷达 RD），另有迎头 / 尾追 / 高空双视场 / 开阔海面 /
+空域与海域干扰等历史精选。沙漠灰盒 `v3jam_land`、纯色渐变天空 `final_air`、
+灰暗云海 `demo_three_ships_plate` 已从精选表撤下，图片文件仍保留在 `data/`。
+用 [`tools/export_site_v1.py`](tools/export_site_v1.py) 可从 v1 数据集重新导出；
+用 `node tools/probe_site_v1.js` 做无头浏览器验收（0 JS 错误、0 破图、三域卡片齐全）。
+
+> **历史**：下面是早期 `app.js` / `app.css` 驱动的 11 页签看板。这两个文件仍保留在仓库，
+> 但当前 `index.html` **不再加载它们**；工作台的 `studio/app.js` 是另一个文件，与它无关。
+
+| 旧页签 | 做什么 |
 |---|---|
 | **首页** | 1440×1080 主视觉（同场景可见光 / 长波红外交叉淡入，可点选切换）、"同一帧 · 六种传感器"墙、光照与天气对照、20 张图鉴预览、六个深度入口 |
 | **数据集** | 十四场景 × 127 帧，10 路图像（可见光 / MWIR / LWIR 各有窄宽两视场，加雷达距离-角度、激光距离/强度、SAR）切换，带检测框叠层、自动播放与缩略胶片条；按钮只列 manifest 里真有图的模态 |
@@ -445,25 +532,23 @@ SAR 逐帧按「快照」生成：每帧的 `anchor` 跟随目标，沿航迹时
 | **管线** | 六步数据流、离线命令、YOLO 各套件的规模、可复现性 |
 | **关于** | 物理模型、验证数字、已知局限 |
 
-**体积**：站点是提交进仓库的，所以每一字节都付两次钱（带宽 + git）。导出后跑一次
-`tools/opt_images.py`（`export_web.py` 已内嵌调用）把 PNG 转 WebP 并拆出缩略图，
-逐帧点云拆到 `data/cloud/<场景>.json` 按需加载。当前实测：`data/` 的 WebP 共 1924 个
-文件 21.3 MB，缩略图 `data/_t` 3.9 MB，`manifest.json` 306 KB（gzip 34.3 KB），
-首屏 gzip 合计 47.8 KB（html 10.5 + js 30.9 + css 6.4）。
-`boot.js`（file:// 用的整包）保留全量，只在离线打开时才加载。
-这些数字随场景数变化，以 `tools/opt_images.py` 的当次输出为准。
+**体积**（2026-11-09 实测，`du`）：站点提交进仓库，每一字节都付两次钱（带宽 + git）。
+`data/` 32 MB（全帧 561 个 WebP 24.95 MB + 缩略图 561 个 3.20 MB），
+`assets/figures` 2.5 MB、`assets/hero` 1.7 MB，`manifest.json` 127 KB，
+首屏 html 21.2 KB + js 48.2 KB + css 25.5 KB（均未 gzip）。
+PNG → WebP 并拆缩略图见 `tools/opt_images.py` 与 `tools/export_site_v1.py`；
+这些数字随场景数变化，以当次导出输出为准。
 
-但这套优化只管站点**自己会取**的东西：`data/` 24.9 MB 加 `assets/hero` 1.6 MB、
-`assets/figures` 2.2 MB，合计 28.8 MB。仓库里另有 **276.7 MB 是生成这些图所用的构建输入**
-（`assets/backdrops` 158.8 MB、`assets/models` 76.9 MB、`assets/hdri` 22.4 MB、
-`assets/refs` 18.6 MB），浏览器一个字节都不会取，却和站点在同一分支上，因此照样被
-Pages 发布。跟踪总量 318.2 MB：离 Pages 1 GB 上限还远，最大单文件 16.9 MB 也没碰到
-100 MB 限制——属于浪费，不属于故障。要把部署包真正瘦下来，得把站点单独发到一个
+但这套优化只管站点**自己会取**的东西：`assets/backdrops` 160 MB、
+`assets/models` 78 MB、`assets/refs` 19 MB 共约 **257 MB 是生成这些图所用的构建输入**，
+浏览器一个字节都不会取，却和站点在同一分支上，因此照样被 Pages 发布
+（`assets/hdri` 已随工作台「内置天空」选项一并移除）。离 Pages 1 GB 上限还远，
+属于浪费，不属于故障。要把部署包真正瘦下来，得把站点单独发到
 只含 `data/` + `assets/hero` + `assets/figures` 的分支，见 [`PLAN.md`](PLAN.md) 的 P2-5。
 
-"参数实验"页的常数不是手抄的：`tools/export_web.py` 从 `simkit/radar.py`
+旧看板"参数实验"页的常数不是手抄的：`tools/export_web.py` 从 `simkit/radar.py`
 直接导出 `data/radar_bands.json`（每波段天线增益由真实波束宽度算出），
-所以网页上的数字和内核永远一致，改内核不会让网站偷偷说假话。
+所以网页上的数字和内核一致；该文件当前仍随仓库发布。
 
 ---
 
@@ -479,8 +564,12 @@ Pages 发布。跟踪总量 318.2 MB：离 Pages 1 GB 上限还远，最大单�
   严格成反比（误差 0.00%）；分块生成与整段生成逐帧一致（含片段中间帧）；横滚在限幅内
 - **遮挡**：`tools/make_seeker_scenes.py` 生成场景时自己跑射线统计，城市场景每段前 30 帧
   被楼体挡住（25%），其余帧正常；标注侧的出框率与之严格一致（75%）
-- **站点**：`node tools/probe_web.js` 在真实数据上 11 个页签全开、0 JS 错误、
-  0 张破图、每个模态都真的载出图（`badMods: []`）
+- **站点**：`node tools/probe_site_v1.js` 用无头 Chrome 验收当前单页演示：
+  0 JS 错误、0 破图、9 张精选卡片全在（`v1_air` / `v1_land` / `v1_sea` 三域齐全）、
+  首屏 768×576 正常加载。（旧 `tools/probe_web.js` 对应已下线的 11 页签看板。）
+- **回归**：`python -m unittest discover -s tests` **573 项 OK**、
+  `python -m simkit selftest` ALL PASS、工作台 DOM 冒烟通过、JS / Python 编译通过；
+  其中 12 项固化 18 个预设配方的矩阵、ECM 分组、v1 不变量与前端透传链路
 - **跨模态配准**：同一时刻、共用位姿的各模态，框由同一套三维投影导出，
   导出时逐帧自检 **240 对框最大偏差 0.00 px**。这条是构造出来的，不是事后对齐：
   渲染器的 id 掩膜只判可见性，不参与定框位置（否则光学轮廓框 30 px 与红外机身框 17 px

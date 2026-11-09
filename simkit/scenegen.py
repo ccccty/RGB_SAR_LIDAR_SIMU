@@ -7,7 +7,7 @@ complete scene config comes out, ready for scene.load_config.
 The recipe is a plain dict (JSON types only) with these blocks:
 
     name         clip name, no path separators
-    environment  kind (sky/ground/sea), weather, background (none/hdri/upload)
+    environment  kind (sky/ground/sea), weather, background (library/upload)
     objects      [{asset, cls, scale, count}], asset relative to assets/models
     ecm          mode (none/active/passive/mixed) plus optional raw entities
     view         range_km, aspect (head_on/pursuit), fov_deg, views (single/dual)
@@ -67,10 +67,11 @@ decoration in the JSON only. It is written where they read it -- the top-level
 "optical" render block (optical.sky_image) and the top-level "ir" radiometry
 block (ir.background_image) -- and never on cfg["sensors"], where the same key is
 silently ignored. "upload" is resolved to an existing absolute file (a missing
-one is an error, never a silent gradient); "hdri" resolves a local CC0 HDRI
-through simkit.assets_fetch, and when the asset is unavailable offline the build
-still succeeds with the gradient sky and records why in cfg["notes"]. "none"
-writes no background key at all, and radar/lidar/SAR never carry one.
+one is an error, never a silent gradient); "library" picks a real photograph
+from assets/backdrops. The former "none" (gradient sky) and "hdri" (built-in
+sky) modes were removed: they had no plate to place a target on, and the HDRI
+path needed a network download on first use, which contradicts the offline
+delivery promise. Radar/lidar/SAR never carry a background.
 """
 import json
 import math
@@ -103,9 +104,9 @@ WEATHER_MODES = {
 WEATHER_LABELS = {'clear': '晴', 'cloudy': '多云', 'rain': '雨', 'fog': '雾',
                   'mixed': '混合', 'evolve': '演变'}
 ENV_LABELS = {'sky': '天空', 'ground': '地面', 'sea': '海面'}
-BACKGROUND_MODES = ('none', 'hdri', 'upload', 'library')
-BACKGROUND_LABELS = {'none': '纯色背景', 'hdri': 'HDRI', 'upload': '上传图',
-                    'library': '图库'}
+BACKGROUND_MODES = ('library', 'upload')
+BACKGROUND_LABELS = {'upload': '本地图片', 'library': '背景库'}
+LEGACY_BACKGROUND_MODES = ('none', 'hdri')  # refused with an actionable message
 
 SENSOR_KEYS = ('optical', 'ir', 'radar', 'lidar', 'sar')
 ECM_MODES = ('none', 'active', 'passive', 'mixed')
@@ -639,18 +640,17 @@ def validate_recipe(recipe):
                       tuple(WEATHER_MODES), 'clear')
     bg_raw = env_raw.get('background')
     if bg_raw is None:
-        bg_raw = {'mode': 'none'}
+        bg_raw = {'mode': 'library', 'category': 'forest'}
     if not isinstance(bg_raw, dict):
         raise ValueError('environment.background 必须是字典（收到 %r）' % (bg_raw,))
+    if bg_raw.get('mode') in LEGACY_BACKGROUND_MODES:
+        raise ValueError('environment.background 的背景模式 %r 已移除；'
+                         '请改用 library（背景库）或 upload（本地图片）'
+                         % bg_raw.get('mode'))
     bg_mode = _choice(bg_raw.get('mode'), 'environment.background.mode',
-                      BACKGROUND_MODES, 'none')
+                      BACKGROUND_MODES, 'library')
     background = {'mode': bg_mode}
-    if bg_mode == 'hdri':
-        hid = bg_raw.get('id')
-        if not isinstance(hid, str) or not hid.strip():
-            raise ValueError('environment.background 为 hdri 时必须给出 id')
-        background['id'] = hid.strip()
-    elif bg_mode == 'library':
+    if bg_mode == 'library':
         # Real photograph from assets/backdrops: the dataset is the simulated
         # target composited onto a collected plate, so the frame has honest
         # forest/city/port texture instead of a procedural gradient.
@@ -666,6 +666,33 @@ def validate_recipe(recipe):
         if not isinstance(hpath, str) or not hpath.strip():
             raise ValueError('environment.background 为 upload 时必须给出 path')
         background['path'] = hpath.strip()
+    # Opt-in realism knobs for curated presets (v1 aerial-vehicle look). Both
+    # are ABSENT from every legacy recipe, so nothing that exists today changes:
+    #   span_m    one photo must cover the whole look-down footprint, otherwise
+    #             the REPEAT tile seam shows up as diagonal bands across the
+    #             road/sea plate (measured on the 2026-11-09 v1 A/B renders).
+    #   sky_card  a look-down camera must not get a camera-parented sky card;
+    #             that card sits in front of the ground and hides the plate.
+    if bg_raw.get('span_m') not in (None, ''):
+        background['span_m'] = _number(bg_raw['span_m'],
+                                       'environment.background.span_m',
+                                       50.0, 20000.0, ' m')
+    if bg_raw.get('sky_card') is not None:
+        background['sky_card'] = _bool(bg_raw['sky_card'],
+                                       'environment.background.sky_card', True)
+    #   offset    which UV of the photograph sits at the world origin. A
+    #             roundabout's centre is a bright grass island; pointing the
+    #             look-down camera at (0.20, 0.45) puts a multi-lane road with
+    #             lane markings under the target instead of that glare.
+    if bg_raw.get('offset') is not None:
+        off = bg_raw['offset']
+        if (not isinstance(off, (list, tuple)) or len(off) != 2
+                or isinstance(off, (str, bytes))):
+            raise ValueError('environment.background.offset 必须是 [u, v]'
+                             '（收到 %r）' % (off,))
+        background['offset'] = [_number(off[k],
+                                        'environment.background.offset[%d]' % k,
+                                        0.0, 1.0) for k in (0, 1)]
     environment = dict(kind=kind, weather=weather, background=background)
 
     objs_raw = recipe.get('objects')
@@ -693,6 +720,17 @@ def validate_recipe(recipe):
         count = _integer(raw.get('count', 1), field + '.count',
                          LIM['count'][0], LIM['count'][1])
         item = dict(asset=asset, cls=cls, scale=scale, count=count)
+        # Opt-in per-target look / radar scale, used by curated presets. The
+        # class table stays the default for every recipe that omits them.
+        if raw.get('mat') is not None:
+            from . import materials as _matlib
+            _mat = str(raw['mat']).strip()
+            if _mat not in _matlib.MATERIALS:
+                raise ValueError('%s.mat 未知材质 %r' % (field, _mat))
+            item['mat'] = _mat
+        if raw.get('rcs_db') not in (None, ''):
+            item['rcs_db'] = _number(raw['rcs_db'], field + '.rcs_db',
+                                     -20.0, 60.0, ' dBsm')
         # Placement on a backdrop plate: normalised image coordinates, origin at
         # the top-left. Optional per-object because a formation can be placed by
         # its leader alone.
@@ -852,7 +890,12 @@ def validate_recipe(recipe):
         # time for an antialiased plume: at engagement range the exhaust is a few
         # pixels wide and point sampling turns it into a jagged bar.
         supersample=_integer(fx_raw.get('supersample', 0),
-                             'effects.supersample', 0, 4))
+                             'effects.supersample', 0, 4),
+        # Opt-in: a real photo plate already contains its own sun/lamp
+        # highlights. Running the synthetic glare stage a second time turns one
+        # street lamp into a white blob with star streaks. Default stays ON so
+        # every existing recipe keeps its old picture.
+        flare=_bool(fx_raw.get('flare'), 'effects.flare', True))
 
     normalised = dict(name=name, environment=environment, objects=objects,
                       ecm=ecm, view=view, capture=capture, output=output,
@@ -1577,9 +1620,6 @@ def _sensors(cam, look, fov, range_m, site, v_req=0.0, up=None, env=None,
 
 
 # ---------------------------------------------------------------- background
-# Weather presets that have no HDRI category of their own fall back to the one
-# that looks closest; mixed/evolve are pool modes, not single skies.
-HDRI_WEATHER = {'mixed': 'cloudy', 'evolve': 'cloudy'}
 
 
 def backdrop_library():
@@ -1667,44 +1707,6 @@ def _existing_file(value):
 
 
 # One plate per weather, so 晴 / 多云 / 雨 / 雾 give visibly different skies.
-# The UI sends whatever id it last used, so the weather table is consulted FIRST:
-# otherwise picking "cloudy" kept rendering the clear plate and the weather
-# control had no visible effect at all.
-WEATHER_HDRI = {
-    'clear':  ('kloofendal_43d_clear_puresky',
-               'kloofendal_48d_partly_cloudy_puresky'),
-    'cloudy': ('kloofendal_48d_partly_cloudy_puresky', 'wasteland_clouds_puresky'),
-    'rain':   ('kloofendal_overcast_puresky', 'overcast_soil_puresky'),
-    'fog':    ('kloofendal_28d_misty_puresky', 'kloofendal_misty_morning_puresky'),
-    'mixed':  ('kloofendal_48d_partly_cloudy_puresky',),
-    'evolve': ('kloofendal_48d_partly_cloudy_puresky',),
-}
-
-
-def _hdri_path(asset_id, weather):
-    """Local .hdr for this weather, else for the given id; None when unavailable."""
-    from . import assets_fetch
-    try:
-        cached = {str(e.get('id')): e.get('path')
-                  for e in assets_fetch.list_cached() if e.get('kind') == 'hdri'}
-    except Exception:
-        cached = {}
-    for cand in WEATHER_HDRI.get(weather, ()):
-        p = cached.get(cand)
-        if p and os.path.isfile(p):
-            return p
-    if asset_id and cached.get(str(asset_id)):
-        p = cached[str(asset_id)]
-        if os.path.isfile(p):
-            return p
-    got = assets_fetch.hdri_for_weather(HDRI_WEATHER.get(weather, weather))
-    if isinstance(got, dict):
-        path = got.get('path')
-        if path and os.path.isfile(path):
-            return path
-    return None
-
-
 def _apply_background(cfg, environment, wanted, notes):
     """Translate environment.background into the keys the renderers actually read.
 
@@ -1723,8 +1725,6 @@ def _apply_background(cfg, environment, wanted, notes):
     """
     background = environment['background']
     mode = background['mode']
-    if mode == 'none':
-        return
     path = None
     if mode == 'upload':
         # A missing plate is a hard error on purpose: falling back to the
@@ -1751,19 +1751,15 @@ def _apply_background(cfg, environment, wanted, notes):
             _span = float(background.get('span_m')
                           or (cfg.get('view') or {}).get('ground_span_m') or 300.0)
             _g['backdrop_span_m'] = _span
-    elif mode == 'hdri':
-        try:
-            path = _hdri_path(background.get('id'), environment['weather'])
-        except Exception as exc:          # offline, no cache, HTTP error, ...
-            notes.append('内置天空不可用，已回退渐变天空（%s: %s）'
-                         % (type(exc).__name__, exc))
-        if path is None and not notes:
-            notes.append('内置天空不可用，已回退渐变天空（本地没有可用的 HDRI）')
+            if background.get('offset'):
+                _g['backdrop_offset'] = [round(float(v), 6)
+                                         for v in background['offset']]
     if not path:
         return
     want = set(wanted or ())
     optical = cfg.get('optical')
-    if 'optical' in want and isinstance(optical, dict):
+    if ('optical' in want and isinstance(optical, dict)
+            and background.get('sky_card', True)):
         optical['sky_image'] = path
     ir_cfg = cfg.get('ir')
     if 'ir' in want and isinstance(ir_cfg, dict):
@@ -1805,15 +1801,10 @@ def build_scene(recipe):
     aspect_allowed = ASPECT_BY_ENV.get(env, ("head_on", "pursuit"))
     aspect = view["aspect"]
     top_down = (aspect == "top_down")
-    _bg_mode = str(((r.get("environment") or {}).get("background") or {}).get("mode") or "")
-    _has_plate = _bg_mode in ("library", "upload")
-    if top_down and not _has_plate:
-        # A plate view needs a plate. Without one there is nothing to click on,
-        # so an air scene falls back to its own engagement instead of pointing a
-        # camera at the ground under an aircraft.
-        top_down = False
-        aspect = aspect_allowed[0]
-    elif top_down:
+    # Every supported background mode (library / upload) supplies a real plate,
+    # so the old "no plate -> abandon top_down" fallback is unreachable. It was
+    # only needed by the removed "none" / "hdri" modes.
+    if top_down:
         # With a photograph under it the plate view is valid in any domain: the
         # camera frames a picture and the target stands on it. Refusing it for
         # the sky category silently discarded every click coordinate.
@@ -2019,7 +2010,7 @@ def build_scene(recipe):
                 # head_on mean nose-toward-camera and pursuit tail-toward-it
                 yaw_mode='velocity',
                 scale=float(spec['scale']),
-                mat=_paint_material(spec['asset'], spec['cls']),
+                mat=spec.get('mat') or _paint_material(spec['asset'], spec['cls']),
                 # No hard temperature pin. thermal.solve runs a radiative-
                 # convective balance per face using the material's absorptance
                 # and internal heat flux; pinning one class number here threw
@@ -2028,7 +2019,8 @@ def build_scene(recipe):
                 # per-asset value survives as a hint for hand-authored scenes.
                 temp_c=None,
                 temp_c_hint=temp_c,
-                rcs_db=rcs_db,
+                rcs_db=(float(spec['rcs_db']) if spec.get('rcs_db') is not None
+                        else rcs_db),
                 attitude_mode='coordinated',
                 kinematics=_kin,
                 visible=True,
@@ -2172,7 +2164,11 @@ def build_scene(recipe):
     # operator's job -- put the target behind a building that is already in the
     # picture -- and the non-plate scenes keep their geometry occluders.
     _cat = str(((r.get('environment') or {}).get('background') or {}).get('category') or '')         if (r.get('environment') or {}).get('background') else ''
-    if env in ('ground', 'sea') and _cat and not top_down:
+    # A sky plate is a photograph of clouds, not terrain: using it as the
+    # "category" for ground/sea scenery would paste grey boxes onto a ground
+    # scene whose background is literally the sky. Only terrain-like plates
+    # seed ground clutter.
+    if env in ('ground', 'sea') and _cat and _cat != 'sky' and not top_down:
         _span = float(view.get('ground_span_m') or (2.0 * range_m)) or 600.0
         objects.extend(_clutter_block(env, _cat, _span, int(cap['seed'])))
     wind = float(WIND_MS.get(weather, 8.0))
@@ -2294,22 +2290,40 @@ def build_scene(recipe):
         _need = float(span_m) * 2.5
         if _gr.get('enabled', True) and float(_gr.get('size') or 0.0) < _need:
             _gr['size'] = round(_need, 1)
+    if not r['effects']['flare']:
+        # realism.apply() only fills an absent/null enabled, so an explicit
+        # False survives scene.load_config and reaches both the Blender ISP and
+        # the numpy sensor chain.
+        _cam = cfg.setdefault('optical', {}).setdefault('camera', {})
+        _cam.setdefault('flare', {})['enabled'] = False
     _apply_background(cfg, r['environment'], r['capture']['sensors'], notes)
-    if not top_down and (cfg.get('ground') or {}).get('backdrop'):
+    if (not top_down and (cfg.get('ground') or {}).get('backdrop')
+            and not r['environment']['background'].get('span_m')):
         # Scale the plate so one photo covers roughly one frame. Tiling a desert
         # satellite shot every 300 m laid an obvious seam grid across the picture.
+        # A preset that explicitly asked for span_m keeps its wide tile.
         _frame_w = 2.0 * float(range_m) * math.tan(math.radians(float(fov)) / 2.0)
         if _frame_w > 1.0:
             cfg['ground']['backdrop_span_m'] = round(_frame_w, 1)
     if top_down:
         # Placed targets: the plate becomes the map, so it is centred on the world
         # origin with no rotation and no random offset. Any of those would put the
-        # vehicle somewhere other than the pixel the operator clicked.
+        # vehicle somewhere other than the pixel the operator clicked. A curated
+        # preset may still ask for a specific photographic centre (e.g. a road
+        # instead of the bright roundabout island); that request wins here too,
+        # because this branch runs after _apply_background.
         _g = cfg.setdefault('ground', {})
         _g['backdrop_aligned'] = True
-        _g['backdrop_offset'] = [0.5, 0.5]
-        _g['backdrop_span_m'] = float(span_m)
-        _g['backdrop_span_y_m'] = float(span_m) * v_ratio
+        _g['backdrop_offset'] = list(
+            r['environment']['background'].get('offset') or [0.5, 0.5])
+        # A preset may ask for a plate tile much WIDER than the 400 m frame.
+        # With tile == frame, any non-centred offset puts the REPEAT boundary
+        # straight through the picture (measured: a dark rectangle and a bottom
+        # band). Keeping the tile several frames wide keeps seams out of view.
+        _plate_span = float(r['environment']['background'].get('span_m')
+                            or span_m)
+        _g['backdrop_span_m'] = _plate_span
+        _g['backdrop_span_y_m'] = _plate_span * v_ratio
     if top_down:
         cfg['view'] = dict(aspect=aspect, ground_span_m=float(span_m),
                            height_ladder_m=[round(float(o['pos'][2]), 3)
@@ -2433,10 +2447,12 @@ def _lenient_summary(recipe):
     bg = env.get('background')
     bg = bg if isinstance(bg, dict) else {}
     kind, weather, mode = env.get('kind'), env.get('weather'), bg.get('mode')
+    if mode in LEGACY_BACKGROUND_MODES:
+        mode = 'library'          # old recipe: describe what the UI will show
     return ' · '.join([
         ENV_LABELS.get(kind, str(kind or ENV_LABELS['sky'])),
         WEATHER_LABELS.get(weather, str(weather or WEATHER_LABELS['clear'])),
-        BACKGROUND_LABELS.get(mode, str(mode or BACKGROUND_LABELS['none'])),
+        BACKGROUND_LABELS.get(mode, str(mode or BACKGROUND_LABELS['library'])),
     ])
 
 
@@ -2445,7 +2461,7 @@ def default_recipe():
     return {
         'name': 'demo',
         'environment': {'kind': 'sky', 'weather': 'clear',
-                        'background': {'mode': 'none'}},
+                        'background': {'mode': 'library', 'category': 'sky'}},
         'objects': [{'asset': '军用飞机/双发战斗机.obj', 'cls': 'fighter',
                      'scale': 1.0, 'count': 1}],
         'ecm': {'mode': 'none', 'entities': []},

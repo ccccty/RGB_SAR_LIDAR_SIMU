@@ -1019,6 +1019,18 @@ def main():
                 raise RuntimeError("render did not produce %s (frame_path=%s)"
                                    % (path, sc.render.frame_path()))
 
+            # PLAN.md §5 item 3: pHYs + tEXt on the delivered optical PNG.
+            # Strictly deterministic (no timestamp, path, seed or run id), so
+            # two runs of the same scene stay byte-identical.
+            _fov = float(pose.get("fov_deg") or v["fov_deg"])
+            png_meta = dict(modality="optical", fov_deg=_fov,
+                            radiometric_calibration="relative-linear; not absolute")
+            _rng = pose.get("range_m") or pose.get("target_range_m")
+            if _rng:
+                _rng = float(_rng)
+                png_meta["range_m"] = round(_rng, 3)
+                png_meta["gsd_m_per_px"] = round(
+                    2.0 * _rng * math.tan(math.radians(_fov) / 2.0) / W, 6)
             measured_ids, sensor_metadata = None, None
             if pass_output is not None:
                 from blender.sensor_helpers import read_passes
@@ -1036,7 +1048,20 @@ def main():
                     sensor = forward(raw["linear"], depth, pose, sensor_cfg,
                                      int(cfg.get("seed", 0))*100003+fid,
                                      exposure_stops=sc.view_settings.exposure)
-                    png_writer.write_rgb8(path, sensor["image_u8"])
+                    # The EXR linear pass contains geometry only. A real-photo
+                    # backdrop is an emissive camera-parented card that the pass
+                    # setup excludes, so writing the sensor output over the WHOLE
+                    # frame erased the chosen plate (measured: background std
+                    # fell to 0.0016, i.e. a flat blue field). Keep the rendered
+                    # plate for rays that hit no geometry and apply the detector
+                    # model only where geometry exists. The plate is itself a
+                    # photograph (already through a real camera), so this also
+                    # avoids double-counting the sensor noise on it.
+                    plate = read_rendered_rgb8(path)
+                    geom = valid_depth[:, :, None]
+                    sensor["image_u8"] = np.where(
+                        geom, sensor["image_u8"], plate).astype(np.uint8)
+                    png_writer.write_rgb8(path, sensor["image_u8"], meta=png_meta)
                     raw_data.update(counts_u16=sensor["counts_u16"],
                                     linear_received=sensor["linear_received"],
                                     transmittance=sensor["transmittance"])
@@ -1055,7 +1080,9 @@ def main():
                     fov_deg=camera_fov, skip=CAMERA_SKIP)
                 if result["changed"]:
                     from simkit import png as png_writer
-                    png_writer.write_rgb8(path, result["image_u8"])
+                    # Last writer wins: re-stamp the same deterministic meta so
+                    # the lens/sensor post-process does not strip item 3.
+                    png_writer.write_rgb8(path, result["image_u8"], meta=png_meta)
                     camera_metadata = result["metadata"]
                     for warning in camera_metadata.get("warnings", []):
                         log("camera: " + warning)

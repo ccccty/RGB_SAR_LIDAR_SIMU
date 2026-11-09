@@ -75,6 +75,11 @@ def _reshape(shape, size, center):
         # reads as a golf ball, not a chaff bloom.
         verts, faces = _ecmlib.icosphere(radius, 2)
         return Mesh(verts, faces, name="sphere")
+    if shape == "flare":
+        # Dispensed IR decoy: bright head + tapered streak. Shared with
+        # ecm._world_mesh so the physics world and the Cycles frame agree.
+        from . import ecm as _ecmlib
+        return _ecmlib.flare_mesh(size)
     raise ValueError("unknown shape " + shape)
 
 
@@ -272,7 +277,13 @@ def load_config(path):
     # Blender side while absolute paths keep working.
     if not cfg.get("_base_dir"):
         cfg["_base_dir"] = os.path.dirname(os.path.abspath(path))
-    return cfg
+    # Every generation path goes through load_config (CLI gen/validate/merge,
+    # studio recipes, batch workers). Inject the realism defaults here so a
+    # scene cannot silently ship the "clean game render" look just because it
+    # never declared the switches. Explicit scene values always win; a scene
+    # can opt out with {"realism": {"enabled": false}}.
+    from . import realism
+    return realism.apply(cfg)
 
 
 def sensor_basis(pos, look_at, up=(0, 0, 1), roll_deg=0.0):

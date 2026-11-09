@@ -93,7 +93,7 @@
   "sky_weather": "clear",
   "sky_image": "../assets/backdrops/desert/02_Dune_Formations_Namib_37730835362_jpg.jpg",
   "sensor": {
-   "enabled": false,
+   "enabled": true,
    "airlight_linear_rgb": [
     0.35,
     0.45,
@@ -341,7 +341,8 @@
    "kind": "ground",
    "weather": "clear",
    "background": {
-    "mode": "none"
+    "mode": "library",
+    "category": "rural"
    }
   },
   "objects": [

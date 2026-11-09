@@ -296,7 +296,8 @@
    "kind": "sea",
    "weather": "clear",
    "background": {
-    "mode": "none"
+    "mode": "library",
+    "category": "open"
    }
   },
   "objects": [

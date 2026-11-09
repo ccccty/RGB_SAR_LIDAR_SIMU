@@ -60,7 +60,11 @@ DEFAULTS = dict(
     n_cross=512, az_extent_m=0.0, oversample=2.0, side="right", looks=1.0,
     duty=0.08,
     antenna_eff=0.6, specular_scale_db=-20.0, diffuse_gamma=0.06,
-    ground_clutter_db=0.0, display_dyn_range_db=26.0, display_anchor_pct=10.0,
+    # 1.5 (not 10) keeps the dark tail of the exponential speckle distribution.
+    # Anchoring the display stretch at the 10th percentile clipped it, which
+    # measured as only 0.48-0.84x the Gamma-theory sigma_dB and made the SAR
+    # look like uniform sensor noise. See PLAN.md "客户视角改进清单" item 0.
+    ground_clutter_db=0.0, display_dyn_range_db=26.0, display_anchor_pct=1.5,
     display_gamma=0.8, seed=0, anchor=None,
     # per-frame pose (dataset.py rewrites these from the clip plan; a standalone
     # run without them falls back to the geometric construction below)

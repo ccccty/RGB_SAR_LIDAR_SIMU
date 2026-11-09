@@ -76,8 +76,15 @@ DEFAULTS = {
     # flare is seen through its plume, and at the 8 km / 2.2 deg engagements the
     # simulator targets the pellet itself is 0.4 px -- it rendered as nothing at
     # all, which read as "the flare was not simulated".
-    "infrared_flare": dict(radius_m=1.0, temp_c=2000.0, decay_s=3.0,
-                           rcs_m2=0.02, mat="engine_hot"),
+    "infrared_flare": dict(radius_m=0.35, temp_c=2000.0, decay_s=3.0,
+                           rcs_m2=0.02, mat="flare_pellet",
+                           # A dispensed round is a hand-sized pellet with a
+                           # few metres of luminous trail, NOT a multi-metre
+                           # ball with a 20 m tail: at a 17 m wingspan the old
+                           # geometry made every decoy as large as the aircraft.
+                           # See flare_mesh(); per-round variation is authored
+                           # in the scene.
+                           trail_m=3.5),
     "noise_jammer": dict(erp_w=200.0, jam_bandwidth_mhz=200.0, mode="barrage",
                          look_at_sensor=True, sidelobe_db=-25.0,
                          off_band_factor=0.05, rcs_m2=0.2,
@@ -1023,6 +1030,78 @@ def icosphere(radius=1.0, level=1):
     return v * float(radius), f
 
 
+def flare_mesh(size=(8.0, 1.0, 0.25)):
+    """One dispensed infrared decoy: a bright compact head + a long thin trail.
+
+    Reference photos (aircraft dispensing a fan of flares) show a small
+    near-white point with a narrow, tapered smoke/flare streak behind it, NOT a
+    sphere. The old icosphere read as a golf ball in the optical frame and as a
+    circular hot blob in LWIR. This mesh is shared by the numpy World and the
+    Blender renderer so both modalities see exactly the same silhouette.
+
+    Local frame: +X is the direction of flight, the head sits at the origin and
+    the trail extends towards -X. ``size`` = (trail length, head radius,
+    trail radius) in metres.
+    """
+    try:
+        length = max(float(size[0]), 1e-3)
+        head_r = max(float(size[1]), 1e-3)
+        tail_r = max(float(size[2]) if len(size) > 2 else head_r * 0.25, 1e-3)
+    except (TypeError, ValueError, IndexError):
+        length, head_r, tail_r = 8.0, 1.0, 0.25
+
+    # Head: an octahedron. Six vertices, eight facets -- cheap for the BVH and
+    # still reads as a point source with a slight anisotropic glint.
+    r = head_r
+    hv = np.array([[r, 0, 0], [-r, 0, 0], [0, r, 0],
+                   [0, -r, 0], [0, 0, r], [0, 0, -r]], float)
+    hf = np.array([[0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4],
+                   [2, 0, 5], [1, 2, 5], [3, 1, 5], [0, 3, 5]], np.int32)
+
+    # Trail: a tapered diamond-section prism, from just behind the head to
+    # -length. The trailing ring is much thinner, so the streak fades in width
+    # the way a real flare trail does.
+    x0, x1 = -head_r * 0.8, -length
+    # Keep the far end reasonably wide: at 2.5 km a 0.03 m tip is sub-pixel and
+    # the streak disappears entirely, leaving just the head (which reads as a
+    # row of dots). A visible tapered trail is the whole point of this shape.
+    a0, a1 = tail_r, tail_r * 0.55
+    tv = np.array([
+        [x0, a0, 0], [x0, 0, a0], [x0, -a0, 0], [x0, 0, -a0],
+        [x1, a1, 0], [x1, 0, a1], [x1, -a1, 0], [x1, 0, -a1],
+    ], float)
+    tf = []
+    for i in range(4):
+        j = (i + 1) % 4
+        tf += [[i, j, 4 + j], [i, 4 + j, 4 + i]]
+    tf += [[4, 5, 6], [4, 6, 7]]          # close the far end
+    tf = np.asarray(tf, np.int32)
+
+    v = np.vstack([hv, tv])
+    f = np.vstack([hf, tf + len(hv)])
+    # scene.prepare_mesh recentres x/y and puts the base at z=0. Pre-centre the
+    # mesh here so that function becomes a no-op: otherwise the Blender frame
+    # would show the decoy 3.5 m away from where the IR/radar world put it
+    # (about 28 px at 2.5 km), which would silently break registration.
+    v[:, 0] += (length - head_r) * 0.5
+    v[:, 2] += head_r
+    return Mesh(v, f, name="flare_decoy", mat="flare_pellet")
+
+
+def flare_size(ent):
+    """(trail length, head radius, trail radius) shared by BOTH render paths.
+
+    Keeping this in one place is what guarantees the numpy World and the
+    Blender frame draw the identical decoy; a divergent constant here would
+    show up as a cross-modal registration error that no label check can see.
+    """
+    r = max(float(ent.get("radius_m", 0.35)), 1e-3)
+    # Scale the trail to the pellet: its radius must stay BELOW the head's,
+    # otherwise a "flare" reads as a fat cone larger than the aircraft.
+    return (max(float(ent.get("trail_m", 3.5)), 0.5), r,
+            max(0.04, r * 0.85))
+
+
 def trihedral(size=0.3):
     """Three mutually orthogonal plates: the closed-form corner reflector."""
     a = float(size)
@@ -1044,8 +1123,9 @@ def _world_mesh(ent):
         v = v * (np.array([r, r, r]) * ax)
         m = Mesh(v, f, name=ent["id"], mat=ent["mat"])
     elif kind == "infrared_flare":
-        v, f = icosphere(max(ent["radius_m"], 1e-3), 2)
-        m = Mesh(v, f, name=ent["id"], mat=ent["mat"])
+        # A dispensed flare is a bright head with a tapered streak, not a ball.
+        m = flare_mesh(flare_size(ent))
+        m.name, m.mat = ent["id"], ent["mat"]
     elif kind == "corner_reflector":
         v, f = trihedral(ent["size_m"])
         m = Mesh(v, f, name=ent["id"], mat=ent["mat"])
@@ -1082,9 +1162,14 @@ def render_objects(cfg, t=0.0, tracks=None):
         if not ent.get("visible", True) or ent["kind"] not in BODY_KINDS:
             continue
         kind = ent["kind"]
-        if kind in ("chaff_cloud", "infrared_flare"):
+        if kind == "chaff_cloud":
             size = [2.0 * float(ent["radius_m"])] * 3
             shape = "sphere"
+        elif kind == "infrared_flare":
+            # Same mesh as _world_mesh -> optical, IR, radar and lidar agree on
+            # the decoy's silhouette. scene._reshape("flare") calls flare_mesh.
+            size = list(flare_size(ent))
+            shape = "flare"
         elif kind == "corner_reflector":
             size = [float(ent["size_m"])] * 3
             shape = "box"

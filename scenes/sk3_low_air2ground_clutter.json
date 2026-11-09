@@ -3,7 +3,9 @@
   "enabled": true,
   "size": 8000,
   "mat": "asphalt",
-  "z": 0
+  "z": 0,
+  "backdrop": "../assets/backdrops/desert/01_Dune_Formation_Namib_Skeleton_Coast_37504515070_jpg.jpg",
+  "_why_backdrop": "PLAN.md §5 item 0: a 2.2 deg narrow FOV with only procedural Voronoi ground has p99-p1 = 9.24 DN; a real plate restores texture. The other sk3_* scenes stay pure sky / city geometry by design."
  },
  "weather": {
   "mode": "per_clip",

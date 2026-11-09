@@ -24,7 +24,10 @@ PRESETS = {
 }
 
 IR_BANDS = dict(mwir=[3.0, 5.0], lwir=[8.0, 12.0], swir=[1.0, 3.0])
-IR_TAU_CLEAR = dict(mwir=0.10, lwir=0.06, swir=0.15)   # per km, mid-latitude approx
+# The old constant IR_TAU_CLEAR = {mwir:0.10, lwir:0.06, swir:0.15} per km was
+# removed: nothing reads it any more now that beta_aer_* / tau_ir_per_km are
+# derived from Kim/Kruse aerosol + water vapour below. Keeping a dead "clear sky"
+# constant next to the live model is how a caller ends up silently using it.
 
 # fc, default beamwidths, gas attenuation (ITU-R P.676 approx, dB/km),
 # rain attenuation gamma = k * R^alpha dB/km (ITU-R P.838-3, h-pol approx).
@@ -160,6 +163,20 @@ def _sky_emissivity(t_c, rh, cloud):
     return min(max(eps, 0.3), 0.99)
 
 
+def sky_temperature_k(t_c, rh=0.5, cloud=0.0):
+    """Grey-equivalent sky temperature [K], one source of truth.
+
+    Swinbank's 0.0552*T^1.5 with the (1-0.25*RH) humidity factor is physically
+    backwards: a moister sky radiates MORE, not less, and the old factor made
+    clear-sky T_sky 25-35 K too cold (ground surfaces 5-7 K too cold). Every
+    fallback path (thermal.sky_temp, ir.render without a derived weather state)
+    must go through this function so a caller that forgot to call derive() gets
+    the same physics as the main render loop.
+    """
+    t_air = float(t_c) + 273.15
+    return float(_sky_emissivity(t_c, rh, cloud)) ** 0.25 * t_air
+
+
 # Band coupling of the sky: the sky is NOT a blackbody at its broadband
 # temperature. In 3-5 um it is almost transparent (kappa 0.04-0.12), in 8-12 um
 # it is close to opaque (kappa 0.40-0.55). Feeding a broadband 280 K sky into
@@ -212,7 +229,7 @@ def derive(w):
     # per-band coupling that decides how much of it a given camera actually sees
     w_cm, w_km = _water_vapour(w, t_c, rh)
     eps_sky = _sky_emissivity(t_c, rh, cloud)
-    t_sky = eps_sky ** 0.25 * T_air
+    t_sky = sky_temperature_k(t_c, rh, cloud)
     kappa = _sky_kappa(w_cm, cloud)
 
     wetness = min(1.0, rain / 4.0)

@@ -1,7 +1,82 @@
 {
- "generated": "2026-11-08T20:08:37+08:00",
- "domain": "air + sea + jam",
+ "generated": "2026-11-09T20:00:27+08:00",
+ "domain": "air + land + sea (v1 real-plate) + jam",
  "scenes": [
+  {
+   "id": "v1_air",
+   "title": "空域 · 云层实拍底板",
+   "cls": "fighter",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "lwir",
+    "radar"
+   ],
+   "frames": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "hero": {
+    "mod": "optical",
+    "frame": 0
+   },
+   "note": "5 帧 · 云层实拍底板 · 飞机 + 6 枚下抛红外诱饵 · 三模态同轴配准",
+   "caption": "真实云层照片作背景，飞机保持 30 px 级弱小目标；6 枚诱饵沿航向轴线对称、逐帧向下抛射，不随机体平移。"
+  },
+  {
+   "id": "v1_land",
+   "title": "陆域 · 城市道路航拍底板",
+   "cls": "vehicle",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "lwir",
+    "radar"
+   ],
+   "frames": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "hero": {
+    "mod": "optical",
+    "frame": 0
+   },
+   "note": "5 帧 · 环岛/多车道实拍底板 · 浅色厢式货车 + 匀速车流 + 静止路障",
+   "caption": "真实航拍道路照片带车道线、停放车辆与建筑；主目标是 6.75 m 浅色厢式货车，3 辆正常车辆各自匀速行驶，3 个路侧障碍严格静止。"
+  },
+  {
+   "id": "v1_sea",
+   "title": "海域 · 开阔海面实拍底板",
+   "cls": "ship",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "lwir",
+    "radar"
+   ],
+   "frames": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "hero": {
+    "mod": "optical",
+    "frame": 0
+   },
+   "note": "5 帧 · 海浪实拍底板 · 导弹艇 + 航行小艇 + 锚泊小艇 · 海杂波脊",
+   "caption": "真实海浪照片作底板，主目标舰船与一艘航行小艇、一艘锚泊小艇同框；雷达 RD 图上可见零多普勒海杂波脊。"
+  },
   {
    "id": "demo_air_headon",
    "title": "迎头接近 · 战机",
@@ -59,33 +134,6 @@
    "caption": "从后方跟拍，机翼后缘与尾喷清楚，目标在缓慢拉开距离。"
   },
   {
-   "id": "final_air",
-   "title": "大型无人机 · 侧后视角",
-   "cls": "uav",
-   "band": "Ka",
-   "aspect": "4:3",
-   "mods": [
-    "optical",
-    "mwir",
-    "lwir",
-    "radar",
-    "radar_ra",
-    "lidar_range",
-    "lidar_intensity"
-   ],
-   "frames": [
-    1,
-    3,
-    5
-   ],
-   "hero": {
-    "mod": "optical",
-    "frame": 1
-   },
-   "note": "3 帧 · 雷达 1.5 km · 远离 5 m/s",
-   "caption": "大型无人机侧后方，翼展约占画幅五分之一，纯色天空把机体轮廓衬出来。"
-  },
-  {
    "id": "seeker_air2air_high",
    "title": "高空目标 · 双视场",
    "cls": "uav",
@@ -115,33 +163,6 @@
    },
    "note": "4 帧 · 雷达 7.5 km · 闭速 251 m/s",
    "caption": "窄视场里目标只有三十来像素，先靠宽视场找到，再用窄视场分辨。"
-  },
-  {
-   "id": "demo_three_ships_plate",
-   "title": "三机俯视板面",
-   "cls": "fighter",
-   "band": "Ku",
-   "aspect": "4:3",
-   "mods": [
-    "optical",
-    "mwir",
-    "lwir",
-    "radar",
-    "radar_ra",
-    "lidar_range",
-    "lidar_intensity"
-   ],
-   "frames": [
-    4,
-    10,
-    12
-   ],
-   "hero": {
-    "mod": "optical",
-    "frame": 4
-   },
-   "note": "3 帧 · 雷达 4.3 km · 远离 2 m/s · 3 个目标",
-   "caption": "俯视云海上的三架飞机同框，间距均匀，便于看编队几何。"
   },
   {
    "id": "demo_sea_surface",
@@ -194,30 +215,6 @@
    },
    "note": "30 帧 · 有源压制(3 W ERP / 200 MHz) + 箔条云(RCS 140 m²) + 假目标 + 红外诱饵 · 目标 31 px",
    "caption": "宽带噪声把 RD 基底整体抬高约 17 dB，目标仍可检出；光学目标轮廓不变，干扰只发生在雷达检测层。"
-  },
-  {
-   "id": "v3jam_land",
-   "title": "干扰 · 陆域地物/地杂波",
-   "cls": "vehicle",
-   "band": "Ku",
-   "aspect": "4:3",
-   "mods": [
-    "optical",
-    "lwir",
-    "radar"
-   ],
-   "frames": [
-    0,
-    9,
-    19,
-    29
-   ],
-   "hero": {
-    "mod": "radar",
-    "frame": 9
-   },
-   "note": "30 帧 · label:false 地面杂物/建筑 + 地杂波(clutter_density 0.08) · 目标 31 px",
-   "caption": "地面域不抬升全图噪声基底，而是在零多普勒中心竖起强脊(约 +13 dB)；光学目标不变，杂物均不进 COCO 标注。"
   },
   {
    "id": "v3jam_naval",

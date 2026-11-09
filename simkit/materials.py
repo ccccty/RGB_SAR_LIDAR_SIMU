@@ -140,6 +140,23 @@ MATERIALS = {
                        # magnesium/PTFE flare: a near-white emitter far brighter
                        # than any sunlit surface in the frame
                        emissive=(1.0, 0.86, 0.62, 60.0)),
+    # A white delivery van / sedan is the single most common vehicle colour in
+    # aerial vehicle benchmarks. The generic painted_metal (albedo 0.22) made
+    # a 30 px car indistinguishable from asphalt. Low solar absorption also
+    # keeps it COOLER than the road in LWIR, which is the correct thermal cue.
+    "paint_car_white": dict(rf_rho=0.35, rough_m=0.0120, emissivity=0.92,
+                            emissivity_mwir=0.90, emissivity_lwir=0.92,
+                            alpha_solar=0.32, albedo=(0.86, 0.87, 0.88),
+                            h_int=0.0),
+    # A dispensed IR round is a small pellet, not an engine nozzle. At the
+    # engine_hot emission (60) six sub-pixel rounds saturate into ONE white
+    # blob and the dispense order becomes invisible. 10 is still far brighter
+    # than any sunlit surface but keeps the six points separable. IR temperature
+    # is carried by the ECM entity's temp_c, not by this visible-band emitter.
+    "flare_pellet": dict(rf_rho=0.60, rough_m=0.0020, emissivity=0.90,
+                         emissivity_mwir=0.85, emissivity_lwir=0.90,
+                         alpha_solar=0.40, albedo=(0.20, 0.20, 0.22), h_int=900.0,
+                         emissive=(1.0, 0.90, 0.72, 10.0)),
     "seawater": dict(rf_rho=0.35, rough_m=0.0500, emissivity=0.96,
                      emissivity_mwir=0.96, emissivity_lwir=0.96,
                      alpha_solar=0.94, albedo=(0.04, 0.07, 0.10), h_int=0.0),

@@ -460,14 +460,25 @@ class MultiTargetRouteTests(unittest.TestCase):
 
     def test_background_needs_its_payload(self):
         r = scenegen.default_recipe()
-        r['environment']['background'] = {'mode': 'hdri', 'id': 'sky_4k'}
+        r['environment']['background'] = {'mode': 'library', 'category': 'sky'}
         self.assertEqual(
             scenegen.validate_recipe(r)['environment']['background'],
-            {'mode': 'hdri', 'id': 'sky_4k'})
+            {'mode': 'library', 'category': 'sky'})
         r['environment']['background'] = {'mode': 'upload', 'path': 'u/bg.png'}
         self.assertEqual(
             scenegen.validate_recipe(r)['environment']['background']['path'],
             'u/bg.png')
+
+    def test_legacy_background_modes_are_refused(self):
+        # "无背景" and "内置天空" were removed from the studio scene module;
+        # an old recipe must fail loudly, not silently produce a gradient sky.
+        for mode in ('none', 'hdri'):
+            r = scenegen.default_recipe()
+            r['environment']['background'] = {'mode': mode}
+            with self.assertRaises(ValueError) as cm:
+                scenegen.validate_recipe(r)
+            self.assertIn(mode, str(cm.exception))
+        self.assertEqual(tuple(scenegen.BACKGROUND_MODES), ('library', 'upload'))
 
 
 class RecipeRejectionTests(unittest.TestCase):
@@ -529,8 +540,8 @@ class RecipeRejectionTests(unittest.TestCase):
             r['ecm'] = {'mode': 'active',
                         'entities': [{'id': 'x', 'kind': 'laser_gun'}]}
 
-        def hdri_without_id(r):
-            r['environment']['background'] = {'mode': 'hdri'}
+        def legacy_background_mode(r):
+            r['environment']['background'] = {'mode': 'none'}
 
         for field, fn in (('objects', missing_objects),
                           ('environment.kind', bad_env),
@@ -548,7 +559,7 @@ class RecipeRejectionTests(unittest.TestCase):
                           ('objects[0].count', bad_count),
                           ('ecm.mode', entities_without_mode),
                           ('ecm.entities', bad_entity),
-                          ('environment.background', hdri_without_id)):
+                          ('environment.background', legacy_background_mode)):
             add(field, fn)
         return out
 
@@ -947,12 +958,14 @@ class BackgroundTests(unittest.TestCase):
 
     PNG = os.path.join(scenegen.MODELS_DIR, '旋翼无人机', '四旋翼无人机.png')
 
-    def test_none_writes_no_background_key(self):
+    def test_library_writes_the_plate_keys(self):
+        # The default recipe now carries a real plate (the two removed modes
+        # had nowhere to place a target), so both render blocks must see it.
         cfg = scenegen.build_scene(scenegen.default_recipe())
-        self.assertNotIn('sky_image', cfg['optical'])
-        self.assertNotIn('background_image', cfg['ir'])
+        self.assertTrue(os.path.isfile(cfg['optical']['sky_image']))
+        self.assertEqual(cfg['ir']['background_image'],
+                         cfg['optical']['sky_image'])
         self.assertNotIn('ir', cfg['sensors'])
-        self.assertEqual(cfg['notes'], [])
 
     def test_upload_reaches_both_renderers_and_no_radar(self):
         self.assertTrue(os.path.isfile(self.PNG))
@@ -1004,58 +1017,19 @@ class BackgroundTests(unittest.TestCase):
         self.assertIn('背景图', msg)
         self.assertTrue(has_chinese(msg))
 
-    def test_hdri_uses_the_local_cache(self):
-        try:
-            from simkit import assets_fetch
-        except Exception as exc:                        # pragma: no cover
-            self.skipTest('assets_fetch not importable: %s' % exc)
-        cached = [e for e in assets_fetch.list_cached()
-                  if e.get('kind') == 'hdri' and os.path.isfile(e.get('path') or '')]
-        if not cached:
-            self.skipTest('no cached HDRI on this machine')
-        # Weather decides which plate is used, not the id the form happened to
-        # send: the UI always sends whatever it last used, so honouring the id
-        # first made "cloudy" keep rendering the clear sky.
-        r = scenegen.default_recipe()
-        weather = r['environment']['weather']
-        r['environment']['background'] = {'mode': 'hdri', 'id': cached[0]['id']}
-        cfg = scenegen.build_scene(r)
-        chosen = cfg['optical']['sky_image']
-        self.assertTrue(os.path.isfile(chosen), chosen)
-        want = [i for i in scenegen.WEATHER_HDRI.get(weather, ())
-                if any(e.get('id') == i for e in cached)]
-        if want:
-            by_id = {e['id']: e['path'] for e in cached}
-            self.assertEqual(chosen, by_id[want[0]],
-                             'weather %r should pick %r' % (weather, want[0]))
-        self.assertEqual(cfg['ir']['background_image'], chosen)
-        self.assertEqual(cfg['notes'], [])
-        self.assertGreater(len(world_of(cfg).faces), 0)
-
-    def test_hdri_offline_falls_back_to_the_gradient_sky(self):
-        from unittest import mock
-        try:
-            from simkit import assets_fetch
-        except Exception as exc:                        # pragma: no cover
-            self.skipTest('assets_fetch not importable: %s' % exc)
-
-        def offline(*_args, **_kwargs):
-            raise assets_fetch.AssetsUnavailable('simulated offline')
-
+    def test_legacy_hdri_recipe_cannot_build(self):
+        # No HDRI lookup, no "download on first use", no silent gradient
+        # fallback: a recipe still naming the removed mode is an error.
         r = scenegen.default_recipe()
         r['environment']['background'] = {'mode': 'hdri',
-                                          'id': 'definitely_not_cached_sky'}
-        # A machine with no cached plates at all, and no network: the weather
-        # table cannot be satisfied either, so the gradient has to take over.
-        with mock.patch.object(assets_fetch, 'list_cached', lambda *a, **k: []), \
-                mock.patch.object(assets_fetch, 'hdri_for_weather', offline):
-            cfg = scenegen.build_scene(r)               # must not raise
-        self.assertNotIn('sky_image', cfg['optical'])
-        self.assertNotIn('background_image', cfg['ir'])
-        self.assertTrue(any('内置天空不可用' in note for note in cfg['notes']),
-                        cfg['notes'])
-        # the scene is still a legal scene
+                                          'id': 'kloofendal_43d_clear_puresky'}
+        with self.assertRaises(ValueError):
+            scenegen.build_scene(r)
+
+    def test_library_plate_reaches_the_world(self):
+        cfg = scenegen.build_scene(scenegen.default_recipe())
         self.assertGreater(len(world_of(cfg).faces), 0)
+        self.assertTrue(os.path.isfile(cfg['ir']['background_image']))
 
     def test_background_blocks_only_touch_optical_and_ir(self):
         r = scenegen.default_recipe()
@@ -1229,13 +1203,16 @@ class AssetListTests(unittest.TestCase):
 
 class SummaryTests(unittest.TestCase):
     def test_summary_reads_like_the_ui_wants(self):
+        # The UI now offers exactly two background sources.
         r = scenegen.default_recipe()
-        self.assertEqual(scenegen.env_summary(r), '天空 · 晴 · 纯色背景')
-        r['environment']['background'] = {'mode': 'hdri', 'id': 'dawn'}
-        self.assertEqual(scenegen.env_summary(r), '天空 · 晴 · HDRI')
+        self.assertEqual(scenegen.env_summary(r), '天空 · 晴 · 背景库')
         r['environment']['background'] = {'mode': 'upload',
                                           'path': 'u/bg.png'}
-        self.assertEqual(scenegen.env_summary(r), '天空 · 晴 · 上传图')
+        self.assertEqual(scenegen.env_summary(r), '天空 · 晴 · 本地图片')
+        # A recipe still naming a removed mode falls back to the lenient
+        # summary rather than crashing the recipe browser.
+        r['environment']['background'] = {'mode': 'hdri', 'id': 'dawn'}
+        self.assertNotIn('HDRI', scenegen.env_summary(r))
 
     def test_summary_covers_all_three_environments(self):
         labels = {'sky': '天空', 'ground': '地面', 'sea': '海面'}

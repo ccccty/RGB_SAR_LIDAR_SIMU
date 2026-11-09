@@ -80,7 +80,7 @@
   "sky_weather": "clear",
   "sky_image": "../assets/backdrops/sky/17_Cloudscapes_from_6E-6325_DEL-IXR_1_jpg.jpg",
   "sensor": {
-   "enabled": false,
+   "enabled": true,
    "airlight_linear_rgb": [
     0.35,
     0.45,
@@ -326,7 +326,8 @@
    "kind": "sky",
    "weather": "clear",
    "background": {
-    "mode": "none"
+    "mode": "library",
+    "category": "sky"
    }
   },
   "objects": [

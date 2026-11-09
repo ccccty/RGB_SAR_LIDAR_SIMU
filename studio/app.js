@@ -7,7 +7,6 @@
   "use strict";
 
   var API = "/api";
-  var BG_HDRI_ID = "kloofendal_48d_partly_cloudy_puresky";
   var SCALE = { small: 0.7, medium: 1.0, large: 1.4 };
   var SIZE_LABEL = { small: "小", medium: "标准", large: "大" };
   var COMMON = ["id", "pos", "vel", "accel", "life", "band", "visible", "note"];
@@ -141,7 +140,8 @@
       name: "我的数据集",
       env: { kind: "sky", weather: "clear" },
       /* file 为空时按种子在同类照片间轮换；选定具体照片则永远用它。 */
-      bg: { mode: "none", path: "", dataUrl: "", category: "forest", file: "" },
+      bg: { mode: "library", path: "", dataUrl: "", category: "forest", file: "",
+            span_m: null, sky_card: null, offset: null },
       bgUi: { open: "", domains: {} },
       /* 在背景图上的放置：uv 是归一化图面坐标，orig 为左上角。
          points 是同一条轨迹的 uv 序列。 */
@@ -159,7 +159,8 @@
                climb: 0 },
       obj: {
         category: "军用飞机", asset: "军用飞机/双发战斗机.obj",
-        cls: "fighter", scale: 1.0, count: 1
+        cls: "fighter", scale: 1.0, count: 1,
+        mat: "", rcs_db: null
       },
       size: "medium",
       ecm: { entities: [] },
@@ -179,7 +180,7 @@
       /* 红外特效开关。plume = 发动机尾焰（关闭后红外画面不再有尾焰锥与喷口热区）；
        * supersample = 1..4 的超采样倍数，0 表示用渲染器默认（每像素一次）。
        * 尾焰在交战距离上只有几个像素宽，1 倍采样会把它采成一根锯齿亮条。 */
-      effects: { plume: false, supersample: 0 },
+      effects: { plume: false, supersample: 0, flare: true },
       output: { preview: true, coco: true, yolo: true, readme: true },
       outputDir: "",
       recipeSource: ""
@@ -364,10 +365,12 @@
     return (Math.abs(n - Math.round(n)) < 1e-9) ? String(Math.round(n)) : n.toFixed(1);
   }
   function bgSummary() {
-    if (S.bg.mode === "hdri") { return "内置天空"; }
-    if (S.bg.mode === "library") { return "背景库"; }
-    if (S.bg.mode === "upload") { return "自定义图"; }
-    return "无背景";
+    /* Only two background sources remain: the shipped real-photo library and
+       an operator-supplied local image. The old "none" (gradient sky) and
+       "hdri" (built-in sky) modes were removed together with their backend,
+       recipe enum and HDRI assets. */
+    if (S.bg.mode === "upload") { return "本地图片"; }
+    return "背景库";
   }
   function outParts() {
     var parts = [];
@@ -628,21 +631,28 @@
   }
 
   function backgroundPayload() {
-    if (S.bg.mode === "hdri") {
-      return { mode: "hdri", id: BG_HDRI_ID };
-    }
-    if (S.bg.mode === "library") {
-      /* Real plate from assets/backdrops. For ground/sea the engine also maps it
-         onto the ground material -- a look-down view shows terrain, not sky.
-         A chosen file wins over the seed rotation the engine would otherwise do. */
-      var _bg = { mode: "library", category: S.bg.category || "forest" };
-      if (S.bg.file) { _bg.file = S.bg.file; }
-      return _bg;
-    }
     if (S.bg.mode === "upload") {
       return { mode: "upload", path: trim(S.bg.path) };
     }
-    return { mode: "none" };
+    /* Default: a real plate from assets/backdrops. For ground/sea the engine
+       also maps it onto the ground material -- a look-down view shows terrain,
+       not sky. A chosen file wins over the seed rotation. */
+    var _bg = { mode: "library", category: S.bg.category || "forest" };
+    if (S.bg.file) { _bg.file = S.bg.file; }
+    /* Curated presets carry two v1 realism knobs: one wide plate tile (so the
+       REPEAT seam leaves the frame) and no camera-parented sky card over a
+       look-down ground/sea view. Both are opt-in; the default form sends neither. */
+    if (S.bg.span_m !== null && S.bg.span_m !== undefined &&
+        S.bg.span_m !== "" && num(S.bg.span_m, 0) > 0) {
+      _bg.span_m = num(S.bg.span_m, 0);
+    }
+    if (S.bg.sky_card === false) { _bg.sky_card = false; }
+    /* [u, v] of the photograph to put at the world origin. A roundabout's
+       bright centre would otherwise dominate a look-down vehicle frame. */
+    if (isArray(S.bg.offset) && S.bg.offset.length === 2) {
+      _bg.offset = [num(S.bg.offset[0], 0.5), num(S.bg.offset[1], 0.5)];
+    }
+    return _bg;
   }
 
   function entityPayload(entity) {
@@ -666,12 +676,18 @@
   }
 
   function buildRecipe() {
-    var objects = [{
+    var _ob = {
       asset: trim(S.obj.asset),
       cls: trim(S.obj.cls) || "fighter",
       scale: num(S.obj.scale, 1),
       count: clamp(intval(S.obj.count, 1), 1, 64)
-    }];
+    };
+    /* Optional per-target overrides from a curated preset: a light civilian
+       paint and a measured-scale RCS instead of the geometric PO estimate. */
+    if (trim(S.obj.mat || "")) { _ob.mat = trim(S.obj.mat); }
+    if (S.obj.rcs_db !== null && S.obj.rcs_db !== undefined &&
+        S.obj.rcs_db !== "") { _ob.rcs_db = num(S.obj.rcs_db, 0); }
+    var objects = [_ob];
     var entities = [];
     each(S.ecm.entities, function (entity) {
       entities.push(entityPayload(entity));
@@ -711,7 +727,10 @@
       },
       effects: {
         plume: !!S.effects.plume,
-        supersample: clamp(intval(S.effects.supersample, 0), 0, 4)
+        supersample: clamp(intval(S.effects.supersample, 0), 0, 4),
+        /* Curated presets turn the synthetic glare stage off: real photo
+           plates carry their own sun/lamp highlights. */
+        flare: S.effects.flare !== false
       }
     };
   }
@@ -1028,8 +1047,6 @@
     });
 
     var modes = [
-      { key: "none", label: "无背景" },
-      { key: "hdri", label: "内置天空" },
       { key: "library", label: "背景库" },
       { key: "upload", label: "本地图片" }
     ];
@@ -1046,7 +1063,6 @@
       bgSeg.appendChild(btn);
     });
 
-    show($("bgBuiltinNote"), S.bg.mode === "hdri");
     show($("bgFileWrap"), S.bg.mode === "upload");
     show($("bgLibraryWrap"), S.bg.mode === "library");
     var cats = $("bgCats");
@@ -3895,16 +3911,26 @@
     if (labelIn(OPT.env_kinds, env.kind, "")) { S.env.kind = env.kind; }
     if (labelIn(OPT.weather, env.weather, "")) { S.env.weather = env.weather; }
     var bg = env.background || {};
-    if (bg.mode === "hdri") { S.bg.mode = "hdri"; }
-    else if (bg.mode === "upload") { S.bg.mode = "upload"; }
-    else if (bg.mode === "library") { S.bg.mode = "library"; }
-    else { S.bg.mode = "none"; }
+    /* Old recipes may still say none/hdri; both collapse to the background
+       library so the form can never land on a mode the UI no longer offers. */
+    S.bg.mode = (bg.mode === "upload") ? "upload" : "library";
     S.bg.path = bg.path || "";
     S.bg.category = bg.category || S.bg.category;
     S.bg.file = bg.file || "";
     S.bg.dataUrl = "";
+    /* Reset the optional realism knobs when loading an ordinary recipe, so a
+       previously loaded preset cannot leak its plate/RCS into the next run. */
+    S.bg.span_m = (bg.span_m === undefined || bg.span_m === null ||
+                   bg.span_m === "") ? null : num(bg.span_m, 0);
+    S.bg.sky_card = (bg.sky_card === false) ? false : null;
+    S.bg.offset = (isArray(bg.offset) && bg.offset.length === 2)
+      ? [num(bg.offset[0], 0.5), num(bg.offset[1], 0.5)] : null;
 
     var objects = recipe.objects || [];
+    var _first = objects[0] || {};
+    S.obj.mat = _first.mat ? String(_first.mat) : "";
+    S.obj.rcs_db = (_first.rcs_db === undefined || _first.rcs_db === null ||
+                    _first.rcs_db === "") ? null : num(_first.rcs_db, 0);
     if (isArray(objects) && objects.length) {
       var obj = objects[0] || {};
       S.obj.asset = obj.asset || S.obj.asset;
@@ -4010,6 +4036,9 @@
     if (has(fx, "supersample")) {
       S.effects.supersample = clamp(intval(fx.supersample, 0), 0, 4);
     }
+    /* Reset to the platform default when loading an old recipe without the
+       key, so a previously loaded preset cannot silently disable glare. */
+    S.effects.flare = has(fx, "flare") ? !!fx.flare : true;
 
     PREVIEWED = false;
     JUST_DONE = false;

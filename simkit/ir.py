@@ -914,6 +914,11 @@ def render(world, cfg, temps_k, cam=None):
         t_sky = float(w["t_sky_k"])
         kap = float((w.get("sky_kappa") or {}).get(bname or "lwir", 0.5))
     else:
+        # No derived weather state (bare API call / unit probe). This is a
+        # simplified grey-sky estimate; the production render loop always has
+        # _weather and uses the Clark-Allen t_sky_k there. It deliberately has
+        # NO (1 - 0.25*RH) factor -- the humidity sign of that correction was
+        # backwards (see weather.sky_temperature_k and thermal.sky_temp).
         t_sky = 0.0552 * t_env ** 1.5
         kap = 0.5
     L_sky = kap * b_air                       # what the camera sees looking up

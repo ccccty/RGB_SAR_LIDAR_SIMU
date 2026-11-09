@@ -60,7 +60,7 @@
     <section class="box open" id="box-scene" data-box="scene">
       <header class="box-head" role="button" tabindex="0" aria-expanded="true" aria-controls="body-scene">
         <span class="num">①</span><span class="title">场景</span>
-        <span class="summary" id="sum-scene">天空 · 晴 · 无背景</span>
+        <span class="summary" id="sum-scene">天空 · 晴 · 背景库</span>
         <span class="box-flag" id="boxflag-scene"></span>
         <span class="chev" aria-hidden="true"></span>
       </header>
@@ -76,7 +76,6 @@
         <div class="field">
           <span class="label">背景图</span>
           <div class="seg" id="bgSeg"></div>
-          <p class="note" id="bgBuiltinNote" hidden>按天气自动匹配，首次需联网下载，之后离线可用。</p>
         <div class="bg-library" id="bgLibraryWrap" hidden>
           <span class="label">背景库（真实航拍照片）</span>
           <div class="bg-lib" id="bgCats"></div>
@@ -126,7 +125,7 @@
             </div>
             <label class="field">
               <span class="label">服务器可读路径</span>
-              <input type="text" id="bgPath" placeholder="例如 D:\textures\sky_clear.hdr" spellcheck="false">
+              <input type="text" id="bgPath" placeholder="例如 D:\textures\background.jpg" spellcheck="false">
             </label>
             <p class="hint">后端在服务器进程里读取这个路径；浏览器选中的文件只做本地预览，不会上传。</p>
           </div>

@@ -5,7 +5,8 @@
   "kind": "sky",
   "weather": "clear",
   "background": {
-   "mode": "none"
+   "mode": "library",
+   "category": "sky"
   }
  },
  "objects": [

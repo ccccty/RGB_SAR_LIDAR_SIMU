@@ -1,0 +1,114 @@
+{
+ "name": "p_land_industrial_active",
+ "title": "陆 · 工业区停车场 · 有源干扰 ｜ 5帧 × 三模态",
+ "note": "v1 陆域基线：6.75 m 白色厢式货车、8 dBsm、1200 m 宽底板（画面仅 400 m）消除平铺接缝；正俯视 + 底板偏移把目标钉在多车道沥青上。 干扰组：噪声压制 + DRFM 假目标 + 域专属欺骗",
+ "tags": [
+  "land",
+  "industrial",
+  "active",
+  "v1-baseline"
+ ],
+ "environment": {
+  "kind": "ground",
+  "weather": "cloudy",
+  "background": {
+   "mode": "library",
+   "category": "industrial",
+   "file": "03_Mechelen_aerial_jpg.jpg",
+   "span_m": 1200.0,
+   "sky_card": false,
+   "offset": [
+    0.2,
+    0.45
+   ]
+  }
+ },
+ "objects": [
+  {
+   "asset": "地面车辆/厢式货车.obj",
+   "cls": "vehicle",
+   "scale": 1.25,
+   "count": 1,
+   "mat": "paint_car_white",
+   "rcs_db": 8.0,
+   "uv": [
+    0.5,
+    0.5
+   ]
+  }
+ ],
+ "ecm": {
+  "mode": "active",
+  "entities": [
+   {
+    "id": "jammer_01",
+    "kind": "noise_jammer",
+    "erp_w": 200.0,
+    "jam_bandwidth_mhz": 200.0,
+    "mode": "barrage",
+    "band": "Ku",
+    "look_at_sensor": true,
+    "sidelobe_db": -25.0,
+    "off_band_factor": 0.05,
+    "rcs_m2": 0.2,
+    "visible": true,
+    "note": "支援干扰机：宽带噪声压制，抬高雷达噪声底"
+   },
+   {
+    "id": "drfm_01",
+    "kind": "false_target",
+    "count": 4,
+    "range_offset_m": 150.0,
+    "range_step_m": 210.0,
+    "power_ratio": 1.6,
+    "band": "Ku",
+    "visible": true,
+    "note": "DRFM 转发式距离假目标：4 个假距离门"
+   },
+   {
+    "id": "angle_01",
+    "kind": "angle_deception",
+    "count": 1,
+    "angle_offset_deg": 0.5,
+    "power_ratio": 1.0,
+    "band": "Ku",
+    "visible": true,
+    "note": "角度欺骗：对地面跟踪雷达制造测角偏置"
+   }
+  ]
+ },
+ "view": {
+  "range_km": 0.65,
+  "aspect": "top_down",
+  "fov_deg": 10.0,
+  "views": "single",
+  "width": 768,
+  "height": 576,
+  "wide_width": 768,
+  "wide_height": 576,
+  "closing_mps": 12.0,
+  "ground_span_m": 400.0
+ },
+ "capture": {
+  "sensors": [
+   "optical",
+   "ir",
+   "radar"
+  ],
+  "frames": 5,
+  "fps": 10.0,
+  "seed": 1120
+ },
+ "effects": {
+  "plume": true,
+  "supersample": 2,
+  "flare": false
+ },
+ "output": {
+  "preview": true,
+  "coco": true,
+  "yolo": true,
+  "readme": true
+ },
+ "_saved_at": "preset"
+}

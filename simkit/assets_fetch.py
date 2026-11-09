@@ -1,5 +1,14 @@
 """CC0 asset fetcher for the simulation platform.
 
+NOTE (2026-11-09): the studio scene module no longer offers "内置天空"/HDRI or
+"无背景"; it only offers the shipped background photo library and a local
+image. `assets/hdri/` and the scenegen hdri branch were removed, and no
+production caller of hdri_for_weather / download_hdri remains. The HDRI helpers
+below are kept as a standalone CC0 asset utility (still covered by
+tests/test_assets_fetch.py) but are no longer part of the generation path, so
+they are not re-exported in __all__. Do not add a new caller: first-use HDRI
+downloads contradict the offline delivery promise.
+
 Sky HDRIs come from Poly Haven and ground materials from ambientCG; both
 libraries publish their assets under CC0.  The module is deliberately offline
 first:
@@ -37,14 +46,12 @@ import zipfile
 from datetime import datetime, timezone
 
 __all__ = [
+    # HDRI helpers are intentionally NOT exported: the studio's "内置天空"
+    # mode was removed, so nothing in the generation path may reach for them.
     "AssetsUnavailable",
-    "HDRI_SIZES",
     "MATERIAL_SIZES",
-    "WEATHER_HDRI_CATEGORIES",
     "MATERIAL_QUERIES",
     "UrllibFetcher",
-    "hdri_for_weather",
-    "download_hdri",
     "list_cached",
     "material_for",
     "read_catalog",

@@ -96,7 +96,7 @@
   "sky_weather": "clear",
   "sky_image": "../assets/backdrops/open/03_Sea_wave_abstract_texture_Unsplash.jpg",
   "sensor": {
-   "enabled": false,
+   "enabled": true,
    "airlight_linear_rgb": [
     0.35,
     0.45,
@@ -347,7 +347,8 @@
    "kind": "sea",
    "weather": "clear",
    "background": {
-    "mode": "none"
+    "mode": "library",
+    "category": "open"
    }
   },
   "objects": [

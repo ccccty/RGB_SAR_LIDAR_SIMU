@@ -703,11 +703,12 @@ class CompatibilityTests(unittest.TestCase):
         paths = sorted(glob.glob(os.path.join(root, "*.json")))
         # Counted on purpose: a scene file that silently disappears from
         # scenes/ (or a stray one that lands there) has to fail a test, not
-        # quietly change what the regression corpus means. 44 = 34 shipped
+        # quietly change what the regression corpus means. 47 = 34 shipped
         # scenes + demo_sea_surface + three ds20_* (v1 trimodal seeker) +
         # three ds20_v2_* (v2 real-backdrop / realism seeker) +
-        # three ds20_v3_* (v3 physics-layer jamming, 2026-11-08).
-        self.assertEqual(len(paths), 44)
+        # three ds20_v3_* (v3 physics-layer jamming, 2026-11-08) +
+        # three ds1109_* (sea/land/air 3-frame tri-modal, 2026-11-09).
+        self.assertEqual(len(paths), 47)
         for path in paths:
             with self.subTest(scene=os.path.basename(path)):
                 cfg = scene.load_config(path)
@@ -753,7 +754,7 @@ class TwoShipDrawnRouteTests(unittest.TestCase):
         recipe = {
             "name": "two_ship_drawn",
             "environment": {"kind": "sky", "weather": "clear",
-                            "background": {"mode": "none"}},
+                            "background": {"mode": "library", "category": "sky"}},
             "objects": [{"asset": "军用飞机/双发战斗机.obj", "cls": "fighter",
                          "scale": 1, "count": 2}],
             "ecm": {"mode": "none", "entities": []},
