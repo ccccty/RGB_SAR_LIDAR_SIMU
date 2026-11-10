@@ -138,12 +138,89 @@ def bake_wake(photo_path, out_path, ship_xy, heading_deg, speed_mps,
                           lam_m=round(info["lam"], 1), froude=round(info["froude"], 2))
 
 
+# 每场景的水面掩膜缓存（键 = 变体底板路径）
+_MASK_CACHE = {}
+
+
+def _ok_water_mask(photo_path):
+    """水面（且非浪花/雾霾/沙滩）掩膜，用于船位与尾迹走廊的落水判定."""
+    if photo_path in _MASK_CACHE:
+        return _MASK_CACHE[photo_path]
+    a = np.asarray(Image.open(photo_path).convert("RGB"), np.float32) / 255.0
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    mx = a.max(-1)
+    mn = a.min(-1)
+    sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-6), 0)
+    water = (b > r * 1.05) & (sat > 0.10) & (mx > 0.15)
+    surf = (mx > 0.72) & (sat < 0.30)          # 浪花/沙滩
+    haze = (mx > 0.60) & (sat < 0.25)          # 地平线雾霾/云
+    ok = water & ~surf & ~haze
+    _MASK_CACHE[photo_path] = ok
+    return ok
+
+
+# 足迹包围盒（900 m 底板分数，4 角保守值，含 wander 余量）：取景偏移必须让
+# 足迹完全落在底板内，否则 IR 采样器 mod 1.0 平铺会出现接缝。
+FP_U_MIN, FP_U_MAX = -0.347, +0.447      # x = -312..+402 m
+FP_V_MIN, FP_V_MAX = -0.502, +0.391      # y = +452..-352 m
+
+
+def solve_scene_uv(photo_path, ship_xy, heading_deg):
+    """按场景求解 off_u / v0：船位与尾迹走廊落水、足迹不出底板.
+
+    seeker 的 LOS 扫掠让轨道整体偏离世界原点最多 ~200 m（各场景不同），
+    固定 UV 会把个别场景的船放在礁石上。规划完成后船的真实位置/航向已知，
+    在水面掩膜上反解取景偏移即可。镜像变体扩大了可达水域。
+    """
+    ok = _ok_water_mask(photo_path)
+    ih, iw = ok.shape
+    sx, sy = float(ship_xy[0]), float(ship_xy[1])
+    rad = math.radians(float(heading_deg) + 180.0)      # astern
+    ax_, ay_ = math.cos(rad), math.sin(rad)
+    px_, py_ = -ay_, ax_
+
+    best = None
+    for off_u in np.arange(0.36, 0.55, 0.01):
+        for v0 in np.arange(0.51, 0.60, 0.01):
+            # 足迹不出底板
+            if not (0.005 <= off_u + FP_U_MIN and off_u + FP_U_MAX <= 0.995):
+                continue
+            if not (0.005 <= v0 + FP_V_MIN and v0 + FP_V_MAX <= 0.995):
+                continue
+            su, sv = off_u + sx / 900.0, v0 - sy / 900.0    # 船的照片分数
+            cu, cv = int(su * iw), int(sv * ih)
+            if not (4 <= cu < iw - 4 and 4 <= cv < ih - 4):
+                continue
+            shipok = ok[cv - 4:cv + 5, cu - 4:cu + 5].mean()
+            if shipok < 0.9:
+                continue
+            # 尾迹走廊（300 m, 横向 ±150 m）：以船的世界坐标为基准
+            wake = 0.0
+            n = 0
+            for t in np.linspace(15, WAKE_LEN_M, 14):
+                for w_ in np.linspace(-150, 150, 7):
+                    x = sx + t * ax_ + w_ * px_
+                    y = sy + t * ay_ + w_ * py_
+                    uu2 = off_u + x / 900.0
+                    vv2 = v0 - y / 900.0
+                    if 0 <= uu2 < 1 and 0 <= vv2 < 1:
+                        wake += ok[int(vv2 * ih), int(uu2 * iw)]
+                    n += 1
+            wake /= n
+            if wake < 0.80:
+                continue
+            # 足迹内非水占比（越低越好，用网格近似）
+            score = 0.55 * wake + 0.45 * shipok
+            if best is None or score > best[0]:
+                best = (round(float(score), 3), round(float(off_u), 3),
+                        round(float(v0), 3), round(float(wake), 2),
+                        round(float(shipok), 2))
+    return best    # (score, off_u, v0, wake_frac, ship_frac) 或 None
+
+
 def build_scene_seav2(recipe, frames):
-    """配方 -> seav2 场景配置（换模型、落水 UV、烘尾迹）."""
-    # seav2 的落水取景中心与裁剪底板都与 base 不同：临时换表再恢复
-    saved_uv = dict(base.PLATE_UV)
+    """配方 -> seav2 场景配置（换模型、规划、按场景解 UV）."""
     saved_override = dict(base.PLATE_OVERRIDE)
-    base.PLATE_UV.update(SEAV2_UV)
     base.PLATE_OVERRIDE.update(SEAV2_PLATES)
     if REVERSE_COURSE:
         recipe = json.loads(json.dumps(recipe))    # never mutate the preset
@@ -151,15 +228,7 @@ def build_scene_seav2(recipe, frames):
     try:
         cfg, applied = base.scene_from_recipe(recipe, frames, "sea")
     finally:
-        base.PLATE_UV = saved_uv
         base.PLATE_OVERRIDE = saved_override
-
-    bg_path = str(cfg["ground"]["backdrop"])
-    plate_name = os.path.basename(bg_path)
-    uv = SEAV2_UV.get(plate_name)
-    if not uv:
-        raise ValueError("seav2: 底板 %s 没有落水取景点" % plate_name)
-    applied["plate_uv_photo"] = [float(uv[0]), float(uv[1])]
 
     # The wake is baked into the photograph in PHOTO coordinates; the optical
     # ground mapping must therefore sample the plate WITHOUT the random
@@ -188,8 +257,30 @@ def build_scene_seav2(recipe, frames):
     vel = np.asarray(pose.get("velocity_mps") or [0, 0, 0], float)
     speed = float(math.hypot(vel[0], vel[1]))
 
+    # 按场景解 UV：正片 + 镜像两个变体，取分高者
+    bg_path = str(cfg["ground"]["backdrop"])
+    stem, ext = os.path.splitext(bg_path)
+    mirror_path = stem + "_mirror" + ext
+    if not os.path.isfile(mirror_path):
+        Image.open(bg_path).convert("RGB").transpose(
+            Image.FLIP_LEFT_RIGHT).save(mirror_path, quality=92)
+    solved = solve_scene_uv(bg_path, (sx, sy), yaw)
+    variant, tag = bg_path, "normal"
+    if solved is None:
+        solved = solve_scene_uv(mirror_path, (sx, sy), yaw)
+        variant, tag = mirror_path, "mirror"
+    if solved is None:
+        raise ValueError("seav2: %s 找不到落水取景组合（ship=%.0f,%.0f heading=%.0f）"
+                         % (prim_name, sx, sy, yaw))
+    score, off_u, v0, wake_frac, ship_frac = solved
+    applied["plate_uv_photo"] = [off_u, v0]
+    applied["plate_variant"] = tag
+    applied["uv_solve"] = dict(score=score, wake_water=wake_frac,
+                               ship_water=ship_frac)
+
     return cfg, applied, dict(ship_xy=(sx, sy), yaw=yaw, speed=speed,
-                              photo_path=bg_path, prim=prim_name)
+                              photo_path=variant, prim=prim_name,
+                              off_u=off_u, v0=v0)
 
 
 def main():
@@ -204,6 +295,9 @@ def main():
     ap.add_argument("--threads", type=int, default=5)
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--only", default=None, help="逗号分隔的场景名单")
+    ap.add_argument("--validate", type=int, default=0, metavar="N",
+                    help="最小验证：按完整帧数规划/烘焙（UV 求解与最终版一致），"
+                         "但每场景只渲染前 N 帧")
     args = ap.parse_args()
 
     dest = args.dest
@@ -224,14 +318,14 @@ def main():
         scene_path = os.path.join(dest, "scenes", "%s.json" % name)
         os.makedirs(os.path.dirname(scene_path), exist_ok=True)
 
-        # 烘尾迹（底板照片 -> seav2/plates）
+        # 烘尾迹（底板照片 -> seav2/plates）；off_u/v0 来自按场景求解
         plate_out = os.path.join(dest, "plates", "%s.png" % name)
         photo = wk["photo_path"]
-        # 场景里的底板已经被 abs_asset 指到绝对路径
+        off_u, v0 = wk["off_u"], wk["v0"]
         out, diag = bake_wake(photo, plate_out, wk["ship_xy"], wk["yaw"],
-                              wk["speed"], 900.0,
-                              cfg["ground"]["backdrop_offset"][0],
-                              1.0 - cfg["ground"]["backdrop_offset"][1])
+                              wk["speed"], 900.0, off_u, v0)
+        cfg["ground"]["backdrop_offset"] = [round(off_u, 4),
+                                            round(1.0 - v0, 6)]
         cfg["ground"]["backdrop"] = out
         if isinstance(cfg.get("ir") or {}, dict) and cfg["ir"].get("background_image"):
             cfg["ir"]["background_image"] = out
@@ -251,26 +345,28 @@ def main():
             print("SKIP (存在，用 --force 覆盖):", name)
             continue
         t0 = time.time()
-        base.run_gen(scene_path, out_dir, args.frames, args.threads)
+        render_n = args.validate if args.validate else args.frames
+        base.run_gen(scene_path, out_dir, render_n, args.threads)
         cfg = base.jload(scene_path)
-        res = base.verify_scene(out_dir, cfg, args.frames)
-        base.stamp_optical_meta(out_dir, cfg, args.frames)
-        base.contact_sheet(out_dir, name, args.frames)
+        res = base.verify_scene(out_dir, cfg, render_n)
+        base.stamp_optical_meta(out_dir, cfg, render_n)
+        if not args.validate:
+            base.contact_sheet(out_dir, name, render_n)
         ok = bool(res["passed"])
         ok_all = ok_all and ok
         chk = res["checks"]
         print("[%s] %-26s optical=%d/%d ir=%d/%d rd=%d/%d npy=%d/%d coco=%d/%d  (%.0f s)"
               % ("PASS" if ok else "FAIL", name,
-                 res["optical"], args.frames, res["ir_lwir"], args.frames,
-                 res["radar_png"], args.frames, res["radar_npy"], args.frames,
-                 res["coco_anns"], args.frames, time.time() - t0))
+                 res["optical"], render_n, res["ir_lwir"], render_n,
+                 res["radar_png"], render_n, res["radar_npy"], render_n,
+                 res["coco_anns"], render_n, time.time() - t0))
         if not ok:
             print("      failed checks:", [k for k, v in chk.items() if not v])
 
     # 索引 + 报告 + README
     idx = dict(
         dataset="seav2 海域真实感数据集（Kelvin 尾迹 / 落水取景 / 28 m 战舰轮廓）",
-        frames=args.frames,
+        frames=(args.validate or args.frames),
         scenes=[dict(name=s["name"], run=s["run"], applied=s["applied"])
                 for s in scenes],
         passed=ok_all)
