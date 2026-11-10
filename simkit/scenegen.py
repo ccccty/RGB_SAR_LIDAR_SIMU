@@ -836,6 +836,10 @@ def validate_recipe(recipe):
         wide_width=_dim('wide_width', 1280),
         wide_height=_dim('wide_height', 960),
         closing_mps=closing,
+        # Tail-chase switch (seav2): fly the engagement the other way round so
+        # a ship's wake trails into the open water of the backdrop photograph.
+        reverse_course=_bool(view_raw.get('reverse_course'),
+                             'view.reverse_course', False),
         trajectory=_trajectory_spec(view_raw.get('trajectory')))
 
     cap_raw = recipe.get('capture')
@@ -915,8 +919,15 @@ def depression_for(env, aspect='auto'):
     return None
 
 
-def _site(env, range_m, surface, depression_deg=None):
-    """Camera and nominal target pose for one engagement."""
+def _site(env, range_m, surface, depression_deg=None, reverse=False):
+    """Camera and nominal target pose for one engagement.
+
+    reverse rotates the whole engagement azimuth by 180 deg: the seeker's
+    az/el spans live in the CAMERA frame, so the rendered course of a target
+    follows the camera placement, not objects[].vel -- steering a wake away
+    from land has to steer the camera (view.reverse_course).
+    """
+    az_deg = LOS_AZ_DEG + (180.0 if reverse else 0.0)
     spec = SITE[env]
     cam_z = spec['cam_z']
     tgt_z = spec['surface_z'] if surface else spec['air_z']
@@ -927,7 +938,7 @@ def _site(env, range_m, surface, depression_deg=None):
         tgt_z = spec['surface_z']
         cam_z = tgt_z + range_m * math.sin(dep)
         horizontal = range_m * math.cos(dep)
-        az = math.radians(LOS_AZ_DEG)
+        az = math.radians(az_deg)
         back = (math.cos(az), math.sin(az))
         cam = (-back[0] * horizontal, -back[1] * horizontal, cam_z)
         tgt = (0.0, 0.0, tgt_z)
@@ -948,7 +959,7 @@ def _site(env, range_m, surface, depression_deg=None):
         dz = math.copysign(0.8 * range_m, dz)
         tgt_z = cam_z + dz
     horizontal = math.sqrt(max(range_m * range_m - dz * dz, 0.01))
-    az = math.radians(LOS_AZ_DEG)
+    az = math.radians(az_deg)
     back = (math.cos(az), math.sin(az))
     cam = (-back[0] * horizontal, -back[1] * horizontal, cam_z)
     tgt = (0.0, 0.0, tgt_z)
@@ -1856,7 +1867,8 @@ def build_scene(recipe):
                     cam_z=_h, tgt_z=0.0, perp=(1.0, 0.0, 0.0))
         range_m = _h
     else:
-        site = _site(env, range_m, surface, dep)
+        site = _site(env, range_m, surface, dep,
+                     reverse=bool(view.get('reverse_course')))
 
     lo, hi = range_m * 0.85, range_m * 1.15
     # The closing speed is a property of the engagement, not of the clip: it
@@ -1887,7 +1899,22 @@ def build_scene(recipe):
                     cam_z=cam_d[2], tgt_z=pts[0][2],
                     perp=(-back[1], back[0], 0.0))
     sign = 1.0 if view['aspect'] == 'pursuit' else -1.0
+    # reverse_course is applied at the CAMERA (see _site): the seeker's az/el
+    # spans live in the camera frame, so the rendered course follows the
+    # camera placement -- objects[].vel cannot steer it.  The authored velocity
+    # below just follows the rotated site, keeping the manifest consistent
+    # with what the renderer will show.
     vel = [round(sign * site['unit'][i] * speed, 3) for i in range(3)]
+    if surface:
+        # A ship or a ground vehicle does not climb/dive with the line of
+        # sight: the depressed LOS leaked its -sin(dep) into vel_z (a vessel
+        # "descending" at 6.4 m/s). The rendered track was already level --
+        # this just makes the authored velocity honest.  Rescale so the
+        # GROUND speed still equals the class-table speed (the class table
+        # means speed over the surface, not slant speed).
+        h = math.hypot(site['unit'][0], site['unit'][1]) or 1.0
+        vel = [round(sign * site['unit'][i] / h * speed, 3) for i in range(2)]
+        vel = [vel[0], vel[1], 0.0]
     yaw = round(math.degrees(math.atan2(vel[1], vel[0])), 3)
 
     # ---- nadir multi-target height ladder --------------------------------

@@ -102,11 +102,16 @@ class BackgroundCompositeTests(unittest.TestCase):
                                        rtol=1e-12)
             np.testing.assert_allclose(out["apparent_temp_k"][void], 260.0,
                                        atol=0.5)
-            self.assertEqual(np.unique(out["preview"][void]).tolist(), [255])
-            self.assertNotEqual(np.unique(plain["preview"][void]).tolist(),
-                                np.unique(out["preview"][void]).tolist())
-            # The whole point: the hot target keeps every original value.
-            for key in ("counts_u16", "preview", "apparent_temp_k", "radiance",
+            # Plate and geometry share ONE display window now (the union of
+            # their apparent-temperature percentiles): the 300 K target sits at
+            # the top of the range, the 260 K plate at the bottom, so the hot
+            # target stays visible -- the old mixed scales read it as black.
+            self.assertLess(float(np.max(out["preview"][void])),
+                            float(np.min(out["preview"][hit])),
+                            "a hot target must preview brighter than a cooler plate")
+            # Radiometry is untouched at geometry pixels -- only the DISPLAY
+            # mapping is unified; the target is never painted over.
+            for key in ("counts_u16", "apparent_temp_k", "radiance",
                         "depth", "obj_id"):
                 np.testing.assert_array_equal(out[key][hit], plain[key][hit],
                                               err_msg=key)
@@ -172,7 +177,12 @@ class BackgroundCompositeTests(unittest.TestCase):
             world, plain = render(base_cfg())
             out = ir.render(world, cfg, np.full(len(world.faces), 300.0))
             void = ~np.isfinite(out["depth"])
-            self.assertEqual(np.unique(out["preview"][void]).tolist(), [255])
+            # The 300 K target and the 260 K plate share one display window
+            # now, so the plate maps below the target instead of saturating
+            # white over it (the old mixed scales read the target as black).
+            self.assertLess(float(np.max(out["preview"][void])),
+                            float(np.min(out["preview"][~void])),
+                            "the hot target must preview brighter than the plate")
             np.testing.assert_array_equal(out["counts_u16"][~void],
                                           plain["counts_u16"][~void])
 
@@ -192,7 +202,10 @@ class BackgroundCompositeTests(unittest.TestCase):
                                            200.0, 450.0)
             expected = float(ir.planck_band([260.0], 8.0, 12.0)[0])
             self.assertEqual(float(out[0][0, 0]), expected)
-            self.assertEqual(float(out[2][0, 0]), 1.0)
+            # depth==0 counts as void: the 260 K plate maps to the bottom of
+            # the shared display window while the 300 K geometry pixels sit
+            # higher, so the plate no longer saturates over them
+            self.assertEqual(float(out[2][0, 0]), 0.0)
             # the other pixels have finite non-zero depth and are untouched
             np.testing.assert_array_equal(out[0][1:], img[1:])
             np.testing.assert_array_equal(out[3][1:], temperature[1:])

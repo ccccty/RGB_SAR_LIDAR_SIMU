@@ -882,8 +882,23 @@ def _composite_background(img, counts, preview, temperature, depth, cfg, band,
     temperature = np.array(temperature, dtype=np.float64, copy=True)
     img[void] = L_plate[void]
     counts[void] = counts_plate[void]
-    preview[void] = preview_plate[void]
     temperature[void] = T_plate[void]
+    # One display window for the whole frame: the pasted plate carries its own
+    # 0..1 grey while the geometry kept the AGC stretch, and the two scales
+    # disagreed enough that a hot ship read as a black cut-out against a bright
+    # photograph (16-bit data had it at 19851 counts vs 10238 for the water).
+    # Re-window BOTH populations over the union of their apparent temperatures,
+    # so a target hotter than the background always shows brighter than it.
+    geo = ~void
+    if geo.any():
+        t_geo = temperature[geo]
+        t_plate = temperature[void]
+        pools = [t_geo] + ([t_plate] if void.any() else [])
+        t_lo = min(float(np.percentile(p, 1.0)) for p in pools)
+        t_hi = max(float(np.percentile(p, 99.5)) for p in pools)
+        span = max(t_hi - t_lo, 1e-6)
+        preview[void] = np.clip((t_plate - t_lo) / span, 0.0, 1.0)
+        preview[geo] = np.clip((t_geo - t_lo) / span, 0.0, 1.0)
     return img, counts, preview, temperature
 
 
