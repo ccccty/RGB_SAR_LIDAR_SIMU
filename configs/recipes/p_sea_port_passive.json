@@ -15,7 +15,7 @@
    "mode": "library",
    "category": "port",
    "file": "01_Aerial_photograph_of_the_Port_of_Miami_Container.jpg",
-   "span_m": 480.0,
+   "span_m": 900.0,
    "sky_card": false,
    "offset": [
     0.5,

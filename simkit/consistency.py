@@ -2306,7 +2306,12 @@ def _check_G1(ctx):
         for eid, ent in est.items():
             if ent.get("kind") not in ecm.BODY_KINDS or not ent.get("visible", True):
                 continue
-            if eid not in render_ids:
+            # A volumetric body (chaff) is deliberately absent from the optical
+            # mesh list: it is a sparse dipole field, not a surface, and drawing
+            # it painted a growing opaque ball over the target (see
+            # ecm.render_objects).  It must still exist in the sensor world.
+            if (eid not in render_ids
+                    and ent.get("kind") not in ecm.VOLUMETRIC):
                 issues.append("ECM %s exists at frame %d but has no optical mesh spec "
                               "(render_objects(cfg) is evaluated at t=0)" % (eid, f))
             if worlds and eid not in world_names:

@@ -83,40 +83,90 @@ class GroundStaticVsMovingTests(unittest.TestCase):
 
 
 class AirFlareDispenseTests(unittest.TestCase):
+    @staticmethod
+    def _flare_at_release(cfg):
+        """(entity, state, resolved pose) per flare at its own release instant.
+
+        Flares ride the RELEASED link now: the authored fields are
+        parent/rel_pos/rel_vel, so the on-airframe check has to resolve the
+        link through the same entities_at the sensors use.
+        """
+        states = list(plan.plan_frames(cfg, int(cfg["frames"]["n"]),
+                                       int(cfg.get("seed", 0)),
+                                       float(cfg["frames"]["dt"])))
+        spec = ecm.load(cfg["ecm"])
+        by_t = {round(st["t"], 3): st for st in states}
+        out = []
+        for f in (e for e in cfg["ecm"]["entities"]
+                  if e["kind"] == "infrared_flare"):
+            t_rel = round(float(f.get("release_s") or 0.0), 3)
+            st = by_t.get(t_rel) or min(
+                states, key=lambda s: abs(s["t"] - t_rel))
+            anchors = {nm: (np.asarray(ps["pos"], float),
+                            np.asarray(ps.get("velocity_mps")
+                                       or [0.0, 0.0, 0.0], float))
+                       for nm, ps in (st.get("poses") or {}).items()}
+            ents = {e["id"]: e for e in ecm.entities_at(
+                spec, st["t"], anchors=anchors,
+                tracks=ecm.tracks_of(st.get("cfg")))}
+            out.append((f, st, ents[f["id"]]))
+        return out
+
     def test_rounds_are_below_and_beside_the_aircraft_axis(self):
         cfg, _ = _cfg("air_plane")
-        state = _states(cfg, 1)[0]
-        primary = cfg["objects"][0]
-        aircraft = np.asarray(state["poses"][primary["name"]]["pos"], float)
-        flares = [e for e in cfg["ecm"]["entities"]
-                  if e["kind"] == "infrared_flare"]
+        flares = self._flare_at_release(cfg)
         self.assertEqual(len(flares), 6)
-        for f in flares:
-            self.assertLess(f["pos"][2], aircraft[2],
-                            "a downward dispense must start below the airframe")
-            self.assertLess(np.linalg.norm(
-                np.asarray(f["pos"][:2]) - aircraft[:2]), 25.0,
-                "rounds must hang on the fuselage axis, not 100s of m away")
+        for f, st, ent in flares:
+            aircraft = np.asarray(st["poses"][cfg["objects"][0]["name"]]["pos"],
+                                  float)
+            p = np.asarray(ent["pos"], float)
+            # Body-frame mount on a diving airframe: the tail rides high in
+            # world terms, so assert "at the dispenser stations" (3-D), not
+            # "below in world z" -- and never the old detached 45-65 m mount.
+            self.assertLess(float(np.linalg.norm(p - aircraft)), 25.0,
+                            "rounds must ride the dispenser stations, not 100s of m away")
+            self.assertLess(np.linalg.norm(p[:2] - aircraft[:2]), 25.0)
 
     def test_rounds_fall_away_and_do_not_inherit_aircraft_velocity(self):
         cfg, _ = _cfg("air_plane")
-        state = _states(cfg, 1)[0]
         primary = cfg["objects"][0]
-        v_air = np.asarray(state["poses"][primary["name"]]["velocity_mps"], float)
-        flares = [e for e in cfg["ecm"]["entities"]
-                  if e["kind"] == "infrared_flare"]
-        for f in flares:
-            v = np.asarray(f["vel"], float)
-            self.assertLess(v[2], -30.0, "dominant downward ejection")
+        flares = self._flare_at_release(cfg)
+        for f, st, ent in flares:
+            # authored ejection is downward-dominant in the body frame
+            self.assertLess(float(f["rel_vel"][2]), -20.0,
+                            "dominant downward ejection")
+            v_air = np.asarray(st["poses"][primary["name"]]["velocity_mps"], float)
+            # one second after release the drag must have shed the airframe's
+            # speed: the round falls, it does not fly along with the aircraft
+            spec = ecm.load(cfg["ecm"])
+            anchors = {nm: (np.asarray(ps["pos"], float),
+                            np.asarray(ps.get("velocity_mps")
+                                       or [0.0, 0.0, 0.0], float))
+                       for nm, ps in (st.get("poses") or {}).items()}
+            late = {e["id"]: e for e in ecm.entities_at(
+                spec, st["t"] + 1.0, anchors=anchors,
+                tracks=ecm.tracks_of(st.get("cfg")))}[f["id"]]
+            v = np.asarray(late["vel"], float)
+            self.assertLess(v[2], -8.0, "the round must be falling")
             self.assertLess(np.linalg.norm(v[:2]),
-                            0.25 * np.linalg.norm(v_air[:2]) + 1.0,
+                            0.15 * np.linalg.norm(v_air[:2]) + 1.0,
                             "must not fly along with the aircraft")
-        # Z decreases monotonically over the three delivered frames.
+        # Z decreases monotonically over the frames AFTER release.
         spec = ecm.load(cfg["ecm"])
+        t_rel = float(flares[0][0].get("release_s") or 0.0)
+        by_t = {round(st["t"], 3): st
+                for st in _states(cfg, int(cfg["frames"]["n"]))}
         zs = []
-        for t in (0.0, 0.1, 0.2):
-            first = next(e for e in ecm.entities_at(spec, t)
-                         if e["kind"] == "infrared_flare")
+        for k in range(3):
+            st = by_t[round(t_rel + 0.1 * k, 3)]
+            anchors = {nm: (np.asarray(ps["pos"], float),
+                            np.asarray(ps.get("velocity_mps")
+                                       or [0.0, 0.0, 0.0], float))
+                       for nm, ps in (st.get("poses") or {}).items()}
+            first = next(e for e in ecm.entities_at(
+                spec, st["t"], anchors=anchors,
+                tracks=ecm.tracks_of(st.get("cfg")))
+                if e["kind"] == "infrared_flare")
             zs.append(float(first["pos"][2]))
         self.assertTrue(all(b < a for a, b in zip(zs, zs[1:])), zs)
 

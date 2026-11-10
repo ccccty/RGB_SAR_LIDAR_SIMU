@@ -31,6 +31,7 @@ Model boundaries (deliberate, and stated rather than hidden):
     floor instead of a few corrupted range cells;
   * nothing here has been validated against a real instrument.
 """
+import math
 import zlib
 
 import numpy as np
@@ -301,6 +302,15 @@ def _release_spec(raw, ent, eid):
     fall_mode = str(air.get("fall_mode", "const")).lower()
     if fall_mode not in _FALL_MODES:
         raise ValueError(name + ".air.fall_mode must be const or tanh")
+    if (kind == "infrared_flare" and fall <= 0.0
+            and air.get("fall_mps") is None and ent.get("fall_mps") is None):
+        # A burning flare is a ballistic body: after the eject impulse it is in
+        # free fall, decelerated by drag to the terminal speed sqrt(g*L) that
+        # the E6 settling rule already expects.  Leaving fall at 0 made the
+        # released model glide on the airframe's velocity and then HOVER -- the
+        # dispenser pattern floated away on a straight line and never came down.
+        fall = math.sqrt(_G * float(base["L_m"] or 60.0))
+        fall_mode = "tanh"
     return dict(parent=parent,
                 t_s=_number(block.get("t_s", ent.get("release_s") or 0.0),
                             name + ".t_s", 0.0, 1e6),
@@ -1163,9 +1173,14 @@ def render_objects(cfg, t=0.0, tracks=None):
             continue
         kind = ent["kind"]
         if kind == "chaff_cloud":
-            size = [2.0 * float(ent["radius_m"])] * 3
-            shape = "sphere"
-        elif kind == "infrared_flare":
+            # A chaff cloud is a volumetric radar reflector: a sparse dipole
+            # field, not a surface.  Drawing it as a solid sphere put a 2-10 m
+            # opaque grey ball next to the target it was protecting (it grows
+            # radius_m + growth_mps*t), in every photograph.  The radar ray
+            # cast still sees it through ecm_volumetric_ids, and the IR
+            # rasteriser skips it the same way.
+            continue
+        if kind == "infrared_flare":
             # Same mesh as _world_mesh -> optical, IR, radar and lidar agree on
             # the decoy's silhouette. scene._reshape("flare") calls flare_mesh.
             size = list(flare_size(ent))

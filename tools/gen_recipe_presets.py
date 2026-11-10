@@ -35,7 +35,10 @@ DOMAINS = {
     "air": dict(
         label="空", kind="sky", asset="军用飞机/双发战斗机.obj", cls="fighter",
         scale=0.84, rcs_db=5.0, aspect="pursuit", range_km=2.8, fov_deg=8.0,
-        closing_mps=48.0, plate_span=None, sky_card=None,
+        # 180 m/s closing: a 3 s clip then shrinks the range by 540 m (~20%),
+        # which is the smallest rate that reads as "the target grows in the
+        # view". 48 m/s moved the range 5% and looked like a frozen frame.
+        closing_mps=180.0, plate_span=None, sky_card=None,
         uv=None, ground_span_m=None, offset=None,
         note="v1 空域基线：2.8 km / 8° 窄视场 pursuit，目标 28–34 px。"),
     "land": dict(
@@ -56,7 +59,11 @@ DOMAINS = {
     "sea": dict(
         label="海", kind="sea", asset="军舰/导弹艇.obj", cls="ship",
         scale=1.42, rcs_db=20.0, aspect="look_down", range_km=2.2,
-        fov_deg=12.0, closing_mps=12.0, plate_span=480.0, sky_card=False,
+        fov_deg=12.0, closing_mps=12.0,
+        # look_down at 32 deg depression covers ~665 m of ground depth; a 480 m
+        # tile showed 2x2 tile fragments per frame.  900 m keeps the footprint
+        # inside one tile, so no REPEAT seam is ever in view.
+        plate_span=900.0, sky_card=False,
         uv=None, ground_span_m=None, offset=[0.5, 0.5],
         note="v1 海域基线：2.2 km / 12° 斜俯视、480 m 平铺；海面纹理均匀，"
              "不写天空卡避免盖住底板。"),

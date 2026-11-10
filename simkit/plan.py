@@ -258,6 +258,9 @@ class ClipPlan:
         self.cam_name = cam_name
         self.cam0 = dict(cam0)
         self.cam_pos = np.array(cam0.get("pos", [0, 0, 0]), float)
+        # Pursuit mount advance (m/s along the LOS), set by _plan_seeker when
+        # the scene authors seeker.advance_mps; None keeps the mount static.
+        self.cam_advance = None
         self.width = int(cam0.get("width", 480))
         self.fov = float(cam0.get("fov_deg", 30.0))
         self._basis = scene.sensor_basis(cam0.get("pos", [0, 0, 0]),
@@ -575,7 +578,22 @@ class ClipPlan:
         closing = str(sk.get("closing", "in")).lower()
         dur = max(self.dur, 1e-6)
         rate = float(sk.get("closing_mps") or 0.0) or 0.25 * (hi - lo) / dur
-        a = float(rng.uniform(lo + 0.15 * (hi - lo), hi - 0.15 * (hi - lo))) if hi > lo else lo
+        # A full traverse needs the start range to sit rate*dur above the band
+        # floor; sampling the start uniformly across the whole band made long
+        # clips clamp at lo and quietly close at a fraction of the authored
+        # rate (5.4% apparent size change over a whole clip).
+        amin = lo + 0.15 * (hi - lo)
+        amax = hi - 0.15 * (hi - lo)
+        if closing == "in":
+            amin = max(amin, lo + rate * dur)
+        elif closing == "out":
+            amax = min(amax, hi - rate * dur)
+        if amax > amin:
+            a = float(rng.uniform(amin, amax))
+        elif amax == amin:
+            a = float(amin)
+        else:
+            a = float(0.5 * (lo + hi))
         if closing == "in":
             b = max(lo, a - rate * dur)
         elif closing == "out":
@@ -609,6 +627,19 @@ class ClipPlan:
             phase=float(rng.uniform(0.0, 6.283185)),
             keep_z=bool(sk.get("keep_z", self.ground_z is not None)),
         )
+        # Pursuit mount advance.  A seeker that chases a target from behind
+        # cannot be modelled with a static camera: with the target flying away
+        # along the LOS (tail view, yaw_mode=velocity) a static camera can only
+        # make the range GROW.  The mount therefore advances along the frame-0
+        # line of sight at advance_mps; combined with closing="in" the range
+        # still closes at closing_mps while the target keeps a strict tail view
+        # and grows in the field of view.  Default 0 keeps the static mount.
+        adv = float(sk.get("advance_mps") or 0.0)
+        if adv > 0.0:
+            u0, _, _ = self._seek_null(self.seek["az0"], self.seek["el0"])
+            self.cam_advance = u0 * adv
+        else:
+            self.cam_advance = None
 
     def _build_views(self):
         """Field-of-view list: one entry per delivered image of the same scene.
@@ -862,8 +893,11 @@ class ClipPlan:
         az_dot = (s["az1"] - s["az0"]) * wd
         el_dot = (s["el1"] - s["el0"]) * wd
         u_hat, du_daz, du_del = self._seek_null(az, el)
-        p = self.cam_pos + u_hat * r
-        v = u_hat * rdot + (du_daz * az_dot + du_del * el_dot) * r
+        cam_p = self.cam_pos_at(t)
+        cam_v = (self.cam_advance if self.cam_advance is not None
+                 else np.zeros(3))
+        p = cam_p + u_hat * r
+        v = cam_v + u_hat * rdot + (du_daz * az_dot + du_del * el_dot) * r
         if s["keep_z"] and self.ground_z is not None:
             p[2] = float(self.ground_z) + float(self.target.get("z_offset_m", 0.0))
             # A pinned height is a sliding constraint, not a ride: whatever the
@@ -893,6 +927,11 @@ class ClipPlan:
             return self.path.pos(float(t))
         if self.mode == "independent_flight":
             return self.observer_path.pos(float(t))
+        if self.cam_advance is not None:
+            # Pursuit: the mount advances along its own line of sight, so both
+            # the aim point and every sensor ride the same translation and the
+            # target keeps its authored tail view while the range closes.
+            return self.cam_pos + self.cam_advance * float(t)
         return self.cam_pos
 
     def camera_velocity(self, t, h=1e-3):
@@ -928,7 +967,7 @@ class ClipPlan:
         if self.mode == "seeker":
             lag = float((self.spec.get("seeker") or {}).get("lag_s", 0.12))
             pos, _dyaw = self.rig.jitter(t)
-            pos = self.cam_pos + pos
+            pos = self.cam_pos_at(t) + pos
             # The lag is a pure delay of an analytic state, so negative time is
             # meaningful: clamping it at zero froze the aim for the first lag_s
             # of every clip and then released it, which is a step in line-of-sight

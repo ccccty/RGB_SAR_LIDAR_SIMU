@@ -1172,16 +1172,26 @@ def _complete_entity(ent, site, vel, life, index, parent=None):
             # Several rounds dispensed from ONE airframe must not share a mount:
             # identical rel_pos put all six on the same pixel and the fan
             # rendered as a single dot, contradicting the recipe caption. index
-            # is stable for a given recipe, so the fan stays reproducible while
-            # a single round (index 0) keeps the old position byte for byte.
+            # is stable for a given recipe, so the fan stays reproducible.
+            #
+            # The mount sits ON the airframe (a wing-root dispenser is metres
+            # from the centreline, not 45 m behind it) and the eject impulse is
+            # downward-dominant: a dispenser spring shoves the round out and
+            # down at 20-30 m/s, it does not fire it backwards.  Combined with
+            # the released model's gravity term (ecm._release_spec) the rounds
+            # leave the airframe, decelerate forward and fall behind on a
+            # ballistic arc instead of gliding away on a straight line.
             _k = int(index)
             ent.setdefault('rel_pos',
-                           _rel(-45.0 - 6.0 * _k, 4.0 * ((_k % 3) - 1),
-                                -25.0 - 3.0 * _k))
-            ent.setdefault('rel_vel', _rel(-10.0 - 1.5 * _k, 4.0, -2.0))
+                           _rel(-3.5 - 0.9 * _k,
+                                -4.5 + 3.0 * (_k % 3),
+                                -1.4 - 0.2 * _k))
+            ent.setdefault('rel_vel',
+                           _rel(-5.0, (-1.0) ** _k * (7.0 + 1.5 * _k),
+                                -24.0 - 1.5 * _k))
             ent.setdefault('release_s', round(0.12 * _k, 3))
-            # a burning flare is heavier and slower to decelerate (tau_q 0.25-0.6 s)
-            ent.setdefault('rel_decay_s', 1.0)
+            # high drag: the round sheds the airframe's speed in ~0.4 s
+            ent.setdefault('rel_decay_s', 0.4)
         elif kind == 'corner_reflector':
             ent.setdefault('rel_pos', _rel(0.0, 30.0))
             ent.setdefault('rel_vel', [0.0, 0.0, 0.0])
@@ -2141,20 +2151,39 @@ def build_scene(recipe):
 
     fov = view['fov_deg']
     px = _pixels(primary_size, range_m, fov, float(v_w))
+    # Pursuit: the mount chases the target from behind, so the range must
+    # CLOSE (the target grows in the field of view) while the target keeps
+    # flying away along its own heading.  That needs the mount to advance at
+    # target_speed + closing rate, and a range band wide enough for the whole
+    # clip's traverse -- otherwise _plan_seeker clamps and the clip closes at
+    # a fraction of the authored rate.
+    _is_pursuit = view['aspect'] == 'pursuit'
+    _dur = int(cap['frames']) * dt
+    if _is_pursuit:
+        lo = max(400.0, range_m - speed * _dur - 0.15 * range_m)
+        _advance = round(math.sqrt(sum(float(v) * float(v) for v in vel)) + speed, 3)
+    else:
+        _advance = 0.0
     seeker = dict(
         mode='seeker',
         range_m=[round(lo, 1), round(hi, 1)],
-        # A look-down engagement closes too: the camera is above the target and
-        # the range shrinks as it flies at it. "out" here used to make ground
-        # scenes recede, which no operator asked for.
-        closing='out' if view['aspect'] == 'pursuit' else 'in',
+        # Head-on and pursuit both close the range; pursuit additionally
+        # advances the mount (advance_mps below) so the target presents its
+        # tail while the range shrinks.  The old pursuit -> "out" mapping made
+        # the target recede: same size every frame, no engagement.
+        closing='in',
         closing_mps=round(speed, 3),
+        advance_mps=_advance,
         target_m=round(primary_size, 3),
         target_px=[round(px * 0.7, 1), round(px * 1.4, 1)],
-        az_span_deg=0.6,
-        el_span_deg=0.3,
+        # A wide LOS sweep reads as the target strafing sideways across the
+        # frame while the airframe never rotates; keep the sweep small so the
+        # engagement reads radial.  The wander stays nonzero on purpose: a
+        # perfectly tracking seeker teaches "target = image centre".
+        az_span_deg=0.6 if not _is_pursuit else 0.25,
+        el_span_deg=0.3 if not _is_pursuit else 0.15,
         los_jitter_deg=0.04,
-        wander_deg=round(min(0.35 * fov, 4.0), 3),
+        wander_deg=round(min(0.12 * fov, 1.2), 3),
         wander_hz=0.09,
         keep_z=bool(surface),
         lag_s=0.02,

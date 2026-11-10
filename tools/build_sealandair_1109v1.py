@@ -35,8 +35,9 @@ Trajectory contract
       * moving traffic: non-zero, constant-velocity displacement;
       * air flares: monotonically descending, never inheriting the aircraft's
         velocity.
-    The optical manifest extrapolates ECM poses linearly, so the flares use an
-    independent pos+vel*t trajectory (no accel / no link model).
+    The flares ride the RELEASED link model (drag + gravity), and the optical
+    manifest samples their poses per frame from the same ecm.entities_at the
+    numpy World uses, so both sides agree exactly.
 
 Usage
     env\\Scripts\\python.exe tools\\build_sealandair_1109v1.py

@@ -19,7 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import build_sealandair_1109v1 as gen  # noqa: E402
 
-from simkit import plan  # noqa: E402
+from simkit import ecm, plan  # noqa: E402
 
 
 class V1SceneTests(unittest.TestCase):
@@ -114,25 +114,52 @@ class AirFlareTests(unittest.TestCase):
         cls.tmp = tempfile.mkdtemp(prefix="v1air_")
         cls.cfg = gen.build_cfg(
             next(d for d in gen.DOMAINS if d["key"] == "air_plane"), cls.tmp)
+        cls.states = list(plan.plan_frames(
+            cls.cfg, int(cls.cfg["frames"]["n"]),
+            int(cls.cfg.get("seed", 0)), float(cls.cfg["frames"]["dt"])))
+        cls.spec = ecm.load(cls.cfg["ecm"])
+
+    def _flare_at_release(self):
+        """(entity, state, resolved pose) at each round's release instant."""
+        by_t = {round(st["t"], 3): st for st in self.states}
+        out = []
+        for f in (e for e in self.cfg["ecm"]["entities"]
+                  if e["kind"] == "infrared_flare"):
+            t_rel = round(float(f.get("release_s") or 0.0), 3)
+            st = by_t.get(t_rel) or min(
+                self.states, key=lambda s: abs(s["t"] - t_rel))
+            anchors = {nm: (np.asarray(ps["pos"], float),
+                            np.asarray(ps.get("velocity_mps")
+                                       or [0.0, 0.0, 0.0], float))
+                       for nm, ps in (st.get("poses") or {}).items()}
+            ents = {e["id"]: e for e in ecm.entities_at(
+                self.spec, st["t"], anchors=anchors,
+                tracks=ecm.tracks_of(st.get("cfg")))}
+            out.append((f, st, ents[f["id"]]))
+        return out
 
     def test_six_small_downward_dispensed_rounds(self):
         flares = [e for e in self.cfg["ecm"]["entities"]
                   if e["kind"] == "infrared_flare"]
         self.assertEqual(len(flares), 6)
         for f in flares:
-            self.assertLess(f["vel"][2], -30.0)
+            # released-link body: the dispense impulse is authored in rel_vel
+            self.assertLess(float(f["rel_vel"][2]), -20.0)
             self.assertLess(f["radius_m"], 0.3)
             self.assertLess(f["trail_m"], 4.0)
 
     def test_rounds_are_mounted_near_the_aircraft_axis(self):
-        states = list(plan.plan_frames(self.cfg, 1,
-                                       int(self.cfg.get("seed", 0)), 0.1))
-        air = np.asarray(states[0]["poses"]["fighter_01"]["pos"], float)
-        flares = [e for e in self.cfg["ecm"]["entities"]
-                  if e["kind"] == "infrared_flare"]
-        for f in flares:
-            p = np.asarray(f["pos"], float)
-            self.assertLess(p[2], air[2])
+        air_name = self.cfg["objects"][0]["name"]
+        for f, st, ent in self._flare_at_release():
+            air = np.asarray(st["poses"][air_name]["pos"], float)
+            p = np.asarray(ent["pos"], float)
+            # The mount is authored in BODY axes, and this airframe is in a
+            # 27 deg dive: the tail rides high in world coordinates, so a
+            # body-frame "under the wing" mount can sit a couple of metres
+            # above the centre of mass in world terms.  The stations span
+            # 6-20 m aft by design (readable columns at 3 km); what must NOT
+            # happen is the old detached 45-65 m mount.
+            self.assertLess(float(np.linalg.norm(p - air)), 25.0)
             self.assertLess(np.linalg.norm(p[:2] - air[:2]), 25.0)
 
 

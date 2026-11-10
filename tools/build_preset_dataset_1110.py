@@ -75,7 +75,12 @@ DOMAIN_DIR = {"air": "air", "land": "land", "sea": "sea"}
 #       once the plate is no longer stretched over 1200 m.
 FRAMING = {
     "land": dict(ground_span_m=175.0, plate_span=350.0),
-    "sea": None,     # 111 px patrol boat is a normal close-surveillance scale
+    # look_down at 32 deg depression covers ~665 m of ground depth; the
+    # authored 480 m tile showed 2x2 tile fragments (3-4 photo repeats) per
+    # frame.  900 m puts the whole footprint inside one tile -- no seam, photo
+    # stretched 1.9x which open water and high-altitude port/island plates
+    # survive fine.
+    "sea": dict(plate_span=900.0),
     "air": None,     # 37 px fighter already matches the preset note
 }
 
@@ -91,6 +96,12 @@ PLATE_UV = {
     # the authored Mechelen photo, which is an oblique town view with a visible
     # horizon and cannot fill a nadir frame -- see PLATE_OVERRIDE)
     "04_Starr-141025-2603-Casuarina_equisetifolia-aerial_view_li.jpg": (0.45, 0.58),
+    # open water: centre of the frame, no feature to align to
+    "03_Sea_wave_abstract_texture_Unsplash.jpg": (0.50, 0.50),
+    # container terminal apron beside the berth
+    "01_Aerial_photograph_of_the_Port_of_Miami_Container.jpg": (0.44, 0.62),
+    # the channel between the island and open water
+    "03_Phi_Phi_From_Above_Unsplash.jpg": (0.46, 0.64),
 }
 
 # The authored Mechelen plate is a long-range oblique of a town: mapped onto a
@@ -194,6 +205,11 @@ def scene_from_recipe(recipe, frames, domain):
             applied["plate_uv_photo"] = [float(uv[0]), float(uv[1])]
         rec["environment"]["background"] = bg
 
+    # The frame count has to be authored BEFORE build_scene: the seeker block
+    # sizes its range band from capture.frames * dt, and a band computed for
+    # the 5-frame preview clamps a 30-frame pursuit to a fraction of its
+    # authored closing rate.
+    rec.setdefault("capture", {})["frames"] = int(frames)
     cfg = scenegen.build_scene(rec)
     cfg["frames"]["n"] = frames
     cfg["clip"]["frames_per_clip"] = frames
@@ -396,10 +412,13 @@ def write_readme(dest, scenes, frames_n, ok):
         "",
         "| 域 | 改动 | 原因 |",
         "|---|---|---|",
-        "| 空 | 无 | 350 m 覆盖下战斗机约 37 px，符合配方自述 |",
+        "| 空 | 接近速度 48 → 180 m/s；挂载沿视线前推（目标速度+接近速度） | 48 m/s 三秒只变化 5%，目标在视场里大小不变；pursuit 需要斜距收敛、目标逐渐变大 |",
         "| 陆 | 地面覆盖 400 → 175 m；底板跨度 1200 → 350 m；按底板重选取景中心 | 原设置下 6.75 m 货车仅 13×7 px，与配方自述的 28–34 px 不符 |",
-        "| 海 | 无 | 245 m 覆盖下导弹艇约 111 px，属正常近距监视尺度 |",
+        "| 海 | 底板跨度 480 → 900 m；按底板重选取景中心 | 32° 俯角下地面覆盖深度 665 m，480 m 瓦片每幅画面出现 3–4 次拼接重复 |",
         "| 陆·工业 | 底板换为厂区航拍 `04_Starr-…-Casuarina…` | 原底板是带地平线的斜视城镇照，铺到俯视地面会出现苍白雾带 |",
+        "",
+        "红外诱饵统一走 released 链路（阻力 + 重力）：从机身挂点抛出，0.4 s 内甩掉载机",
+        "速度，之后按抛物线落到 √(gL)≈24 m/s 终端速度——不再沿直线匀速飘走。",
         "",
         "底板 UV 按照片坐标记录，写入场景时按 Blender 的 v 轴方向做 `1 - v` 换算。",
         "",

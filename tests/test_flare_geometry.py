@@ -58,12 +58,16 @@ class FlareMeshTests(unittest.TestCase):
         m = ecm._world_mesh(spec["entities"][0])
         self.assertLess(m.bbox[0][0], -4.0)
 
-    def test_chaff_cloud_is_still_a_sphere(self):
-        # Only the flare changed shape; a chaff bloom remains a resolved volume.
+    def test_chaff_cloud_is_not_rendered_as_geometry(self):
+        # A chaff bloom is a sparse dipole field, not a surface: drawing it as a
+        # solid sphere put a growing opaque grey ball next to the target it was
+        # protecting, in every photograph.  It stays in the World the radar ray
+        # cast reads (ecm_volumetric_ids), it just never becomes render
+        # geometry -- optical or thermal.
         cfg = dict(ecm=dict(enabled=True, entities=[dict(
             id="c1", kind="chaff_cloud", pos=[0, 0, 0], radius_m=3.0,
             life=dict(start_s=0))]))
-        self.assertEqual(ecm.render_objects(cfg)[0]["shape"], "sphere")
+        self.assertEqual(ecm.render_objects(cfg), [])
 
 
 if __name__ == "__main__":

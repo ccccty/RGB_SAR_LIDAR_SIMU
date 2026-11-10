@@ -85,33 +85,21 @@ def flare_fan(cfg):
 
     * The rounds were authored in world coordinates far from the aircraft and
       inherited its full 250 m/s velocity, so they flew alongside it instead of
-      falling away. Here the mount points are in the aircraft BODY frame
-      (body_to_world with the planner's frame-0 attitude): three evenly spaced
-      stations aft along the fuselage, mirrored left/right, below the wing.
-    * The ejection velocity is dominated by -Z (down) with only a few m/s of
-      aft/outboard drift. It deliberately does NOT contain the aircraft's
-      velocity, so each round separates downward from the aircraft frame by
-      frame. An independent (pos + vel*t) trajectory is used on purpose: the
-      optical manifest and the numpy World must agree exactly, and the Blender
-      side extrapolates linearly rather than evaluating the ECM link model.
+      falling away. Here the mount points are in the aircraft BODY frame:
+      three evenly spaced stations aft along the fuselage, mirrored left/right,
+      below the wing.
+    * The rounds now ride the RELEASED link (parent + mount + eject), the same
+      drag + gravity model the recipe presets use: the eject impulse is
+      downward-dominant, the round sheds the airframe's speed in ~0.4 s and
+      then falls behind on a ballistic arc to the sqrt(g*L) terminal speed.
+      The old independent (pos + vel*t) trajectory fell at a constant -45 m/s
+      on a straight line -- no gravity, no arc.
     * A round is a hand-sized pellet (0.18-0.26 m radius, 2.4-3.6 m trail),
       i.e. well under the ~17 m aircraft. The old 1 m head with a 22 m tail
       made every decoy larger than the target it was decoying.
     """
-    import numpy as np
-    from simkit import motion, plan as planlib
-
     primary = (cfg.get("objects") or [{}])[0]
     name = primary.get("name") or "fighter_01"
-    state = next(iter(planlib.plan_frames(
-        cfg, 1, int(cfg.get("seed", 0)), float(cfg["frames"]["dt"]))))
-    pose = (state.get("poses") or {}).get(name) or {}
-    p0 = np.asarray(pose.get("pos") or primary.get("pos") or [0, 0, 2500], float)
-    # Use the HEADING axis only. Including the -27 deg dive pitch in the mount
-    # rotation tilts an aft offset upwards, which put the "downward" rounds
-    # above the aircraft. Vertical separation is applied in world -Z instead.
-    R = np.asarray(motion.body_to_world(
-        pose.get("yaw", 0.0), 0.0, 0.0), float)
 
     radii = (0.20, 0.22, 0.18, 0.24, 0.19, 0.26)
     trails = (2.6, 3.0, 2.4, 3.4, 2.8, 3.6)
@@ -119,24 +107,23 @@ def flare_fan(cfg):
     for pair in range(3):
         for s_i, s in enumerate((-1.0, 1.0)):
             i = pair * 2 + s_i
-            # Body frame carries the fuselage axis and the two wings. The drop
-            # is applied in WORLD -Z on purpose: the airframe is in a 27 deg
-            # dive here, so rotating a body -Z offset would actually lift the
-            # mount above the aircraft instead of putting it underneath.
             # Three evenly spaced stations aft along the heading axis, mirrored
             # left/right. The spacing has to be visible at 3 km (~1.8 px/m):
             # 6/13/20 m gives two readable columns instead of one white blob.
-            off_body = np.array([-(6.0 + 7.0 * pair),
-                                 s * (5.0 + 1.5 * pair), 0.0], float)
-            pos = p0 + R @ off_body
-            pos[2] -= (2.0 + 0.8 * pair)
-            vel = R @ np.array([-6.0, s * 3.0, 0.0], float)
-            vel[2] = -(42.0 + 4.0 * pair)   # gravity-led downward dispense
+            # Released-link bodies are authored in the parent's BODY frame, so
+            # the mount and the eject impulse both ride the dispense attitude.
+            mount_body = [-(6.0 + 7.0 * pair),
+                          s * (5.0 + 1.5 * pair),
+                          -(2.0 + 0.8 * pair)]
+            eject_body = [-6.0, s * 3.0, -(24.0 + 3.0 * pair)]
             out.append(dict(
                 id="flare_%02d" % (i + 1),
                 kind="infrared_flare",
-                pos=[round(float(v), 4) for v in pos],
-                vel=[round(float(v), 4) for v in vel],
+                parent=name,
+                rel_pos=[round(float(v), 4) for v in mount_body],
+                rel_vel=[round(float(v), 4) for v in eject_body],
+                release_s=round(0.12 * i, 3),
+                rel_decay_s=0.4,
                 radius_m=radii[i],
                 trail_m=trails[i],
                 temp_c=2000,

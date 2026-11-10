@@ -824,8 +824,8 @@ def _preflight_payload(q):
     closing = str(q.get("closing") or "")
     if aspect == "head_on" and closing == "out":
         warnings.append("迎头拍摄却设为远离：几何自相矛盾，建议把接近方式改成「接近」")
-    if aspect == "pursuit" and closing == "in":
-        warnings.append("追击拍摄却设为接近：目标会倒着飞，建议改成「远离」")
+    if aspect == "pursuit" and closing == "out":
+        warnings.append("追击拍摄却设为远离：目标会在视场里越飞越小，追击应让斜距收敛（「接近」+ 挂载前推）")
     if aspect in ("look_down", "top_down") and closing == "out":
         # A look-down engagement closes: the camera is above the target and the
         # slant range shrinks. "out" here would have the target recede downwards.
@@ -1294,7 +1294,12 @@ def _compose(q, cfg):
         # aspect, so picking 迎头 in the workbench used to change nothing at all.
         if q.get("aspect"):
             sk["aspect"] = str(q["aspect"])
-            sk["closing"] = "out" if str(q["aspect"]) == "pursuit" else "in"
+            # Both head_on and pursuit close the range now; pursuit additionally
+            # advances the mount at target_speed + closing rate (scenegen's
+            # recipe path models the target at the closing speed, so 2x here).
+            sk["closing"] = "in"
+            if str(q["aspect"]) == "pursuit":
+                sk["advance_mps"] = round(2.0 * float(sk.get("closing_mps") or 0.0), 3)
         clip["seeker"] = sk
         cfg.pop("seeker", None)
 

@@ -743,14 +743,21 @@ class AspectTests(unittest.TestCase):
         r = scenegen.default_recipe()
         r['view']['aspect'] = 'pursuit'
         cfg = scenegen.build_scene(r)
-        self.assertEqual(cfg['clip']['seeker']['closing'], 'out')
+        sk = cfg['clip']['seeker']
+        # A pursuit closes the range (the target grows in the view) and the
+        # mount advances along the LOS so the tail view survives the closing.
+        self.assertEqual(sk['closing'], 'in')
+        self.assertGreater(float(sk.get('advance_mps') or 0.0), 0.0,
+                           'pursuit must advance the mount, not the target alone')
         obj = cfg['objects'][0]
         cam = cfg['sensors']['optical']['pos']
         away = sum((cam[i] - obj['pos'][i]) * obj['vel'][i] for i in range(3))
+        # vel points along the LOS away from the camera, so a tail view means
+        # (cam - pos) . vel < 0: the airframe never flies nose-first at the mount
         self.assertLess(away, 0.0, 'pursuit must fly the tail toward the camera')
 
     def test_planner_turns_aspect_into_a_closing_trajectory(self):
-        for aspect, closing in (('head_on', 'in'), ('pursuit', 'out')):
+        for aspect in ('head_on', 'pursuit'):
             with self.subTest(aspect=aspect):
                 r = scenegen.default_recipe()
                 r['view']['aspect'] = aspect
@@ -765,21 +772,42 @@ class AspectTests(unittest.TestCase):
                     self.assertFalse(cp.seek['keep_z'],
                                      'an airframe must not be pinned to ground_z')
                     r0, r1 = cp.range_for_time(0.0), cp.range_for_time(cp.dur)
-                    if closing == 'in':
-                        self.assertGreater(r0, r1)
-                    else:
-                        self.assertLess(r0, r1)
+                    # both aspects close the range now: head_on by the target
+                    # approaching, pursuit by the mount overtaking it
+                    self.assertGreater(r0, r1, 'the range must close over a clip')
                     # and the aspect still holds halfway through the clip
                     mid = cp.dur * 0.5
                     p = cp.target_pos(mid)
                     v = cp.target_vel(mid)
                     los = np_sub(cp.cam_pos_at(mid), p)     # camera minus target
                     dot = sum(v[i] * los[i] for i in range(3))
-                    if closing == 'in':
+                    if aspect == 'head_on':
                         self.assertGreater(dot, 0.0, 'nose must face the camera')
                     else:
                         self.assertLess(dot, 0.0, 'tail must face the camera')
                     self.assertEqual(cp.targets[0]['cls'], 'fighter')
+
+    def test_pursuit_target_grows_in_the_field_of_view(self):
+        # The whole point of a pursuit clip: the mount overtakes the target, so
+        # the apparent size must rise visibly across the clip -- not the 5%
+        # a 48 m/s drift over 2.7 km produced.
+        r = scenegen.default_recipe()
+        r['view']['aspect'] = 'pursuit'
+        r['view']['range_km'] = 2.8
+        r['view']['fov_deg'] = 8.0
+        r['view']['closing_mps'] = 180.0
+        r.setdefault('capture', {})['frames'] = 30
+        r['capture']['fps'] = 10.0
+        cfg = scenegen.build_scene(r)
+        with written(cfg) as path:
+            loaded = scene.load_config(path)
+            n = loaded['frames']['n']
+            cp = plan.ClipPlan(loaded, 0, plan.frames_per_clip(loaded, n),
+                               loaded['frames']['dt'], loaded['seed'])
+            px0, px1 = cp.px_for_time(0.0), cp.px_for_time(cp.dur)
+            self.assertGreater(px1 / px0, 1.15,
+                               'pursuit must grow the target visibly: %.2f -> %.2f px'
+                               % (px0, px1))
 
 
 def np_sub(a, b):
