@@ -57,6 +57,7 @@ Windows 上解压即用。面向目标检测 / 多模态融合算法的训练与
 | 参数化工作台 | ✅ `python -m simkit studio`，含预览、进度、轨迹事实 |
 | **工作台预设配方** | ✅ 18 个：海/陆/空 × 3 套实拍背景 × 有源/无源 ECM，`configs/recipes/p_*.json`，见 §1.55 |
 | **三域连续片段数据集** | ✅ 空/陆/海各 5 帧 × 可见光 + LWIR + 雷达 RD，附逐帧轨迹真值，见 §5.3 |
+| **海域真实感数据集 seav2** | ✅ 6 场景 × 30 帧 × 光学 + LWIR/MWIR + 雷达，28 m 舰船 + 程序化 Kelvin 尾迹 + 按场景落水取景，见 §5.4 |
 
 > 接下来的工作按"影响 × 成本"排好了序，见 [`PLAN.md`](PLAN.md)。
 
@@ -488,6 +489,34 @@ env\Scripts\python.exe tools\build_sealandair_1109v1.py --skip-gen   # 只重做
 
 > 已知局限：LWIR 背景由可见光照片做温度映射而非真实热像；雷达 RCS 为工程估计；
 > 5 帧只是 0.5 s 片段，不能替代长时序跟踪集。
+
+### 5.4 海域真实感数据集 seav2
+
+由 [`tools/build_preset_dataset_seav2.py`](tools/build_preset_dataset_seav2.py) 生成，
+输出到 `dataest/1110/seav2`（生成物，不入库）。针对第一轮海域预设被反馈的几个
+不真实点（船开到岛上 / 没有尾迹 / 船体过大 / 红外黑块）逐项修复：
+
+| 项 | 做法 |
+|---|---|
+| 舰船模型与尺寸 | 导弹艇换成战列舰改型轮廓并缩到 **28 m**（画幅内 bbox ≈ 27×34 px），10.7 m/s（约 21 kn）巡航 |
+| **Kelvin 尾迹** | [`tools/make_wake_texture.py`](tools/make_wake_texture.py) 程序生成：19.47° 楔形臂 + 横波弧（λ₀=2πV²/g≈73 m）+ 中心湍流加宽（x^0.25）+ 船头 V 波；按帧位姿**烘进底板照片**，光学（Cycles）与红外（底板采样器）读同一张图，零管线改动自动跨模态一致 |
+| 落水取景 | 水面掩膜（深水/浪花/雾霾分类）+ 足迹包围盒约束，**按场景反解 off_u/v0**：seeker 的 LOS 扫掠会让轨道整体偏离原点最多 ~200 m，固定 UV 会把个别场景的船放到礁石上；岛礁/港口照片裁剪去地平线雾霾与码头陆地 |
+| 航向可控 | 新增 `view.reverse_course`：seeker 模式下目标渲染航向由**相机方位**决定（改 `objects[].vel` 无效），翻转 180° 让尾迹拖向开阔水域（尾随视角） |
+| 红外黑块修复 | 底板灰度与 AGC 预览双标尺统一：几何像素按 (radiance/blackbody)^0.25 重标尺，热目标不再在明亮照片前读成黑色剪影（16 位数据本来就是热的） |
+
+**规模**：6 个场景（开阔海/岛礁/港口 × 有源/无源）× 30 帧 × 光学 + LWIR + MWIR +
+雷达 RD/RA，768×576，约 5 GB。每场景带 COCO 标注、YOLO labels、frames.json
+逐帧真值与 `index.json`/`generation_report.json` 验收；`applied.uv_solve` 记录
+每场景的落水取景参数（船位/尾迹走廊水面占比）。
+
+```powershell
+env\Scripts\python.exe tools\build_preset_dataset_seav2.py --force              # 全量 30 帧
+env\Scripts\python.exe tools\build_preset_dataset_seav2.py --validate 3 --force # 每场景 3 帧最小验证
+```
+
+> 已知局限：尾迹是程序纹理且按片段中点烘焙（3 s 内船位移 ~32 m，首尾帧船与
+> 尾迹附着点有 ~15 m 准静态偏差）；底板仍为实拍照片温度映射；船速 10.7 m/s
+> 对 28 m 艇偏高（Fr=0.65，属高速艇工况）。
 
 ---
 
