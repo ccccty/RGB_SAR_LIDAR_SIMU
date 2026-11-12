@@ -173,9 +173,9 @@ env\Scripts\python.exe tools\check_seeker.py out\seeker_air2ground   # 质量闸
 
 `check_seeker.py` 是闸门，但它的硬门禁只有两项：`frames.json` 是否存在、距离是否单调收拢。这两项任一不过就返回非零退出码，可以直接串进批处理。另外三项（每个模态的出框率是否 ≥80%、SAR 目标对比度是否为负、两段片段长度是否一致）只打 `[WARN]` 而不改退出码。它的 docstring 还宣称会检查目标像素是否落在设计带内，但代码里并没有这个检查，只打印 `px_note`。要逐项判定 `passed` 的完整闸门是 `tools/validation_check.py`，两者别混用。
 
-网站也可以直接双击 `index.html`（`file://`）打开：`tools/export_web.py` 除了写 `data/manifest.json`，还会写一份 `data/boot.js`（同样的数据，包成一句 `window.SIMKIT_DATA = {...}`）。浏览器不允许 `file://` 下 `fetch`，但允许普通 `<script>`，所以断网机器上不用起服务也能看全部内容。
+网站也可以直接双击 `index.html`（`file://`）打开。浏览器不允许 `file://` 下 `fetch`，但允许普通 `<script>`，所以数据都另写一份脚本副本：当前 `site.js` 读 `data/showcase.js`（`window.SIMKIT_SHOWCASE`），旧导出器 `tools/export_web.py` 写的是 `data/boot.js`（`window.SIMKIT_DATA`）。断网机器上不用起服务也能看全部内容。
 
-四个探针脚本可以直接复核，都不需要预先起服务，各自内嵌了一个临时静态服务器：
+探针脚本可以直接复核，都不需要预先起服务，各自内嵌了一个临时静态服务器（前四个查旧看板，最后一个查当前单页）：
 
 ```powershell
 node tools\probe_web.js                      # 起临时服务，跑真实页面，查 11 个页签
@@ -349,7 +349,7 @@ SAR 逐帧按快照生成：每帧的 `anchor` 跟随目标，沿航迹时间置
 | `ground_vehicle` | 6.75 m 浅色厢式货车，贴地匀速 | 3 辆正常车辆各自匀速、3 个路侧障碍严格静止 | 城市环岛道路航拍 |
 | `sea_ship` | 导弹艇，平滑接近 | 1 艘航行小艇 + 1 艘锚泊小艇 + 海杂波脊 | 开阔海面实拍 |
 
-每域 5 帧 × 可见光 / 长波红外 / 雷达 RD（另有 JPEG 副本、float32 RD 张量、COCO 标注与帧表），三域共 282 文件。每域 `trajectories.json` 逐帧记录主目标与每个干扰物的位置和速度，并做硬检查：主目标逐帧步长恒定且斜距单调收拢、静态干扰零位移、动态干扰匀速、诱饵单调下坠；`generation_report.json` 给出三域 `passed=True`。成像特征按 VEDAI / DLR3K / VisDrone / DroneVehicle、Det-Fly / Anti-UAV、SeaShips 等公开实拍数据集对齐，映射表见同目录 `参考数据集对照.md`。在线演示的 `data/v1_*` 就是这份数据的 WebP 导出。
+每域 5 帧 × 可见光 / 长波红外 / 雷达 RD（另有 JPEG 副本、float32 RD 张量、COCO 标注与帧表），三域共 282 文件。每域 `trajectories.json` 逐帧记录主目标与每个干扰物的位置和速度，并做硬检查：主目标逐帧步长恒定且斜距单调收拢、静态干扰零位移、动态干扰匀速、诱饵单调下坠；`generation_report.json` 给出三域 `passed=True`。成像特征按 VEDAI / DLR3K / VisDrone / DroneVehicle、Det-Fly / Anti-UAV、SeaShips 等公开实拍数据集对齐，映射表见同目录 `参考数据集对照.md`。这份数据的 WebP 导出留在 `data/v1_*`；2026-11-12 之后的新看板不再取用它，改由 §6 的 `data/run` 供图。
 
 ```powershell
 env\Scripts\python.exe tools\build_sealandair_1109v1.py --force
