@@ -3,367 +3,292 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>simkit · 空 / 陆 / 海三域多模态精选 · 干扰对照：同一帧的可见光 / 红外 / 雷达</title>
-<meta name="description" content="同一帧、同一相机位姿、同一目标的多模态仿真精选：空域战机、陆域车辆与海域舰船，背景为云层 / 城市道路 / 海浪实拍底板，可见光、长波红外与毫米波雷达距离-多普勒图同源配准，配原理讲解、场景精选与已知局限。纯静态页面。另设干扰实验室，覆盖有源压制、箔条云、假目标、红外诱饵与地 / 海杂波脊的 clean↔jammed 逐帧对照。">
-<meta name="theme-color" content="#070a0f">
+<title>simkit · 同一帧的可见光 / 中波红外 / 长波红外 / 雷达</title>
+<meta name="description" content="海域连续片段的四路传感器同帧对照：30 帧、10 fps、3 秒，斜距 2351 m 收敛到 2326 m。可见光走 PBR 与 Cycles，中波/长波红外走逐面能量平衡与 Planck 积分，雷达走面元物理光学与距离-多普勒聚焦。页面给出真值与成图的对齐、干扰前后的 SNR 实测，以及 18 个预置配方。">
+<meta name="theme-color" content="#05070a">
 <meta name="color-scheme" content="dark">
 <meta property="og:type" content="website">
-<meta property="og:title" content="simkit · 同一帧，三种传感器各看到什么">
-<meta property="og:description" content="空域战机、陆域车辆与海域舰船的多模态仿真精选对照：云层 / 城市道路 / 海浪实拍底板，可见光、红外、雷达 RD 同帧同位姿，附带成像原理与局限说明。干扰实验室另给 clean↔jammed 对照与杂波 / 诱饵链路示意。">
-<meta property="og:image" content="data/v1_air/optical/000000.webp">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='10' fill='none' stroke='%2338bdf8' stroke-width='3'/><circle cx='16' cy='16' r='3.6' fill='%2338bdf8'/><path d='M16 1v5M16 26v5M1 16h5M26 16h5' stroke='%2338bdf8' stroke-width='2'/></svg>">
+<meta property="og:title" content="simkit · 同一帧，四路传感器">
+<meta property="og:description" content="30 帧海域接近片段：可见光、中波红外、长波红外、雷达 RD 共享同一份三维场景与运动真值；干扰前后 SNR 由 70.7 dB 跌到 0–21 dB。">
+<meta property="og:image" content="data/run/p_sea_port_passive/optical/000012.webp">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='3' width='26' height='26' rx='4' fill='none' stroke='%234cd7ff' stroke-width='2'/><circle cx='16' cy='16' r='4' fill='%234cd7ff'/><path d='M16 3v6M16 23v6M3 16h6M23 16h6' stroke='%234cd7ff' stroke-width='1.6'/></svg>">
+<link rel="preload" as="image" href="data/run/p_sea_port_passive/optical/000012.webp">
+<link rel="preload" as="image" href="data/run/p_sea_port_passive/rd/000012.webp">
 <link rel="stylesheet" href="site.css">
+<script src="data/showcase.js" defer></script>
 <script src="site.js" defer></script>
 </head>
 <body>
-<div class="page-glow" aria-hidden="true"></div>
-<a class="skip" href="#main">跳到正文</a>
+<a class="skip" href="#rack">跳到正文</a>
 
 <header class="bar">
-  <a class="brand" href="#hero" aria-label="回到顶部">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".5"/><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    <span class="brand-name">simkit</span>
-    <em>空 / 陆 / 海 / 干扰</em>
+  <a class="brand" href="#rack" aria-label="回到顶部">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="3.4" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".55"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" stroke="currentColor" stroke-width="1.3"/></svg>
+    <span>simkit</span>
   </a>
-  <nav class="nav" aria-label="页面导航">
-    <a href="#hero">演示</a>
-    <a href="#physics">原理</a>
-    <a href="#scenes">场景</a>
-    <a href="#jamlab">干扰实验室</a>
-    <a href="#rd">雷达图</a>
-    <a href="#limits">局限</a>
+  <nav class="nav" aria-label="页内导航">
+    <a href="#rack"><b>01</b>同帧</a>
+    <a href="#bands"><b>02</b>波段</a>
+    <a href="#ecm"><b>03</b>干扰</a>
+    <a href="#recipes"><b>04</b>配方</a>
+    <a href="#limits"><b>05</b>局限</a>
   </nav>
-  <a class="gh" href="https://github.com/ccccty/RGB_SAR_LIDAR_SIMU" target="_blank" rel="noopener">GitHub ↗</a>
+  <a class="gh" href="https://github.com/ccccty/RGB_SAR_LIDAR_SIMU" target="_blank" rel="noopener">仓库 ↗</a>
 </header>
 
-<main id="main">
+<main>
 
-<!-- ================= 01 主视觉 ================= -->
-<section id="hero" class="sect hero">
-  <div class="hero-copy">
-    <p class="eyebrow"><span class="pulse"></span>离线多模态仿真 · 空 / 陆 / 海三域精选</p>
-    <h1>同一帧，<br>三种传感器各看到什么</h1>
-    <p class="lede">同一帧、同一相机位姿、同一目标：可见光、中波 / 长波红外与毫米波雷达各按自己的物理成像。下面每一组对照都来自同一次仿真落盘的同一帧，不是拼贴素材。</p>
-
-    <div class="modbar" id="heroMods" role="group" aria-label="选择右侧对比模态">
-      <button type="button" data-mod="optical" class="on" aria-pressed="true">可见光</button>
-      <button type="button" data-mod="mwir" aria-pressed="false">中波红外</button>
-      <button type="button" data-mod="lwir" aria-pressed="false">长波红外</button>
-      <button type="button" data-mod="radar" aria-pressed="false">雷达 RD</button>
-    </div>
-    <p class="hint" id="heroHint">左：可见光　右：所选模态　·　在画面上左右拖动分割线</p>
-
-    <dl class="meta" id="heroMeta">
-      <div><dt>场景</dt><dd id="metaScene">v1_air</dd></div>
-      <div><dt>帧</dt><dd id="metaFrame">000004</dd></div>
-      <div><dt>波段</dt><dd id="metaBand">Ku</dd></div>
-      <div class="wide"><dt>备注</dt><dd id="metaNote">8 帧 · 雷达 1.3 km · 闭速 179 m/s</dd></div>
-    </dl>
-
-    <div class="hero-badges" aria-label="技术参数徽章">
-      <span class="tech-badge">PHYSICS-LAYER ECM</span>
-      <span class="tech-badge">30 FPS CLIP</span>
-      <span class="tech-badge">768×576</span>
-      <span class="tech-badge">Ku-BAND RD</span>
-    </div>
+<!-- ============ 01 ============ -->
+<section id="rack" class="sect">
+  <div class="sect-head">
+    <p class="kicker">海域连续片段 · 2026-11-11 · 30 帧 / 10 fps / 3.0 s</p>
+    <h1>同一帧，四路传感器各自成像</h1>
+    <p class="lede">一次接近被同时记进四路通道：可见光、中波红外、长波红外与毫米波雷达。它们共享同一个三维场景、同一位姿、同一套运动真值。右侧读数逐帧取自落盘文件，不是页面装饰。</p>
+    <ul class="chips">
+      <li>集装箱港口 · 实拍底板</li>
+      <li>28 m 舰船 · Kelvin 尾迹</li>
+      <li>斜距 2351 → 2326 m</li>
+      <li>Ku 15 GHz · 距离分辨率 3.0 m</li>
+      <li>768×576 · COCO + YOLO</li>
+    </ul>
   </div>
 
-  <div class="hero-vis">
-    <div class="stage" id="stage">
-      <img class="lyr base" id="stageBase" src="data/v1_air/lwir/000000.webp" width="640" height="480" alt="长波红外 8–12 µm 成像：同一帧的云层与目标">
-      <img class="lyr top" id="stageTop" src="data/v1_air/optical/000000.webp" width="1280" height="960" alt="可见光成像：同一帧的云层与目标">
-      <span class="edge left" id="edgeLeft">可见光</span>
-      <span class="edge right" id="edgeRight">中波红外</span>
-      <span class="split" id="splitLine" aria-hidden="true"><i></i></span>
-    </div>
-    <div class="stage-ctl">
-      <label class="sr" for="splitRange">左右对比分割位置</label>
-      <input id="splitRange" type="range" min="0" max="100" value="52" step="1">
-      <span class="ctl-hint">拖动或用方向键微调</span>
-    </div>
-    <p class="figcap" id="heroCap">同一帧、同一相机位姿、同一目标。左半边是可见光，右半边是所选模态。</p>
-  </div>
-</section>
-
-<!-- ================= 02 三模态原理 ================= -->
-<section id="physics" class="sect">
-  <header class="sect-h">
-    <span class="num">02</span>
-    <h2>三模态的成像原理</h2>
-    <p>每张卡片配一帧原始落盘图。下面几行说明它为什么长这样，公式从简。</p>
-  </header>
-
-  <div class="phys-grid">
-    <article class="phys">
-      <figure class="phys-fig">
-        <img data-fill="optical" src="data/v1_air/optical/000000.webp" width="1280" height="960" loading="lazy" alt="可见光帧：云层、海面与目标">
-        <figcaption data-fill-cap="optical">可见光 · 帧 000004</figcaption>
+  <div class="console">
+    <div class="screens">
+      <figure class="panel panel-opt" id="optPanel">
+        <div class="frame">
+          <img id="optImg" src="data/run/p_sea_port_passive/optical/000012.webp" width="768" height="576" alt="可见光通道：同一帧的集装箱港口与航行舰船">
+          <svg class="ov" id="optOv" viewBox="0 0 768 576" aria-hidden="true"></svg>
+          <span class="tag">可见光 · Cycles</span>
+          <span class="clock" id="optClock">帧 12 / 30</span>
+        </div>
+        <figcaption>PBR 材质加路径追踪。目标框由同一套三维投影导出，宽约 20 px、高约 31 px。</figcaption>
       </figure>
-      <h3>可见光 · PBR 材质 + Cycles</h3>
-      <ul>
-        <li>目标与背景共用一套 PBR 材质：金属度、粗糙度、法线决定阳光往哪儿反射。</li>
-        <li>Cycles 做路径追踪，直接光来自太阳，间接光来自天空穹顶的辐亮度模型。</li>
-        <li>大气按高度剖面衰减，云层与海面按各自的 BRDF 参与多次散射。</li>
-        <li>逐视场自动曝光，把线性辐射量压到 sRGB，再叠加光电子噪声与运动曝光。</li>
-        <li>分辨率随视场变化，标注框由同一套三维投影导出，不手工标。</li>
-      </ul>
-      <a class="raw" data-fill-link="optical" href="data/v1_air/optical/000000.webp" target="_blank" rel="noopener">看原始帧 →</a>
-    </article>
 
-    <article class="phys">
-      <figure class="phys-fig">
-        <img data-fill="infrared" src="data/v1_air/lwir/000000.webp" width="640" height="480" loading="lazy" alt="长波红外帧：同一帧的辐射温度分布">
-        <figcaption data-fill-cap="infrared">长波红外 8–12 µm · 帧 000004</figcaption>
+      <figure class="panel panel-rd">
+        <div class="frame">
+          <img id="rdImg" src="data/run/p_sea_port_passive/rd/000012.webp" width="896" height="448" alt="雷达距离-多普勒图：同一帧的噪声底与舰船回波">
+          <svg class="ov" id="rdOv" viewBox="0 0 896 448" aria-hidden="true"></svg>
+          <span class="tag">雷达 RD · Ku 15 GHz</span>
+        </div>
+        <figcaption>横轴距离 0–6.14 km，纵轴径向速度 ±147.6 m/s，显示窗 40 dB 锚在噪声中位数上。菱形是运动真值，十字是成图峰值。</figcaption>
       </figure>
-      <h3>红外 · 能量平衡 → 温度 → Planck</h3>
-      <ul>
-        <li>每个面元解一次能量平衡：太阳短波吸收、天空与地物长波辐射、气动加热、内热源。</li>
-        <li>解出的表面温度代入 Planck 定律，在 3–5 µm 与 8–12 µm 两个窗口分别积分成辐亮度。</li>
-        <li>乘大气透过率，卷积光学系统的高斯 PSF，再按 NETD 叠噪声。</li>
-        <li>量化到 16-bit 之后施加 NUC 固定图案噪声与坏点，所以整组数据共用同一张图案。</li>
-        <li>预览图做 AGC 拉伸；两波段预览高度相关，是因为同一个表面温度主导了两者。</li>
-      </ul>
-      <a class="raw" data-fill-link="infrared" href="data/v1_air/lwir/000000.webp" target="_blank" rel="noopener">看原始帧 →</a>
-    </article>
+    </div>
 
-    <article class="phys">
-      <figure class="phys-fig">
-        <img data-fill="radar" src="data/v1_air/radar/000000.webp" width="1280" height="720" loading="lazy" alt="雷达距离-多普勒图">
-        <figcaption data-fill-cap="radar">雷达 RD · 帧 000004</figcaption>
-      </figure>
-      <h3>雷达 · PO 散射 → 雷达方程 → RD</h3>
-      <ul>
-        <li>弓形栅格逐条射线求交，每个面元按物理光学给 RCS：σ = 4πA²cos²θ/λ² · ρ² · coh。</li>
-        <li>面元回波按标准雷达方程折算成功率：P_r = P_t G²λ²σ / ((4π)³R⁴L)。</li>
-        <li>单孔径相参合成：一次发射一次接收，快时间维做匹配滤波，慢时间维做多普勒 FFT。</li>
-        <li>多散射中心（机身、翼尖、进气道）与 JEM 调制一起进同一条距离-多普勒通道。</li>
-        <li>噪声只加一个复高斯场，所以背景是单通道指数散斑，10–90 分位差约 13.4 dB。</li>
-      </ul>
-      <a class="raw" data-fill-link="radar" href="data/v1_air/radar/000000.webp" target="_blank" rel="noopener">看原始帧 →</a>
-    </article>
-  </div>
-</section>
+    <aside class="telemetry">
+      <h2 class="th">当前帧</h2>
+      <dl class="ro">
+        <div><dt>帧 / 时间</dt><dd><span id="tFrame">12</span><em>/30</em> <span id="tTime">1.20 s</span></dd></div>
+        <div><dt>斜距</dt><dd><span id="tRange">2340.8</span><em>m</em></dd></div>
+        <div><dt>闭速</dt><dd><span id="tClose">8.6</span><em>m/s</em></dd></div>
+        <div><dt>目标跨度</dt><dd><span id="tPx">55.4</span><em>px</em></dd></div>
+        <div><dt>峰值 SNR</dt><dd><span id="tSnr">70.7</span><em>dB</em></dd></div>
+        <div><dt>检出点</dt><dd><span id="tNpts">9</span><em>点</em></dd></div>
+        <div><dt>成图峰值</dt><dd class="sm"><span id="tPeakR">2324.9 m</span> <span id="tPeakV">+6.9 m/s</span></dd></div>
+        <div><dt>真值</dt><dd class="sm"><span id="tTrueR">2339.1 m</span> <span id="tTrueV">+8.5 m/s</span></dd></div>
+      </dl>
 
-<!-- ================= 03 场景精选 ================= -->
-<section id="scenes" class="sect">
-  <header class="sect-h">
-    <span class="num">03</span>
-    <h2>空 / 陆 / 海场景精选 · 含干扰样本</h2>
-    <p>三域精选均用实拍照片作底板：云层里的战机、城市环岛道路上的车辆、开阔海面上的舰船。
-    每个场景给 5 帧同源的可见光 / 长波红外 / 雷达 RD，点大图放大，点缩略条换帧，点模态按钮切传感器。
-    含干扰样本的场景以「干扰」标签标出，可在下方干扰实验室里做 clean↔jammed 逐帧对照。</p>
-  </header>
-
-  <div class="scenes-grid" id="sceneGrid">
-    <p class="loading" id="sceneLoading">正在载入精选数据…</p>
-  </div>
-
-  <noscript>
-    <p class="loading">精选帧列表需要 JavaScript 才能渲染；单张原图仍可直接访问，例如
-      <a href="data/v1_air/optical/000000.webp">data/v1_air/optical/000000.webp</a>。</p>
-  </noscript>
-</section>
-
-<!-- ================= 干扰实验室（W3 数据驱动 · 静态兜底） ================= -->
-<section class="sect jamlab" id="jamlab">
-  <header class="sect-h">
-    <span class="num">ECM</span>
-    <h2>干扰实验室 · clean ↔ jammed 逐帧对照</h2>
-    <p>按干扰类型与强度分层：有源压制、箔条云、假目标、红外诱饵、地 / 海杂波脊。左侧干净帧、右侧干扰帧，拖动分割线看差异；下方给出指标条与强度分层卡片。</p>
-    <span class="kicker">JAM LAB · ACTIVE / PASSIVE / CLUTTER</span>
-  </header>
-
-  <!-- 纯 SVG 干扰链路示意：不依赖 JS；颜色由 site.css 中的 CSS 变量驱动 -->
-  <div class="jam-chain-box">
-    <svg class="jam-chain" viewBox="0 0 900 180" role="img" aria-label="干扰链路示意：目标回波经有源压制、箔条云、假目标、红外诱饵与地 / 海杂波脊注入，汇入同一 RD 成图通道">
-      <path class="lnk" stroke="currentColor" d="M144,92 C188,92 192,38 236,38"/>
-      <path class="lnk" stroke="currentColor" d="M144,92 C240,92 320,38 402,38"/>
-      <path class="lnk" stroke="currentColor" d="M144,92 C320,92 460,38 568,38"/>
-      <path class="lnk" stroke="currentColor" d="M144,92 C188,92 192,122 236,122"/>
-      <path class="lnk" stroke="currentColor" d="M144,92 C240,92 320,122 402,122"/>
-      <path class="lnk" stroke="currentColor" d="M144,92 C320,92 460,122 568,122"/>
-      <path class="lnk hot" stroke="currentColor" d="M374,38 C620,38 690,92 756,92"/>
-      <path class="lnk" stroke="currentColor" d="M540,38 C650,38 700,92 756,92"/>
-      <path class="lnk" stroke="currentColor" d="M706,38 C730,38 734,92 756,92"/>
-      <path class="lnk" stroke="currentColor" d="M374,122 C620,122 690,92 756,92"/>
-      <path class="lnk" stroke="currentColor" d="M540,122 C650,122 700,92 756,92"/>
-      <path class="lnk" stroke="currentColor" d="M706,122 C730,122 734,92 756,92"/>
-
-      <g class="nd end">
-        <rect x="16" y="72" width="128" height="40" rx="8"/>
-        <text x="80" y="90" text-anchor="middle">目标回波</text>
-        <text class="sub" x="80" y="103" text-anchor="middle">SOURCE / TRUTH</text>
-      </g>
-      <g class="nd jam-hot">
-        <rect x="236" y="20" width="138" height="36" rx="7"/>
-        <text x="305" y="34" text-anchor="middle">有源压制</text>
-        <text class="sub" x="305" y="47" text-anchor="middle">NOISE JAM</text>
-      </g>
-      <g class="nd jam-passive">
-        <rect x="402" y="20" width="138" height="36" rx="7"/>
-        <text x="471" y="34" text-anchor="middle">箔条云</text>
-        <text class="sub" x="471" y="47" text-anchor="middle">CHAFF CLOUD</text>
-      </g>
-      <g class="nd jam-passive">
-        <rect x="568" y="20" width="138" height="36" rx="7"/>
-        <text x="637" y="34" text-anchor="middle">假目标</text>
-        <text class="sub" x="637" y="47" text-anchor="middle">FALSE TARGET</text>
-      </g>
-      <g class="nd jam-amber">
-        <rect x="236" y="104" width="138" height="36" rx="7"/>
-        <text x="305" y="118" text-anchor="middle">红外诱饵</text>
-        <text class="sub" x="305" y="131" text-anchor="middle">IR DECOY / FLARE</text>
-      </g>
-      <g class="nd jam-clutter">
-        <rect x="402" y="104" width="138" height="36" rx="7"/>
-        <text x="471" y="118" text-anchor="middle">地杂波</text>
-        <text class="sub" x="471" y="131" text-anchor="middle">GROUND CLUTTER</text>
-      </g>
-      <g class="nd jam-sea">
-        <rect x="568" y="104" width="138" height="36" rx="7"/>
-        <text x="637" y="118" text-anchor="middle">海杂波脊</text>
-        <text class="sub" x="637" y="131" text-anchor="middle">SEA RIDGE · 0-DOPPLER</text>
-      </g>
-      <g class="nd end">
-        <rect x="756" y="72" width="128" height="40" rx="8"/>
-        <text x="820" y="90" text-anchor="middle">RD 成图通道</text>
-        <text class="sub" x="820" y="103" text-anchor="middle">RD / COCO OUT</text>
-      </g>
-
-      <g class="lg">
-        <rect x="236" y="158" width="9" height="9" rx="2" style="fill:var(--jam)"/>
-        <text x="250" y="167">有源 / 主动注入</text>
-        <rect x="402" y="158" width="9" height="9" rx="2" style="fill:var(--acc2)"/>
-        <text x="416" y="167">箔条 · 假目标 · 诱饵</text>
-        <rect x="590" y="158" width="9" height="9" rx="2" style="fill:var(--acc)"/>
-        <text x="604" y="167">地 / 海杂波脊</text>
-      </g>
-    </svg>
-  </div>
-  <p class="jam-note">链路说明：实线为目标回波主通道，六个节点是注入到同一 RD 通道的干扰 / 杂波项，颜色与下方指标、实体标签一一对应。此示意与说明为纯静态内容，不依赖脚本。</p>
-
-  <div class="jam-tabs" id="jamTabs"></div>
-  <div class="jam-body" id="jamBody">
-    <p class="jam-empty">干扰对照数据未载入。JavaScript 执行且数据加载成功后，此处会显示 clean ↔ jammed 拖拽对比；若数据缺失，整块由脚本隐藏。上方链路示意与说明不依赖脚本。</p>
-  </div>
-  <div class="jam-metrics" id="jamMetrics"></div>
-  <div class="jam-tiers" id="jamTiers"></div>
-
-  <noscript>
-    <p class="jam-empty">干扰实验室的对照图、指标与分层需要 JavaScript 才能渲染；上方链路示意、图例与说明为纯静态内容，可直接查看。</p>
-  </noscript>
-</section>
-
-<!-- ================= 04 雷达 RD 深读 ================= -->
-<section id="rd" class="sect">
-  <header class="sect-h">
-    <span class="num">04</span>
-    <h2>雷达距离-多普勒图怎么读</h2>
-    <p>一张 1280×720 的成图，四样东西：距离轴、径向速度轴、dB 色标、目标参数表。</p>
-  </header>
-
-  <div class="rd-grid">
-    <figure class="rd-fig">
-      <img id="rdImg" src="data/v1_air/radar/000000.webp" width="1280" height="720" loading="lazy" alt="雷达距离-多普勒成图，含距离轴、径向速度轴、dB 色标与右上角目标参数表">
-      <figcaption id="rdCap">雷达距离-多普勒图 · 迎头场景 · 帧 000004</figcaption>
-    </figure>
-
-    <div class="rd-notes">
-      <ol class="legend">
-        <li>
-          <b>距离轴 · 横轴</b>
-          快时间维匹配滤波后的距离门，从 0 铺到最大作用距离。距离分辨率由信号带宽决定，数值写在这张图的标题里。
-        </li>
-        <li>
-          <b>径向速度轴 · 纵轴</b>
-          慢时间维做多普勒 FFT 得到的速度门。<b>正 = 接近，负 = 远离</b>；贴着 0 的那一行是静止杂波所在的零速线。
-        </li>
-        <li>
-          <b>dB 色标窗 · 右侧</b>
-          显示动态范围固定，图上标了上下限（这个例子是 −67 … −27 dB，共 40 dB）。颜色是 dB 值，不是线性幅度。
-        </li>
-        <li>
-          <b>目标参数表 · 右上角</b>
-          编号 / 类别 / 距离 / 径向速度 / 方位角 / SNR，和图上最强的那个峰一一对应，不是后贴上去的说明。
-        </li>
-      </ol>
-
-      <div class="aside">
-        <h3>为什么俯视板面里径向速度≈0</h3>
-        <p>如果视线正俯视一块板面（视线垂直于目标速度），目标相对视线没有投影运动，多普勒频移约等于 0，速度维上只剩一条贴着零速线的亮带——看起来和静止杂波难分。</p>
-        <p>要读出真实接近率，得换成斜视几何：视线与速度矢量有了夹角 θ，径向速度 v<sub>r</sub> = v · cosθ 才不为零。上面这张图的读数就来自斜视接近，不是俯视。</p>
-        <p>同一张图的散斑背景是单通道指数统计，没有 CFAR 门限，也没有距离走动补偿。</p>
+      <div class="dlg">
+        <p><b>峰值与真值差 <span id="dNote">14 m</span></b>，不是配准误差。<span id="peakNote">最强单元落在 2320 m 的角反射器上，比 28 m 船体亮；</span>RD 图上最亮的格子经常不是要找的目标。</p>
       </div>
 
-      <a class="raw" id="rdRaw" href="data/v1_air/radar/000000.webp" target="_blank" rel="noopener">打开原始 RD 图 →</a>
+      <h2 class="th">通道</h2>
+      <div class="chan" role="group" aria-label="选择下方主视窗的通道">
+        <button type="button" data-chan="optical" aria-pressed="true">可见光</button>
+        <button type="button" data-chan="mwir" aria-pressed="false">中波</button>
+        <button type="button" data-chan="lwir" aria-pressed="false">长波</button>
+      </div>
+      <p class="mini">切换只改上面那一路画面；雷达与读数保持在同帧。</p>
+    </aside>
+  </div>
+
+  <div class="timebar">
+    <button type="button" class="play" id="play" aria-label="播放或暂停 30 帧序列">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg>
+    </button>
+    <label class="sr" for="scrub">帧位置</label>
+    <div class="track">
+      <div class="ticks" aria-hidden="true"></div>
+      <input id="scrub" type="range" min="0" max="29" step="1" value="12">
+    </div>
+    <span class="count" id="count">13 / 30</span>
+  </div>
+  <ul class="strip" id="strip" aria-label="30 帧缩略图"></ul>
+  <p class="hint">点击缩略图或拖动滑轨换帧，方向键逐帧，空格播放。</p>
+</section>
+
+<!-- ============ 02 ============ -->
+<section id="bands" class="sect">
+  <div class="sect-head">
+    <p class="kicker">02 · 波段</p>
+    <h2>一条温度，两个窗口</h2>
+    <p class="lede">同一帧的红外图像在 3–5 µm 与 8–12 µm 各拍一次。两个窗口的差别不是配色，是 Planck 曲线在不同温度下的形状：常温海面几乎全部落在长波，热部件才把能量推去中波。</p>
+  </div>
+
+  <div class="band-row">
+    <figure class="band">
+      <img id="bOpt" src="data/run/p_sea_port_passive/optical/000012.webp" width="768" height="576" alt="可见光通道同一帧">
+      <figcaption><b>可见光</b><span>太阳照明，靠反射率分辨</span></figcaption>
+    </figure>
+    <figure class="band">
+      <img id="bMwir" src="data/run/p_sea_port_passive/mwir/000012.webp" width="768" height="576" alt="中波红外 3–5 µm 同一帧">
+      <figcaption><b>中波红外 3–5 µm</b><span>NETD 28 mK · PSF 1.3 px</span></figcaption>
+    </figure>
+    <figure class="band">
+      <img id="bLwir" src="data/run/p_sea_port_passive/lwir/000012.webp" width="768" height="576" alt="长波红外 8–12 µm 同一帧">
+      <figcaption><b>长波红外 8–12 µm</b><span>同一套逐面能量平衡，独立发射率</span></figcaption>
+    </figure>
+  </div>
+  <p class="note">两张红外预览经过各自的 AGC 拉伸，相关系数约 0.995：同一表面温度主导了两者，波段差异留在 16-bit 原始计数里。预览看起来几乎一样，不代表两个探测器看到的一样。</p>
+
+  <div class="planck">
+    <div class="planck-head">
+      <h3>黑体辐亮度与两个大气窗口</h3>
+      <p>曲线按各自峰值归一化，看的是形状与峰值位置。拖动温度，读出 λ<sub>max</sub> 与两个窗口占总辐射的份额（份额在 1–40 µm 上积分）。</p>
+    </div>
+    <p class="keys">白线：拖动设定的温度　·　<span class="k-cyan">青线</span>：300 K　·　<span class="k-amber">橙线</span>：800 K，两者为固定参考。每条曲线按自身峰值归一化，可比的只有形状与窗口份额。</p>
+    <svg id="planckSvg" viewBox="0 0 640 300" role="img" aria-label="黑体辐亮度随波长变化的曲线，标出 3-5 µm 与 8-12 µm 两个窗口"></svg>
+    <div class="planck-foot">
+      <div class="temp-ctl">
+        <label for="temp">温度</label>
+        <input id="temp" type="range" min="250" max="1200" step="10" value="300">
+        <output id="tempOut">300 K</output>
+      </div>
+      <dl class="planck-ro">
+        <div><dt>λ<sub>max</sub></dt><dd id="pkLambda">9.66 µm</dd></div>
+        <div><dt>3–5 µm</dt><dd id="pkMwir">1.4%</dd></div>
+        <div><dt>8–12 µm</dt><dd id="pkLwir">27.9%</dd></div>
+        <div><dt>4 µm 处 800/300 K</dt><dd id="pkRatio">—</dd></div>
+        <div><dt>舰体参考</dt><dd>24 °C / 297 K</dd></div>
+      </dl>
     </div>
   </div>
 </section>
 
-<!-- ================= 05 能力与局限 ================= -->
-<section id="limits" class="sect">
-  <header class="sect-h">
-    <span class="num">05</span>
-    <h2>能力与局限</h2>
-    <p>能做什么、不能做什么，都照实写。</p>
-  </header>
+<!-- ============ 03 ============ -->
+<section id="ecm" class="sect">
+  <div class="sect-head">
+    <p class="kicker">03 · 干扰</p>
+    <h2>同一条船上加一部干扰机</h2>
+    <p class="lede">两段运行用的是同一套底板、同一型目标、同一组雷达参数，只差干扰配置。左段无源，箔条云、角反射器、拖曳诱饵与红外诱饵在物理层各自成一次回波；右段另加一部宽带噪声压制，加 DRFM 假目标与速度波门拖引。</p>
+  </div>
 
-  <div class="limits">
-    <div class="lim">
-      <h3>能做到</h3>
+  <div class="ab">
+    <figure class="panel panel-rd">
+      <div class="frame">
+        <img id="ecmA" src="data/run/p_sea_port_passive/rd/000012.webp" width="896" height="448" alt="无源干扰运行的雷达距离-多普勒图，目标峰清晰">
+        <svg class="ov" id="ecmAov" viewBox="0 0 896 448" aria-hidden="true"></svg>
+        <span class="tag ok">A · 无源</span>
+      </div>
+      <figcaption>目标峰在 2.33 km、+8.5 m/s 附近，峰值 SNR <b id="snrA">70.7 dB</b>，本帧检出 <b id="ptsA">9 点</b>。显示窗 <span class="win" id="winA">−64.0 ⋯ −24.0 dBW</span>。</figcaption>
+    </figure>
+    <figure class="panel panel-rd">
+      <div class="frame">
+        <img id="ecmB" src="data/run/p_sea_port_active/rd/000012.webp" width="896" height="448" alt="有源干扰运行的雷达距离-多普勒图，目标被噪声淹没">
+        <svg class="ov" id="ecmBov" viewBox="0 0 896 448" aria-hidden="true"></svg>
+        <span class="tag bad">B · 有源</span>
+      </div>
+      <figcaption>同一帧指标：峰值 SNR <b id="snrB">14.4 dB</b>，检出 <b id="ptsB">7 点</b>，其中多数是 DRFM 复制品。显示窗 <span class="win" id="winB">−12.8 ⋯ +27.2 dBW</span>。</figcaption>
+    </figure>
+  </div>
+
+  <dl class="ecm-stats">
+    <div><dt>干扰功率比 J/S</dt><dd id="statJs">38.0–56.4 dB</dd></div>
+    <div><dt>噪声底抬升</dt><dd id="statRise">49.9–53.7 dB</dd></div>
+    <div><dt>峰值 SNR 落差</dt><dd id="statDrop">50.3 dB</dd></div>
+    <div><dt>压制机泄漏</dt><dd id="statErp">200 W ERP</dd></div>
+  </dl>
+
+  <div class="chart-box">
+    <div class="chart-head">
+      <h3>峰值 SNR 随帧</h3>
+      <p>两段各 30 帧。灰线是无源运行的 70.7 dB 量级，橙线是叠加噪声压制后的读数。</p>
+    </div>
+    <svg id="snrSvg" viewBox="0 0 900 260" role="img" aria-label="两段运行的峰值 SNR 随帧变化曲线"></svg>
+    <p class="chart-foot">两张 RD 图各自按本段噪声中位数自锚，所以看起来都像"雪"。把窗口换到同一把绝对标尺上就露馅了：B 的整幅图比 A 高 <b id="winGap">52 dB</b>，这个数与 J/S 同量级。有源段的 SNR 在 0 与 21 dB 之间跳动，剩下的检出多是 DRFM 复制品与偶然过门限的散斑。</p>
+  </div>
+
+  <div class="ent">
+    <div>
+      <h3>无源组：物理层回波</h3>
+      <table>
+        <thead><tr><th>实体</th><th>类型</th><th>距离</th><th>参数</th></tr></thead>
+        <tbody id="entA"></tbody>
+      </table>
+    </div>
+    <div>
+      <h3>有源组：注入同一 RD 通道</h3>
+      <table>
+        <thead><tr><th>实体</th><th>类型</th><th>距离</th><th>参数</th></tr></thead>
+        <tbody id="entB"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 04 ============ -->
+<section id="recipes" class="sect">
+  <div class="sect-head">
+    <p class="kicker">04 · 配方</p>
+    <h2>十八个开箱即用的组合</h2>
+    <p class="lede">空 / 陆 / 海三域各配三套实拍底板，每套再分出有源与无源两种干扰配置。下面每一格都能在工作台里原样载入，改帧数与波段后重跑。</p>
+  </div>
+  <div class="wall" id="wall"></div>
+  <p class="note">命名规则 <code>p_&lt;域&gt;_&lt;底板&gt;_&lt;干扰模式&gt;.json</code>，落在 <code>configs/recipes/</code>。底板文件取自 <code>assets/backdrops/</code>，未做辐射标定，只用来给光学与红外提供可见纹理。</p>
+</section>
+
+<!-- ============ 05 ============ -->
+<section id="limits" class="sect">
+  <div class="sect-head">
+    <p class="kicker">05 · 局限</p>
+    <h2>这一页能证明什么，不能证明什么</h2>
+  </div>
+  <div class="lim">
+    <div>
+      <h3>成立</h3>
       <ul>
-        <li><b>多模态同帧</b>：可见光、中波 / 长波红外、雷达 RD 共享同一份三维场景、同一相机位姿、同一套天气与运动真值。</li>
-        <li><b>标注同源</b>：框、距离、径向速度都由同一套三维投影与 RD 峰值检测导出，逐像素配准。</li>
-        <li><b>可复现</b>：配置与随机种子固定，同一配置重跑得到同一组图；页面每张图都有落盘路径。</li>
-        <li><b>结构真实</b>：光学走 PBR + Cycles，红外走逐面能量平衡，雷达走面元 PO + 雷达方程，噪声按各自统计施加。</li>
-        <li><b>零依赖</b>：纯静态页面，无后端、无上传、无外部 CDN，图片是 webp。</li>
+        <li>四路通道同帧同姿，标注框、斜距、径向速度都由同一套三维投影与 RD 峰值检测导出。</li>
+        <li>雷达成图上的菱形（真值）与十字（峰值）由数据算出，页面不做手工对齐。</li>
+        <li>干扰前后的 SNR 落差来自同一次仿真落盘的 <code>meta.json</code>，不是示意数值。</li>
+        <li>配方矩阵里的每一格都能用仓库里的命令重建，随机种子固定。</li>
       </ul>
     </div>
-    <div class="lim no">
-      <h3>做不到 / 局限</h3>
+    <div>
+      <h3>不成立</h3>
       <ul>
-        <li><b>RCS 是估计</b>：面元物理光学近似加 rcs_db 覆盖值，不是实测标定；换一个 RCS 假设，作用距离会明显移动。</li>
-        <li><b>不是 CFAR</b>：RD 是原始相参显示通道，没有恒虚警检测，也没有 MTI 门控后的检出点列表。</li>
-        <li><b>无距离走动</b>：单帧快照，不补偿距离走动与多普勒走动，长积累时间下目标不会跨距离门。</li>
-        <li><b>散斑单一</b>：背景只加一个复高斯噪声场，是单通道指数统计，不是多视平均。</li>
-        <li><b>红外相关</b>：两个波段预览高度相关（r≈0.995），差异主要在 16-bit 原始计数里。</li>
-        <li><b>范围</b>：本页以空域三模态为主，另加一处海域精选；SAR 不在本页展示，站内其它入口保留完整管线。</li>
-        <li><b>海域为俯视板面</b>：舰船按设计尺寸缩放，背景是实拍开阔海面；俯视几何下径向速度≈0，红外预览里船体呈冷色剪影。</li>
-        <li><b>海杂波是简化模型</b>：常数 gamma + Rayleigh 零多普勒脊，不是 K 分布；不仿真海浪谱、相关斑纹与多视统计。</li>
-        <li><b>干扰标注不进 COCO</b>：干扰实体以 <code>label:false</code> 落盘，不计入 COCO 标注；<code>images/radar*</code> 含图表叠字，不可作为训练像素。</li>
+        <li>RCS 是面元物理光学近似加覆盖值，不是实测标定；换一个 RCS 假设，作用距离会明显移动。</li>
+        <li>RD 是原始相参显示通道，没有 CFAR，没有距离走动补偿，只有单通道指数散斑。</li>
+        <li>红外预览经过 AGC，两个波段高度相关；底板是照片温度映射，不是热像仪标定。</li>
+        <li>海域的尾迹是程序纹理，按片段中点烘焙；船速对 28 m 艇偏高。</li>
+        <li>本页四路通道不含 SAR 与激光雷达，它们的地面/海面几何不适合这次俯视接近场景。</li>
       </ul>
     </div>
   </div>
-  <p class="disclaimer">仿真数值为工程近似，用于算法训练与验证，不替代实测标定。</p>
+  <p class="disclaimer">数值为工程近似，用于算法训练与验证，不替代实测标定。</p>
 </section>
 
 </main>
 
-<footer class="site-foot">
-  <div class="foot-grid">
+<footer>
+  <div class="foot">
     <div>
       <strong>数据</strong>
-      <p>本仓库 <code>data/</code> 下逐帧 webp，由 <b>simkit 0.2</b> 生成。快照 <span id="footGenerated">—</span>。</p>
+      <p>逐帧 WebP 与 <code>showcase.json</code> 由 <code>tools/export_showcase.py</code> 从 <code>dataest/1110</code> 导出，快照 <span id="gen">2026-11-12</span>。</p>
     </div>
     <div>
-      <strong>素材与许可</strong>
+      <strong>素材</strong>
       <p>3D 模型来自 NASA 3D Resources（公有领域）与 Poly Haven（CC0）。代码 MIT，© 2026 ccccty。</p>
     </div>
     <div>
-      <strong>说明</strong>
-      <p>纯静态展示，无后端。数值为工程近似，不替代实测标定。</p>
-      <p class="foot-links"><a href="https://github.com/ccccty/RGB_SAR_LIDAR_SIMU" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/ccccty/RGB_SAR_LIDAR_SIMU/blob/main/LICENSE" target="_blank" rel="noopener">LICENSE</a></p>
+      <strong>复现</strong>
+      <p><code>env\Scripts\python.exe tools\export_showcase.py</code> 重新导出本页全部图像与读数。</p>
     </div>
   </div>
 </footer>
 
-<div class="lb" id="lightbox" hidden>
-  <button type="button" class="lb-close" id="lbClose" aria-label="关闭">×</button>
-  <figure>
-    <img id="lbImg" width="1280" height="960" alt="放大查看的精选帧">
-    <figcaption id="lbCap"></figcaption>
-  </figure>
+<div class="lb" id="lb" hidden>
+  <button type="button" class="lb-x" id="lbX" aria-label="关闭">×</button>
+  <figure><img id="lbImg" alt="放大查看的帧"><figcaption id="lbCap"></figcaption></figure>
 </div>
-
 </body>
 </html>
