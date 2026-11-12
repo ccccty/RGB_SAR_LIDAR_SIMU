@@ -98,21 +98,26 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await sleep(900);
 
   const stats = await send('Runtime.evaluate', {
-    expression: "JSON.stringify({strip: document.querySelectorAll('#strip button').length," +
+    expression: "(function(){var g=function(id){var e=document.getElementById(id);return e?e.textContent:'';};" +
+      "return JSON.stringify({title: document.title, strip: document.querySelectorAll('#strip button').length," +
       " tiles: document.querySelectorAll('.tile').length," +
-      " frame: document.getElementById('tFrame').textContent," +
-      " range: document.getElementById('tRange').textContent," +
-      " snr: document.getElementById('tSnr').textContent," +
-      " pkMwir: document.getElementById('pkMwir').textContent," +
-      " pkLwir: document.getElementById('pkLwir').textContent," +
+      " frame: g('tFrame'), range: g('tRange'), snr: g('tSnr')," +
+      " pkMwir: g('pkMwir'), pkLwir: g('pkLwir')," +
       " planckPaths: document.querySelectorAll('#planckSvg path').length," +
       " snrPaths: document.querySelectorAll('#snrSvg path').length," +
       " imgs: document.images.length," +
-      " broken: Array.from(document.images).filter(i => i.getAttribute('src') && i.complete && i.naturalWidth === 0).length," +
-      " scrollH: document.documentElement.scrollHeight})",
+      " broken: Array.prototype.filter.call(document.images, function(i){return i.getAttribute('src') && i.complete && i.naturalWidth === 0;}).length," +
+      " scrollH: document.documentElement.scrollHeight});})()",
     returnByValue: true
   });
-  const s = JSON.parse(stats.result.result.value);
+  const raw = stats.result && stats.result.result ? stats.result.result.value : null;
+  if (!raw) {
+    console.log('page did not expose the showcase DOM (old build or hard failure)');
+    console.log('js errors:', errors.slice(0, 4), 'failed:', failed.slice(0, 4));
+    proc.kill();
+    process.exit(1);
+  }
+  const s = JSON.parse(raw);
 
   const sections = [['hero', '#rack'], ['bands', '#bands'], ['ecm', '#ecm'], ['recipes', '#recipes'], ['limits', '#limits']];
   for (const [name, sel] of sections) {
