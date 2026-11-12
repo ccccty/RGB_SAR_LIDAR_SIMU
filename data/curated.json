@@ -158,7 +158,7 @@
     17
    ],
    "hero": {
-    "mod": "lwir",
+    "mod": "radar",
     "frame": 17
    },
    "note": "4 帧 · 雷达 7.5 km · 闭速 251 m/s",
@@ -210,7 +210,7 @@
     29
    ],
    "hero": {
-    "mod": "radar",
+    "mod": "optical",
     "frame": 9
    },
    "note": "30 帧 · 有源压制(3 W ERP / 200 MHz) + 箔条云(RCS 140 m²) + 假目标 + 红外诱饵 · 目标 31 px",
@@ -234,7 +234,7 @@
     29
    ],
    "hero": {
-    "mod": "radar",
+    "mod": "optical",
     "frame": 9
    },
    "note": "30 帧 · 海杂波零多普勒脊(clutter_ridge=True, scale 6 dB) · 目标 31 px",
