@@ -371,7 +371,7 @@ env\Scripts\python.exe tools\build_sealandair_1109v1.py --skip-gen   # 只重做
 | 航向可控 | 新增 `view.reverse_course`：seeker 模式下目标渲染航向由相机方位决定（改 `objects[].vel` 无效），翻转 180° 让尾迹拖向开阔水域（尾随视角） |
 | 红外黑块修复 | 底板灰度与 AGC 预览双标尺统一：几何像素按 `(radiance/blackbody)^0.25` 重标尺，热目标不再在明亮照片前读成黑色剪影（16 位数据本来就是热的） |
 
-规模：6 个场景（开阔海/岛礁/港口 × 有源/无源）× 30 帧 × 光学 + LWIR + MWIR + 雷达 RD/RA，768×576，约 5 GB。每场景带 COCO 标注、YOLO labels、`frames.json` 逐帧真值与 `index.json`/`generation_report.json` 验收；`applied.uv_solve` 记录每场景的落水取景参数（船位/尾迹走廊水面占比）。在线看板的 `#rack`（同帧）与 `#ecm`（干扰）两段用的就是这里的 `p_sea_port_passive` 与 `p_sea_port_active`。
+规模：6 个场景（开阔海/岛礁/港口 × 有源/无源）× 30 帧 × 光学 + LWIR + MWIR + 雷达 RD/RA，768×576，约 5 GB。每场景带 COCO 标注、YOLO labels、`frames.json` 逐帧真值与 `index.json`/`generation_report.json` 验收；`applied.uv_solve` 记录每场景的落水取景参数（船位/尾迹走廊水面占比）。在线看板的场景卡 `s1110_sea_port_wake`（海域 · 港口舰船与尾迹）用的就是这里的 `p_sea_port_passive`。
 
 ```powershell
 env\Scripts\python.exe tools\build_preset_dataset_seav2.py --force              # 全量 30 帧
@@ -392,7 +392,7 @@ env\Scripts\python.exe tools\build_preset_dataset_seav2.py --validate 3 --force 
 |---|---|
 | `#hero` 演示 | 同一帧可见光 / 长波红外交叉淡入，可拖动分割线；下方 `‹ ›` 在同一场景的帧序列里换帧，位姿不变 |
 | `#physics` 原理 | PBR + Cycles、逐面能量平衡 → Planck 积分、PO 散射 → 雷达方程 → RD |
-| `#scenes` 场景 | 9 张精选卡片，可按 空 / 陆 / 海 / 干扰 筛选；每张可切模态、切帧、点开看大图；由 `data/curated.json` 驱动 |
+| `#scenes` 场景 | 12 张精选卡片（空域 6 / 陆域 2 / 海域 4），可按 空 / 陆 / 海 / 干扰 筛选；每张可切模态、切帧、点开看大图；由 `data/curated.json` 驱动 |
 | `#jamlab` 干扰实验室 | clean ↔ jammed 逐帧对照；宽屏下与同帧光学参考并排 |
 | `#rd` 雷达图 | 距离-多普勒图读法、零多普勒脊、俯视板面径向速度≈0 的原因 |
 | `#limits` 局限 | 能做到 / 做不到的边界 |
@@ -406,12 +406,15 @@ env\Scripts\python.exe tools\build_preset_dataset_seav2.py --validate 3 --force 
 - 卡片里的雷达成像改按左上对齐裁切：整张成图的标题栏与参数表缩在 4:3 里只剩糊字，裁掉右侧表格后纵轴与目标所在的中部留了下来；
 - 干扰实验室在宽屏下改成「对比图 + 同帧光学」两栏，光学不再铺满整行；≥1400 px 时四项指标排一行；
 - `#rd` 那条 dB 说明改成与图上色标一致的 −46.5 … −6.5 dB（原文写的是另一张图的 −67 … −27 dB）。
+- 用 `dataest/1110` 的三段运行补了三张红外为主的卡（`s1110_air_skyclear` / `s1110_land_industrial` / `s1110_sea_port_wake`，默认模态都是长波红外），`tools/export_1110_cards.py` 负责把它们编码进 `data/`；
+- 两段迎头 / 尾追演示的红外是整块白热的机身，与真实热像不符，卡片的模态表里去掉了中波 / 长波，只留光学与雷达；
+- `data/final_air` 的长波红外 98% 是黑场（能量平衡缺路径辐射项的老问题），从 `data/manifest.json` 与 `data/` 里一起撤掉，兜底路径也不会再翻出这张黑图。
 
-数据来源：`data/curated.json`（9 个场景的帧序、模态、默认帧与说明）、`data/jam_lab.json`（三个干扰域的分层、指标与对比图）、`data/manifest.json`（逐帧表，作为 curated 缺失时的兜底）。
+数据来源：`data/curated.json`（12 个场景的帧序、模态、默认帧与说明）、`data/jam_lab.json`（三个干扰域的分层、指标与对比图）、`data/manifest.json`（逐帧表，作为 curated 缺失时的兜底）。
 
-体积（2026-11-12 实测）：`data/` 29.0 MB / 1157 文件，首屏 html 22 KB + js 53.8 KB + css 29.0 KB（均未 gzip）。旧 11 页签看板的 `app.js` / `app.css` 与 `data/boot.js` 仍在仓库里，当前页面不加载它们。
+体积（2026-11-12 实测）：`data/` 32.1 MB / 1192 文件，首屏 html 22 KB + js 53.8 KB + css 29.0 KB（均未 gzip）。旧 11 页签看板的 `app.js` / `app.css` 与 `data/boot.js` 仍在仓库里，当前页面不加载它们。
 
-验收：`node tools\probe_site_v1.js`（本地或线上 URL）用无头 Chrome 打开页面，报 0 JS 错误、0 破图、9 张卡片齐全；`node tools\probe_canvas.js` 另查画布与滑块真的会算。
+验收：`node tools\probe_site_v1.js`（本地或线上 URL）用无头 Chrome 打开页面，报 0 JS 错误、0 破图、12 张卡片齐全；`node tools\probe_canvas.js` 另查画布与滑块真的会算。
 
 ## 7. 验证过什么
 
@@ -419,7 +422,7 @@ env\Scripts\python.exe tools\build_preset_dataset_seav2.py --validate 3 --force 
 - SAR：距离分辨率 −3 dB 实测 1.014 m vs 理论 `c/2B` 0.999 m（+1.5%）；点目标峰值位置误差 0–1 px；发射功率 +3 dB → SNR +3.01 dB；测绘带内地面回波比带外高 53 dB；单帧 3–14 s、峰值内存 665 MB。方位分辨率按 D/2 定律随天线变长而变粗（L=1 m→0.86 m，L=4 m→1.77 m），随相干积累时间变长而变细（n_pulses 256→1024，1.73 m→0.43 m）
 - 无人机导引视角的轨迹：两段必然不同（`simkit/plan.py` 的断言门限是方位差 ≥8° 或斜距差 ≥300 m，默认设计错开 20°）；目标像素与距离严格成反比（误差 0.00%）；分块生成与整段生成逐帧一致（含片段中间帧）；横滚在限幅内
 - 遮挡：`tools/make_seeker_scenes.py` 生成场景时自己跑射线统计，城市场景每段前 30 帧被楼体挡住（25%），其余帧正常；标注侧的出框率与之严格一致（75%）
-- 站点：`node tools\probe_site_v1.js` 用无头 Chrome 打开当前单页（本地或线上 URL），报告 0 JS 错误、0 破图、9 张精选卡片齐全（空域 5 / 陆域 1 / 海域 3 / 其中干扰样本 2）、首屏 768×576 正常加载；`node tools\probe_file.js` 查双击打开时的降级表现（只剩静态首屏是预期行为，见 §2.1）
+- 站点：`node tools\probe_site_v1.js` 用无头 Chrome 打开当前单页（本地或线上 URL），报告 0 JS 错误、0 破图、12 张精选卡片齐全（空域 6 / 陆域 2 / 海域 4，其中干扰样本 2）、首屏 768×576 正常加载；`node tools\probe_file.js` 查双击打开时的降级表现（只剩静态首屏是预期行为，见 §2.1）
 - 回归：`python -m unittest discover -s tests` 614 项 OK、`python -m simkit selftest` ALL PASS、工作台 DOM 冒烟通过、JS / Python 编译通过；其中 12 项固化 18 个预设配方的矩阵、ECM 分组、v1 不变量与前端透传链路
 - 跨模态配准：同一时刻、共用位姿的各模态，框由同一套三维投影导出，导出时逐帧自检 240 对框最大偏差 0.00 px。这条是构造出来的，不是事后对齐：渲染器的 id 掩膜只判可见性，不参与定框位置（否则光学轮廓框 30 px 与红外机身框 17 px 会让同一目标差 4 px）
 - 雷达 RD：三场景 60 帧全部出点目标框，检出率 20/20（高空空中目标）、19/20（上升接近）、15/20（下视接近，余下几帧是 0.5 m² @2.6 km 的链路预算真不够，不是漏标）；框所在行的最亮格就是框心格，行内峰值 37–235 vs 全图均值 4.6
@@ -457,6 +460,7 @@ env\Scripts\python.exe tools\build_preset_dataset_seav2.py --validate 3 --force 
 
 ## 9. 更新记录
 
+- **2026-11-12** 红外样例与尾迹补齐：用 `dataest/1110` 补三张以长波红外为默认画面的卡（空域 · 高空晴空热像 / 陆域 · 工业区热像 / 海域 · 港口舰船与尾迹），各取 30 帧里的 5 帧、四路模态（光学 + 中波 + 长波 + 雷达），导出脚本 `tools/export_1110_cards.py`；两段迎头 / 尾追演示的红外是整块白热机身，与真实热像不符，卡片模态表去掉中波与长波；`data/final_air` 的长波 98% 是黑场（逐面能量平衡缺路径辐射项），连同 `data/manifest.json` 里的条目一起撤掉。场景卡由 9 张增至 12 张（空域 6 / 陆域 2 / 海域 4，其中干扰样本 2）。
 - **2026-11-12** 在线看板回退并优化：上一版把单页改成海域五段（同帧 / 波段 / 干扰 / 配方 / 局限），主体变成同一段港口片段，空域与陆域被挤到一张配方墙里，方向不对，本轮整页回退到 11-09 的空 / 陆 / 海三域精选结构，去掉 `data/run`、`data/recipes`、`data/showcase.*` 与配套的 `tools/export_showcase.py`、`tools/probe_showcase.js`。在回退后的基础上做了七处优化：页头阅读进度线 + 导航高亮；首屏 ‹ › 换帧；场景区按 空 / 陆 / 海 / 干扰 筛选；三张卡的默认帧换成能看清目标的模态（其中 `seeker_air2air_high` 改用 RD）；卡片内雷达成图按左上裁切；干扰实验室宽屏改两栏；`#rd` 的 dB 说明与图上色标对齐。README §0 / §2.1 / §5.3 / §6 / §7 同步。
 - **2026-11-12** 在线看板重写：单页从六区块换成五段仪器式布局（同帧 / 波段 / 干扰 / 配方 / 局限），数据改由 `tools/export_showcase.py` 从 `dataest/1110` 的 seav2 两段运行（`p_sea_port_passive` / `p_sea_port_active`）与 18 个预置配方导出。雷达面板改为从 `raw/radar/*.npy` 重绘的纯功率图，页面叠加距离/速度刻度、零速线、真值菱形与峰值十字；新增 30 帧时间轴与播放、黑体辐亮度计算器（250–1200 K）、无源↔有源 A/B 与峰值 SNR 逐帧曲线、18 格配方墙。新增 `tools/probe_showcase.js`（无头 Chrome 走完整页并截五段图）。README §0 / §2.1 / §5.4 / §6 / §7 同步。
 - **2026-11-11** 海域真实感数据集 seav2（见 §5.4）：6 场景 × 30 帧 × 光学 + LWIR/MWIR + 雷达。导弹艇换成 28 m 战舰轮廓（bbox ≈ 27×34 px），Kelvin 尾迹（19.47° 楔臂 + 横波弧 + 中心湍流，λ₀=2πV²/g）按帧位姿烘进底板照片，光学与红外跨模态自动一致。水面掩膜按场景反解落水取景，因为 seeker 的 LOS 扫掠会让轨道整体偏离原点最多约 200 m，固定 UV 会把船放到礁石上。新增 `view.reverse_course` 尾随视角，`--validate N` 支持每场景 3 帧最小验证后再全量。

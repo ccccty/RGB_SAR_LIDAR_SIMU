@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-10T10:11:05+08:00",
+ "generated": "2026-11-12T11:20:00+08:00",
  "domain": "air + land + sea (v1 real-plate) + jam",
  "scenes": [
   {
@@ -28,54 +28,30 @@
    "caption": "真实云层照片作背景，飞机保持 30 px 级弱小目标；6 枚诱饵沿航向轴线对称、逐帧向下抛射，不随机体平移。"
   },
   {
-   "id": "v1_land",
-   "title": "陆域 · 城市道路航拍底板",
-   "cls": "vehicle",
+   "id": "s1110_air_skyclear",
+   "title": "空域 · 高空晴空热像",
+   "cls": "fighter",
    "band": "Ku",
    "aspect": "4:3",
    "mods": [
     "optical",
+    "mwir",
     "lwir",
     "radar"
    ],
    "frames": [
     0,
-    1,
-    2,
-    3,
-    4
+    7,
+    15,
+    22,
+    29
    ],
    "hero": {
-    "mod": "optical",
-    "frame": 0
+    "mod": "lwir",
+    "frame": 15
    },
-   "note": "5 帧 · 环岛/多车道实拍底板 · 浅色厢式货车 + 匀速车流 + 静止路障",
-   "caption": "真实航拍道路照片带车道线、停放车辆与建筑；主目标是 6.75 m 浅色厢式货车，3 辆正常车辆各自匀速行驶，3 个路侧障碍严格静止。"
-  },
-  {
-   "id": "v1_sea",
-   "title": "海域 · 开阔海面实拍底板",
-   "cls": "ship",
-   "band": "Ku",
-   "aspect": "4:3",
-   "mods": [
-    "optical",
-    "lwir",
-    "radar"
-   ],
-   "frames": [
-    0,
-    1,
-    2,
-    3,
-    4
-   ],
-   "hero": {
-    "mod": "optical",
-    "frame": 0
-   },
-   "note": "5 帧 · 海浪实拍底板 · 导弹艇 + 航行小艇 + 锚泊小艇 · 海杂波脊",
-   "caption": "真实海浪照片作底板，主目标舰船与一艘航行小艇、一艘锚泊小艇同框；雷达 RD 图上可见零多普勒海杂波脊。"
+   "note": "30 帧 · 高空晴空底板 · 斜距 2.62→2.10 km · 目标 35–44 px",
+   "caption": "天空在长波里近于无特征，云带与地平线才是参照；目标只是十几像素上的一个亮点。"
   },
   {
    "id": "demo_air_headon",
@@ -85,8 +61,6 @@
    "aspect": "4:3",
    "mods": [
     "optical",
-    "mwir",
-    "lwir",
     "radar",
     "radar_ra",
     "lidar_range",
@@ -113,8 +87,6 @@
    "aspect": "4:3",
    "mods": [
     "optical",
-    "mwir",
-    "lwir",
     "radar",
     "radar_ra",
     "lidar_range",
@@ -165,6 +137,132 @@
    "caption": "窄视场里目标只有三十来像素，先靠宽视场找到，再用窄视场分辨。"
   },
   {
+   "id": "v3jam_air",
+   "title": "干扰 · 空域有源/无源",
+   "cls": "fighter",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "lwir",
+    "radar"
+   ],
+   "frames": [
+    0,
+    9,
+    19,
+    29
+   ],
+   "hero": {
+    "mod": "optical",
+    "frame": 9
+   },
+   "note": "30 帧 · 有源压制(3 W ERP / 200 MHz) + 箔条云(RCS 140 m²) + 假目标 + 红外诱饵 · 目标 31 px",
+   "caption": "宽带噪声把 RD 基底整体抬高约 17 dB，目标仍可检出；光学目标轮廓不变，干扰只发生在雷达检测层。"
+  },
+  {
+   "id": "v1_land",
+   "title": "陆域 · 城市道路航拍底板",
+   "cls": "vehicle",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "lwir",
+    "radar"
+   ],
+   "frames": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "hero": {
+    "mod": "optical",
+    "frame": 0
+   },
+   "note": "5 帧 · 环岛/多车道实拍底板 · 浅色厢式货车 + 匀速车流 + 静止路障",
+   "caption": "真实航拍道路照片带车道线、停放车辆与建筑；主目标是 6.75 m 浅色厢式货车，3 辆正常车辆各自匀速行驶，3 个路侧障碍严格静止。"
+  },
+  {
+   "id": "s1110_land_industrial",
+   "title": "陆域 · 工业区热像",
+   "cls": "vehicle",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "mwir",
+    "lwir",
+    "radar"
+   ],
+   "frames": [
+    0,
+    7,
+    15,
+    22,
+    29
+   ],
+   "hero": {
+    "mod": "lwir",
+    "frame": 15
+   },
+   "note": "30 帧 · 工业区航拍底板 · 斜距约 1.0 km · 目标 30 px",
+   "caption": "厂房顶面白天受晒后比路面热，红外里连片发白；车辆只在几十像素上露出一点。"
+  },
+  {
+   "id": "v1_sea",
+   "title": "海域 · 开阔海面实拍底板",
+   "cls": "ship",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "lwir",
+    "radar"
+   ],
+   "frames": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "hero": {
+    "mod": "optical",
+    "frame": 0
+   },
+   "note": "5 帧 · 海浪实拍底板 · 导弹艇 + 航行小艇 + 锚泊小艇 · 海杂波脊",
+   "caption": "真实海浪照片作底板，主目标舰船与一艘航行小艇、一艘锚泊小艇同框；雷达 RD 图上可见零多普勒海杂波脊。"
+  },
+  {
+   "id": "s1110_sea_port_wake",
+   "title": "海域 · 港口舰船与尾迹",
+   "cls": "ship",
+   "band": "Ku",
+   "aspect": "4:3",
+   "mods": [
+    "optical",
+    "mwir",
+    "lwir",
+    "radar"
+   ],
+   "frames": [
+    0,
+    7,
+    15,
+    22,
+    29
+   ],
+   "hero": {
+    "mod": "lwir",
+    "frame": 15
+   },
+   "note": "30 帧 · 集装箱港口底板 · 28 m 舰船 + Kelvin 尾迹（λ₀=2πV²/g，19.47° 楔臂）",
+   "caption": "尾迹按帧位姿烘进底板，光学与红外读同一张图；水体在长波里偏冷，搅起来的尾迹偏热。"
+  },
+  {
    "id": "demo_sea_surface",
    "title": "开阔海面 · 中小型舰船",
    "cls": "ship",
@@ -191,30 +289,6 @@
    },
    "note": "4 帧 · 雷达 1.86 km · 舰船 243x112 px（占宽 19%、面积 2.2%）· 海面俯视",
    "caption": "开阔蓝色海面上的一艘中小型舰船，俯视轮廓能看清舰体与上层建筑，目标只占画面一小部分。"
-  },
-  {
-   "id": "v3jam_air",
-   "title": "干扰 · 空域有源/无源",
-   "cls": "fighter",
-   "band": "Ku",
-   "aspect": "4:3",
-   "mods": [
-    "optical",
-    "lwir",
-    "radar"
-   ],
-   "frames": [
-    0,
-    9,
-    19,
-    29
-   ],
-   "hero": {
-    "mod": "optical",
-    "frame": 9
-   },
-   "note": "30 帧 · 有源压制(3 W ERP / 200 MHz) + 箔条云(RCS 140 m²) + 假目标 + 红外诱饵 · 目标 31 px",
-   "caption": "宽带噪声把 RD 基底整体抬高约 17 dB，目标仍可检出；光学目标轮廓不变，干扰只发生在雷达检测层。"
   },
   {
    "id": "v3jam_naval",

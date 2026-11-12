@@ -40,7 +40,9 @@
   // ships). Keeping the allow-list exact means adding a sea/land scene never
   // silently changes which older cards are still published.
   var NON_AIR = /(ground|surface|sea|ship|boat|vehicle|terrain|city)/i;
-  var SEA_ALLOW = /^(demo_sea_surface|v1_.*)$/;
+  // 2026-11-12: the s1110_* cards (air / land / sea presets) are curated on
+  // purpose, so the domain allow-list carries them by name too.
+  var SEA_ALLOW = /^(demo_sea_surface|v1_.*|s1110_.*)$/;
   function isNonAir(id) { return NON_AIR.test(id) && !SEA_ALLOW.test(id); }
 
   // frame: -1 means "no choice yet" so the scene's curated hero frame wins.
